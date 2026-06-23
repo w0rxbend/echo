@@ -1668,6 +1668,225 @@ func TestEventsOverrideValidationAllowsCustomAttributesBeforePublish(t *testing.
 	}
 }
 
+func TestPlayInterruptModeHigherPriorityIsAccepted(t *testing.T) {
+	httpServer := newAnimationAPITestServer(t)
+	body := bytes.NewBufferString(fmt.Sprintf(`{"animation":%q,"duration":"50ms","restore":"leave","interrupt_mode":"higher_priority"}`, animations.NotificationAnimationID))
+
+	resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("POST /play status = %d, body = %s, want %d", resp.StatusCode, data, http.StatusAccepted)
+	}
+}
+
+func TestPlayInterruptModeCriticalIsAccepted(t *testing.T) {
+	httpServer := newAnimationAPITestServer(t)
+	body := bytes.NewBufferString(fmt.Sprintf(`{"animation":%q,"duration":"50ms","restore":"leave","interrupt_mode":"critical"}`, animations.NotificationAnimationID))
+
+	resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("POST /play status = %d, body = %s, want %d", resp.StatusCode, data, http.StatusAccepted)
+	}
+}
+
+func TestPlayInterruptModeEmptyDefaultsToNone(t *testing.T) {
+	httpServer := newAnimationAPITestServer(t)
+	body := bytes.NewBufferString(fmt.Sprintf(`{"animation":%q,"duration":"50ms","restore":"leave"}`, animations.NotificationAnimationID))
+
+	resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("POST /play status = %d, body = %s, want %d", resp.StatusCode, data, http.StatusAccepted)
+	}
+}
+
+func TestPlayInterruptModeInvalidRejected(t *testing.T) {
+	httpServer := newAnimationAPITestServer(t)
+	body := bytes.NewBufferString(fmt.Sprintf(`{"animation":%q,"duration":"50ms","restore":"leave","interrupt_mode":"immediate"}`, animations.NotificationAnimationID))
+
+	resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("POST /play status = %d, body = %s, want %d", resp.StatusCode, data, http.StatusBadRequest)
+	}
+	if !strings.Contains(string(data), "invalid interrupt_mode") {
+		t.Fatalf("POST /play body = %s, want to contain %q", data, "invalid interrupt_mode")
+	}
+}
+
+func TestEventsInvalidInterruptModeRejectedAtIngress(t *testing.T) {
+	bus := events.MustNewBus(4)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	ch, unsubscribe := bus.Subscribe(ctx)
+	t.Cleanup(unsubscribe)
+
+	registry, err := animations.NewDefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	api, err := httpapi.New(httpapi.Options{
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Bus:        bus,
+		Registry:   registry,
+		ServerAddr: "127.0.0.1:0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(api.Router())
+	t.Cleanup(httpServer.Close)
+
+	body := bytes.NewBufferString(`{"type":"notify","attributes":{"interrupt_mode":"bogus"}}`)
+	resp, err := http.Post(httpServer.URL+"/events", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("POST /events status = %d, body = %s, want %d", resp.StatusCode, data, http.StatusBadRequest)
+	}
+	if !strings.Contains(string(data), "invalid interrupt_mode") {
+		t.Fatalf("POST /events body = %s, want to contain %q", data, "invalid interrupt_mode")
+	}
+
+	select {
+	case event := <-ch:
+		t.Fatalf("invalid interrupt_mode event was published to async event path: %#v", event)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestEventsValidInterruptModePassesIngress(t *testing.T) {
+	bus := events.MustNewBus(4)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	ch, unsubscribe := bus.Subscribe(ctx)
+	t.Cleanup(unsubscribe)
+
+	registry, err := animations.NewDefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	api, err := httpapi.New(httpapi.Options{
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Bus:        bus,
+		Registry:   registry,
+		ServerAddr: "127.0.0.1:0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(api.Router())
+	t.Cleanup(httpServer.Close)
+
+	body := bytes.NewBufferString(`{"type":"notify","attributes":{"interrupt_mode":"higher_priority"}}`)
+	resp, err := http.Post(httpServer.URL+"/events", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("POST /events status = %d, body = %s, want %d", resp.StatusCode, data, http.StatusAccepted)
+	}
+
+	select {
+	case event := <-ch:
+		if got := event.Attributes["interrupt_mode"]; got != "higher_priority" {
+			t.Fatalf("published attributes.interrupt_mode = %q, want %q", got, "higher_priority")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for accepted event to publish")
+	}
+}
+
+func TestEventsSchemaAgnosticAttributesPassInterruptValidation(t *testing.T) {
+	bus := events.MustNewBus(4)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	ch, unsubscribe := bus.Subscribe(ctx)
+	t.Cleanup(unsubscribe)
+
+	registry, err := animations.NewDefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	api, err := httpapi.New(httpapi.Options{
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Bus:        bus,
+		Registry:   registry,
+		ServerAddr: "127.0.0.1:0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(api.Router())
+	t.Cleanup(httpServer.Close)
+
+	body := bytes.NewBufferString(`{"type":"notify","attributes":{"param.foo":"bar","x-custom":"val"}}`)
+	resp, err := http.Post(httpServer.URL+"/events", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("POST /events status = %d, body = %s, want %d", resp.StatusCode, data, http.StatusAccepted)
+	}
+
+	select {
+	case event := <-ch:
+		if got := event.Attributes["param.foo"]; got != "bar" {
+			t.Fatalf("published attributes[param.foo] = %q, want %q", got, "bar")
+		}
+		if got := event.Attributes["x-custom"]; got != "val" {
+			t.Fatalf("published attributes[x-custom] = %q, want %q", got, "val")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for accepted event to publish")
+	}
+}
+
 func newAnimationAPITestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	cfg := newAdminAuthTestConfig(t)

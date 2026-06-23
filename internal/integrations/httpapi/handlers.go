@@ -25,11 +25,12 @@ type notifyRequest struct {
 }
 
 type playRequest struct {
-	Animation string            `json:"animation"`
-	Duration  string            `json:"duration,omitempty"`
-	Priority  int               `json:"priority,omitempty"`
-	Restore   string            `json:"restore,omitempty"`
-	Params    map[string]string `json:"params,omitempty"`
+	Animation     string            `json:"animation"`
+	Duration      string            `json:"duration,omitempty"`
+	Priority      int               `json:"priority,omitempty"`
+	Restore       string            `json:"restore,omitempty"`
+	InterruptMode string            `json:"interrupt_mode,omitempty"`
+	Params        map[string]string `json:"params,omitempty"`
 }
 
 type brightnessRequest struct {
@@ -159,13 +160,24 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	interruptMode := animations.InterruptMode(req.InterruptMode)
+	if interruptMode == "" {
+		interruptMode = animations.InterruptNone
+	}
+	switch interruptMode {
+	case animations.InterruptNone, animations.InterruptHigherPriority, animations.InterruptCritical:
+	default:
+		writeError(w, http.StatusBadRequest, "invalid interrupt_mode")
+		return
+	}
+
 	request := animations.AnimationRequest{
 		ID:            s.nextID("play"),
 		AnimationID:   req.Animation,
 		Params:        animations.Params(req.Params),
 		Priority:      req.Priority,
 		MaxDuration:   duration,
-		InterruptMode: animations.InterruptNone,
+		InterruptMode: interruptMode,
 		RestorePolicy: restore,
 		CreatedAt:     time.Now().UTC(),
 	}
@@ -249,6 +261,13 @@ func (s *Server) validateEventOverrides(attrs map[string]string) error {
 	}
 	if _, err := parseOptionalDuration(attrs["duration"]); err != nil {
 		return err
+	}
+	if mode := attrs["interrupt_mode"]; mode != "" {
+		switch animations.InterruptMode(mode) {
+		case animations.InterruptNone, animations.InterruptHigherPriority, animations.InterruptCritical:
+		default:
+			return errors.New("invalid interrupt_mode")
+		}
 	}
 	return nil
 }
