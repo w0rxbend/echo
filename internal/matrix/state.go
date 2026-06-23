@@ -56,6 +56,26 @@ const (
 	BackgroundConvergenceRetrying   BackgroundConvergenceState = "retrying"
 )
 
+// backgroundConvergenceV1States is the v1 public bounded convergence state
+// vocabulary. Do not emit or document any additional states in scheduler
+// health fields, /readyz.background, or matrix_proxy_background_state.
+var backgroundConvergenceV1States = []BackgroundConvergenceState{
+	BackgroundConvergenceUnknown,
+	BackgroundConvergenceDirty,
+	BackgroundConvergenceAttempting,
+	BackgroundConvergenceConverged,
+	BackgroundConvergenceFailed,
+	BackgroundConvergenceRetrying,
+}
+
+// BackgroundConvergenceV1States returns the bounded state vocabulary used by the
+// shared v1 background convergence contract.
+func BackgroundConvergenceV1States() []BackgroundConvergenceState {
+	states := make([]BackgroundConvergenceState, len(backgroundConvergenceV1States))
+	copy(states, backgroundConvergenceV1States)
+	return states
+}
+
 type BackgroundConvergenceProjectionInput struct {
 	State                 BackgroundConvergenceState
 	Dirty                 bool
@@ -71,6 +91,15 @@ type BackgroundConvergenceProjection struct {
 	Converged bool
 }
 
+// ProjectBackgroundConvergence maps internal scheduler background state into the
+// v1 public bounded vocabulary: unknown, dirty, attempting, converged,
+// failed, retrying. The output is shared across scheduler health, /readyz
+// background payloads, and matrix_proxy_background_state.
+//
+// Transition invariants:
+// - retrying: dirty background with a future next_retry deadline.
+// - failed: dirty background due for retry and no future suppression deadline.
+// - attempting: restore command currently in progress.
 func ProjectBackgroundConvergence(input BackgroundConvergenceProjectionInput, now time.Time) BackgroundConvergenceProjection {
 	if input.State == "" {
 		input.State = BackgroundConvergenceUnknown
@@ -281,11 +310,12 @@ const (
 )
 
 type displayState struct {
-	Kind     displayStateKind
-	Frame    PackedFrame
-	Color    RGB
-	EffectID byte
-	Interval time.Duration
+	Kind         displayStateKind
+	Frame        PackedFrame
+	Color        RGB
+	EffectID     byte
+	Interval     time.Duration
+	BackgroundID string
 }
 
 func (s displayState) known() bool {

@@ -189,7 +189,7 @@ func TestSchedulerLeaveRestoreConvergesToFirmwarePresetBackgroundWhenIdle(t *tes
 	}
 }
 
-func TestSchedulerPreviousFrameRestoreConvergesToFirmwarePresetBackgroundWhenIdle(t *testing.T) {
+func TestSchedulerPreviousFrameRestoreConvergesToFirmwarePresetBackgroundWithoutIdleDuplicate(t *testing.T) {
 	client := newFakeMatrixClient()
 	registry := animations.NewRegistry()
 	mustRegisterTestAnimation(t, registry, "notify", testAnimation(2, time.Millisecond, 30))
@@ -221,11 +221,12 @@ func TestSchedulerPreviousFrameRestoreConvergesToFirmwarePresetBackgroundWhenIdl
 		t.Fatal(err)
 	}
 
-	client.waitCommands(t, 5)
+	client.waitCommands(t, 4)
+	time.Sleep(50 * time.Millisecond)
 	got := commandKinds(client.commands())
-	want := []string{"preset:12", "frame:30", "frame:31", "preset:12", "preset:12"}
-	if len(got) < len(want) {
-		t.Fatalf("commands = %v, want %v", got, want)
+	want := []string{"preset:12", "frame:30", "frame:31", "preset:12"}
+	if len(got) != len(want) {
+		t.Fatalf("commands = %v, want exactly %v", got, want)
 	}
 	for i := range want {
 		if got[i] != want[i] {
@@ -237,6 +238,112 @@ func TestSchedulerPreviousFrameRestoreConvergesToFirmwarePresetBackgroundWhenIdl
 	}
 	if got := depths.values(); !reflect.DeepEqual(got, []int{1, 0}) {
 		t.Fatalf("queue depth changes = %v, want only ordinary playback admission/removal", got)
+	}
+	health := scheduler.Health()
+	if health.BackgroundConvergenceState != BackgroundConvergenceConverged || health.BackgroundDirty || !health.BackgroundConverged {
+		t.Fatalf("background health = %+v, want clean converged after exact previous-frame restore", health)
+	}
+}
+
+func TestSchedulerPreviousFrameRestoreConvergesToRenderableBackgroundWithoutIdleDuplicate(t *testing.T) {
+	client := newFakeMatrixClient()
+	registry := animations.NewRegistry()
+	mustRegisterTestAnimation(t, registry, "background", testAnimation(1, time.Millisecond, 70))
+	mustRegisterTestAnimation(t, registry, "notify", testAnimation(2, time.Millisecond, 80))
+
+	depths := newQueueDepthRecorder()
+	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{
+		Background: BackgroundConfig{
+			AnimationID: "background",
+		},
+		OnQueueDepthChange: depths.record,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runScheduler(t, ctx, scheduler)
+
+	client.waitCommands(t, 1)
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:            "notify",
+		AnimationID:   "notify",
+		RestorePolicy: animations.RestorePreviousFrame,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	client.waitCommands(t, 4)
+	time.Sleep(50 * time.Millisecond)
+	got := commandKinds(client.commands())
+	want := []string{"frame:70", "frame:80", "frame:81", "frame:70"}
+	if len(got) != len(want) {
+		t.Fatalf("commands = %v, want exactly %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("commands = %v, want prefix %v", got, want)
+		}
+	}
+	if got := scheduler.QueueLen(); got != 0 {
+		t.Fatalf("queue length = %d, want 0; background convergence must stay out of ordinary queue", got)
+	}
+	if got := depths.values(); !reflect.DeepEqual(got, []int{1, 0}) {
+		t.Fatalf("queue depth changes = %v, want only ordinary playback admission/removal", got)
+	}
+	health := scheduler.Health()
+	if health.BackgroundConvergenceState != BackgroundConvergenceConverged || health.BackgroundDirty || !health.BackgroundConverged {
+		t.Fatalf("background health = %+v, want clean converged after exact previous-frame restore", health)
+	}
+}
+
+func TestSchedulerFailedPreviousFrameRestoreKeepsBackgroundDirty(t *testing.T) {
+	client := newFakeMatrixClient()
+	registry := animations.NewRegistry()
+	mustRegisterTestAnimation(t, registry, "notify", testAnimation(2, time.Millisecond, 90))
+	if err := registry.RegisterFirmwarePreset("rain", animations.FirmwarePreset{
+		EffectID: 12,
+		Interval: 90 * time.Millisecond,
+		Color:    RGB{R: 0, G: 255, B: 85},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{
+		Background: BackgroundConfig{
+			AnimationID: "rain",
+		},
+		HeartbeatInterval: 10 * time.Millisecond,
+	})
+	runCtx, stop := context.WithCancel(context.Background())
+	defer stop()
+	done := make(chan error, 1)
+	go func() {
+		done <- scheduler.Run(runCtx)
+	}()
+
+	client.waitCommands(t, 1)
+	client.failCommand("preset:12", &StatusError{Status: StatusUnknownCommand})
+	if err := scheduler.EnqueueRequest(runCtx, animations.AnimationRequest{
+		ID:            "notify",
+		AnimationID:   "notify",
+		RestorePolicy: animations.RestorePreviousFrame,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	waitClientAttempts(t, client, "preset:12", 2)
+	select {
+	case err := <-done:
+		if !sameStatusError(err, &StatusError{Status: StatusUnknownCommand}) {
+			t.Fatalf("scheduler Run() error = %v, want status error from failed previous-frame restore", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("scheduler did not stop after permanent previous-frame restore failure")
+	}
+	waitSchedulerHealth(t, scheduler, func(health Health) bool {
+		return health.BackgroundDirty && !health.BackgroundConverged && health.BackgroundConvergenceState != BackgroundConvergenceConverged
+	})
+	if got := commandKinds(client.commands()); !reflect.DeepEqual(got, []string{"preset:12", "frame:90", "frame:91"}) {
+		t.Fatalf("commands = %v, want failed previous-frame restore not recorded as successful preset", got)
 	}
 }
 
@@ -851,6 +958,95 @@ func TestSchedulerDueBackgroundRetryReportsFailedBeforeLoopAttemptsRestore(t *te
 	}
 	if attempts := client.attempts("preset:12"); attempts != 1 {
 		t.Fatalf("preset attempts immediately after retry deadline = %d, want 1 before loop observes deadline", attempts)
+	}
+}
+
+func TestProjectBackgroundConvergenceDueRetryEdges(t *testing.T) {
+	nextRetry := time.Date(2026, 6, 23, 8, 34, 0, 0, time.UTC)
+	beforeRetry := nextRetry.Add(-time.Nanosecond)
+	atRetry := nextRetry
+	afterRetry := nextRetry.Add(time.Nanosecond)
+
+	for _, tc := range []struct {
+		name      string
+		input     BackgroundConvergenceProjectionInput
+		now       time.Time
+		wantState BackgroundConvergenceState
+		wantDirty bool
+	}{
+		{
+			name: "dirty failed restore remains retrying before retry deadline",
+			input: BackgroundConvergenceProjectionInput{
+				State:                 BackgroundConvergenceRetrying,
+				Dirty:                 true,
+				LastRestoreError:      "matrix closed",
+				LastRestoreErrorClass: ErrorKindRetryable,
+				NextRetry:             &nextRetry,
+				FailureCount:          1,
+			},
+			now:       beforeRetry,
+			wantState: BackgroundConvergenceRetrying,
+			wantDirty: true,
+		},
+		{
+			name: "dirty failed restore is failed exactly when retry is due",
+			input: BackgroundConvergenceProjectionInput{
+				State:                 BackgroundConvergenceRetrying,
+				Dirty:                 true,
+				LastRestoreError:      "matrix closed",
+				LastRestoreErrorClass: ErrorKindRetryable,
+				NextRetry:             &nextRetry,
+				FailureCount:          1,
+			},
+			now:       atRetry,
+			wantState: BackgroundConvergenceFailed,
+			wantDirty: true,
+		},
+		{
+			name: "dirty failed restore is failed after retry deadline until attempted",
+			input: BackgroundConvergenceProjectionInput{
+				State:                 BackgroundConvergenceRetrying,
+				Dirty:                 true,
+				LastRestoreError:      "matrix closed",
+				LastRestoreErrorClass: ErrorKindRetryable,
+				NextRetry:             &nextRetry,
+				FailureCount:          1,
+			},
+			now:       afterRetry,
+			wantState: BackgroundConvergenceFailed,
+			wantDirty: true,
+		},
+		{
+			name: "in flight restore is attempting even when an old retry deadline exists",
+			input: BackgroundConvergenceProjectionInput{
+				State:                 BackgroundConvergenceAttempting,
+				Dirty:                 true,
+				LastRestoreError:      "matrix closed",
+				LastRestoreErrorClass: ErrorKindRetryable,
+				NextRetry:             &nextRetry,
+				FailureCount:          1,
+			},
+			now:       afterRetry,
+			wantState: BackgroundConvergenceAttempting,
+			wantDirty: true,
+		},
+		{
+			name: "new dirty state without failed attempt remains dirty",
+			input: BackgroundConvergenceProjectionInput{
+				State: BackgroundConvergenceDirty,
+				Dirty: true,
+			},
+			now:       afterRetry,
+			wantState: BackgroundConvergenceDirty,
+			wantDirty: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ProjectBackgroundConvergence(tc.input, tc.now)
+			if got.State != tc.wantState || got.Dirty != tc.wantDirty || got.Converged {
+				t.Fatalf("projection = %+v, want state=%q dirty=%v converged=false", got, tc.wantState, tc.wantDirty)
+			}
+		})
 	}
 }
 

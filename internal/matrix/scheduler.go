@@ -1376,7 +1376,11 @@ func (s *Scheduler) restore(ctx context.Context, policy animations.RestorePolicy
 		if !previous.known() {
 			return nil
 		}
-		return s.restoreDisplayState(ctx, previous)
+		err := s.restoreDisplayState(ctx, previous)
+		if err == nil && s.displayStateMatchesConfiguredBackground(previous) {
+			s.markDesiredBackgroundConverged()
+		}
+		return err
 	case animations.RestoreBackground:
 		// restore: background is the only playback restore policy that applies
 		// the scheduler-owned desired background immediately instead of waiting
@@ -1413,10 +1417,11 @@ func (s *Scheduler) restoreFirmwarePreset(ctx context.Context, preset animations
 	})
 	if err == nil {
 		s.rememberDisplayState(displayState{
-			Kind:     displayStatePreset,
-			EffectID: preset.EffectID,
-			Interval: preset.Interval,
-			Color:    preset.Color,
+			Kind:         displayStatePreset,
+			EffectID:     preset.EffectID,
+			Interval:     preset.Interval,
+			Color:        preset.Color,
+			BackgroundID: s.background.AnimationID,
 		})
 	}
 	return err
@@ -1437,9 +1442,30 @@ func (s *Scheduler) restoreRenderableBackground(ctx context.Context) error {
 		return fmt.Errorf("%w: %s", ErrEmptyAnimation, s.background.AnimationID)
 	}
 
-	return s.retryBackgroundMatrix(ctx, func() error {
+	err = s.retryBackgroundMatrix(ctx, func() error {
 		return s.playFrames(ctx, frames, time.Time{})
 	})
+	if err == nil {
+		s.rememberDisplayState(displayState{
+			Kind:         displayStateFrame,
+			Frame:        s.packer.Pack(frames[len(frames)-1]),
+			BackgroundID: s.background.AnimationID,
+		})
+	}
+	return err
+}
+
+func (s *Scheduler) displayStateMatchesConfiguredBackground(state displayState) bool {
+	if s.background.AnimationID == "" {
+		return false
+	}
+	if preset, ok := s.registry.FirmwarePreset(s.background.AnimationID); ok {
+		return state.Kind == displayStatePreset &&
+			state.EffectID == preset.EffectID &&
+			state.Interval == preset.Interval &&
+			state.Color == preset.Color
+	}
+	return state.Kind == displayStateFrame && state.BackgroundID == s.background.AnimationID
 }
 
 func (s *Scheduler) retryBackgroundMatrix(ctx context.Context, fn func() error) error {
@@ -1868,9 +1894,19 @@ func (s *Scheduler) backgroundDirtyStateLocked(now time.Time) BackgroundConverge
 func (s *Scheduler) markDesiredBackgroundClean() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.markDesiredBackgroundConvergedLocked()
+	s.backgroundLastRestoreSuccess = s.now().UTC()
+}
+
+func (s *Scheduler) markDesiredBackgroundConverged() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.markDesiredBackgroundConvergedLocked()
+}
+
+func (s *Scheduler) markDesiredBackgroundConvergedLocked() {
 	s.desiredBackgroundDirty = false
 	s.backgroundConvergenceState = BackgroundConvergenceConverged
-	s.backgroundLastRestoreSuccess = s.now().UTC()
 	s.backgroundLastRestoreError = ""
 	s.backgroundLastRestoreErrorClass = ErrorKindNone
 	s.resetBackgroundRetryLocked()

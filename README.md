@@ -62,6 +62,9 @@ call the TCP matrix client directly.
 
 ### Desired Background Convergence
 
+`/readyz.background` and matrix background observability are v1 contract-fixed; full
+state transition semantics live in `docs/background-convergence-v1.md`.
+
 The configured background is a scheduler-owned desired idle state, not an
 ordinary queued playback item. Background restore work stays outside the play
 queue, does not emit play-item outcomes, and is not counted in

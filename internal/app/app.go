@@ -606,15 +606,6 @@ func backgroundConvergenceProjectionForApp(health matrix.Health, now time.Time) 
 	}, now)
 }
 
-var backgroundMetricStates = []matrix.BackgroundConvergenceState{
-	matrix.BackgroundConvergenceUnknown,
-	matrix.BackgroundConvergenceDirty,
-	matrix.BackgroundConvergenceAttempting,
-	matrix.BackgroundConvergenceConverged,
-	matrix.BackgroundConvergenceFailed,
-	matrix.BackgroundConvergenceRetrying,
-}
-
 func setBackgroundStateMetrics(
 	registry *metrics.Registry,
 	kind matrix.BackgroundKind,
@@ -651,7 +642,7 @@ func setBackgroundGaugeMetrics(
 	}
 	registry.BackgroundDirty.WithLabelValues(string(kind)).Set(dirtyValue)
 	registry.BackgroundConverged.WithLabelValues(string(kind)).Set(convergedValue)
-	for _, metricState := range backgroundMetricStates {
+	for _, metricState := range matrix.BackgroundConvergenceV1States() {
 		value := 0.0
 		if state == metricState {
 			value = 1

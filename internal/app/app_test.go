@@ -418,6 +418,10 @@ func TestReadyAndMetricsExposeDueBackgroundRetryAsFailedWhilePlaybackActive(t *t
 		`kind="firmware_preset"`, `state="failed"`, " 1")
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_state",
 		`kind="firmware_preset"`, `state="retrying"`, " 0")
+	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_state",
+		`kind="firmware_preset"`, `state="attempting"`, " 0")
+	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_state",
+		`kind="firmware_preset"`, `state="dirty"`, " 0")
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_dirty",
 		`kind="firmware_preset"`, " 1")
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_converged",

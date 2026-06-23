@@ -2864,3 +2864,96 @@ A  internal/rules/engine.go
 A  internal/rules/engine_test.go
 A  internal/rules/mapper.go
 A  internal/rules/matcher.go
+2026-06-23T09:41:31Z iteration 18 started remaining=4990s
+2026-06-23T09:41:31Z iteration 18 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T09:41:31Z iteration 18 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-1_uja7_2/repo copied_entries=54
+2026-06-23T09:41:31Z iteration 18 ideator phase started count=3
+2026-06-23T09:41:31Z iteration 18 ideator phase concurrency workers=3
+2026-06-23T09:41:31Z iteration 18 ideator 1 role="the pragmatist" started
+2026-06-23T09:41:31Z iteration 18 ideator 2 role="the architect" started
+2026-06-23T09:41:31Z iteration 18 ideator 3 role="the contrarian" started
+2026-06-23T09:41:36Z iteration 18 ideator 1 role="the pragmatist" completed status=0
+2026-06-23T09:41:37Z iteration 18 ideator 2 role="the architect" completed status=0
+2026-06-23T09:41:53Z iteration 18 ideator 3 role="the contrarian" completed status=0
+2026-06-23T09:41:53Z iteration 18 ideator phase completed approaches=3
+2026-06-23T09:41:53Z iteration 18 selector started approaches=3
+2026-06-23T09:41:58Z iteration 18 selector completed status=0
+2026-06-23T09:41:58Z iteration 18 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-1_uja7_2/repo
+2026-06-23T09:41:58Z iteration 18 selector rejected alternative role="the contrarian" approach="Contract-First Stabilization, then Capability Expansion" reason="It over-prioritizes long-term freeze-and-stabilize posture and risks leaving known HTTP/event-boundary validation and projection-edge cases under-addressed while execution stalls."
+2026-06-23T09:41:58Z iteration 18 selector rejected alternative role="the pragmatist" approach="Contract Spine + Edge-Backed Sequencing" reason="Strong and practical, but by itself it is less explicit about preserving the full compatibility surface (scheduler health/readiness/metrics) as a single binding artifact before batching future features."
+2026-06-23T09:41:58Z iteration 18 selector rejected alternative role="the architect" approach="Contract-First Convergence Spine: freeze the v1 observable model first, then extend safely" reason="Strong structural framing for contracts, but less explicit about immediate unresolved event override validation asymmetry at the /events path that is already an operator-visible gap."
+2026-06-23T09:41:58Z iteration 18 selector alternatives persisted count=3
+2026-06-23T09:41:58Z iteration 18 selector structured alternatives persisted count=3
+2026-06-23T09:41:58Z iteration 18 planner started
+2026-06-23T09:42:08Z iteration 18 plan: 5 task(s) in 3 phase(s). Phase 1 freezes the shared projection spine first (highest-priority risk reducer), then phase 2 applies orthogonal API-contract hardening in parallel, and phase 3 applies one low-risk throughput optimization that depends on the finalized contract behavior.
+2026-06-23T09:42:08Z iteration 18 phase 1 started parallel=False tasks=2
+2026-06-23T09:43:32Z iteration 18 task t1 ('Freeze v1 background state contract and shared projection') status=0
+2026-06-23T09:44:37Z iteration 18 task t2 ('Add due-retry edge-transition regression tests') status=0
+2026-06-23T09:44:37Z iteration 18 phase 2 started parallel=True tasks=2
+2026-06-23T09:46:32Z iteration 18 task t4 ('Add structured animation catalog endpoint (metadata-only, non-playable-safe)') status=0
+2026-06-23T09:46:33Z iteration 18 task t3 ('Validate generic event animation overrides at HTTP boundary') status=0
+2026-06-23T09:46:33Z iteration 18 phase 3 started parallel=False tasks=1
+2026-06-23T09:50:07Z iteration 18 task t5 ('Deduplicate redundant background-restore commands safely') status=0
+2026-06-23T09:50:07Z iteration 18 reviewer started
+
+## Reviewer Summary - Iteration 18
+
+### What Was Done
+
+- Inspected the exact git diff and all files created or modified in this iteration: animation registry/catalog, HTTP handlers/routes/tests, app readiness/metrics projection use, scheduler background restore/deduplication, scheduler state projection, README, and the new background convergence contract document.
+- Confirmed `ProjectBackgroundConvergence` and `BackgroundConvergenceV1States` now define the shared v1 background convergence projection and bounded state vocabulary used by scheduler health, `/readyz.background`, and background state metrics.
+- Confirmed due-retry edge behavior is tested for pending, due, and post-deadline transitions, including long playback, disconnected, and delayed scheduler-loop windows.
+- Confirmed `/api/v1/events` now validates `attributes.animation` before publish, rejecting unknown and non-renderable firmware-preset IDs consistently with `/notify` and `/play`.
+- Confirmed `GET /api/v1/animations/catalog` exposes structured `{id, kind, playable}` metadata for all registry entries while preserving `GET /api/v1/animations` as the flat playable-only list.
+- Confirmed `restore: previous_frame` now avoids redundant idle background restore commands when the restored previous display state explicitly matches the configured background, for both firmware-preset and renderable background cases.
+- Confirmed failed previous-frame restore does not incorrectly mark the configured background clean.
+- Rewrote `PLAN.md` into a current operating plan that marks iteration 18 work complete, removes stale gaps, and prioritizes API truthfulness, background dedup telemetry semantics, declarative frame animations, and the remaining event/TCP/scheduler work.
+
+### What Was Found
+
+- No high-severity runtime regression was found in this iteration.
+- The planned work was fully implemented and covered by focused tests. `go test ./...`, `go vet ./...`, `go test -race ./...`, and targeted race checks for the touched matrix/app/httpapi surfaces all passed.
+- Medium severity: the new structured animation catalog endpoint is implemented and tested, but README/operator API docs do not yet describe `/api/v1/animations/catalog`; operators may miss the supported metadata-only discovery path.
+- Medium severity: `/api/v1/events` now validates `attributes.animation`, but other override fields remain inconsistent. Invalid `attributes.restore` and malformed `attributes.duration` still reach the async app-worker path instead of being rejected at the HTTP boundary.
+- Medium severity: deduped `restore: previous_frame` can mark desired background converged without updating background restore attempt/success telemetry, because the successful command is part of playback restore rather than scheduler-owned background restore. That may be the right separation, but it needs an explicit contract and tests around `last_success` and restore counters.
+- Medium severity: renderable-background deduplication relies on explicit display-state identity (`BackgroundID`), not pixel equality. This is conservative and correct, but equivalent frames from non-background sources will still trigger an idle background restore.
+- Medium severity: the catalog shape is safe but minimal. It exposes kind/playability but not firmware-preset metadata such as effect ID, interval, and color, so operator inspection is still limited.
+- Existing accepted limitations remain: no declarative frame/pixel-art animation support, no interrupt semantics, synchronous heartbeat probe latency, blocking event-bus v1 delivery, and no admin reload endpoint.
+
+### Top Improvement Proposals
+
+1. Document `GET /api/v1/animations/catalog` as the structured metadata endpoint, while keeping `/api/v1/animations` documented as playable-only and backward-compatible.
+2. Decide whether catalog entries should include firmware-preset metadata (`effect_id`, `interval`, `color`) while preserving `playable=false` for presets.
+3. Validate generic `/api/v1/events` override fields consistently: reject invalid `attributes.restore` and malformed/out-of-bounds `attributes.duration` before publish, or explicitly document them as asynchronous best-effort overrides.
+4. Freeze telemetry semantics for deduped previous-frame background convergence: either document that it marks clean without background restore metrics, or add a separate bounded reason/success signal that does not pollute restore-attempt counters.
+5. Add tests proving renderable-background dedupe only occurs when previous display state carries the configured background ID, not merely when frame bytes happen to match.
+6. Continue next with declarative frame/pixel-art animation support after the API/catalog and generic event validation contracts are settled.
+
+### Verification
+
+- `go test ./...` passed.
+- `go vet ./...` passed.
+- `go test -race ./...` passed.
+- `go test -race ./internal/matrix ./internal/app ./internal/integrations/httpapi -run 'TestScheduler.*Background|TestProjectBackgroundConvergence|TestReadyAndMetricsExpose.*Background|TestEventsAnimationOverride|TestAnimationCatalog|TestAnimationsEndpoint|TestSchedulerPreviousFrameRestore' -count=5` passed.
+2026-06-23T09:53:22Z iteration 18 reviewer completed status=0
+2026-06-23T09:53:22Z iteration 18 memory updated
+2026-06-23T09:53:22Z iteration 18 completed validation_status=0
+2026-06-23T09:53:22Z iteration 18 checkpoint started
+2026-06-23T09:53:22Z iteration 18 checkpoint status before commit:
+M  AGENT_LOG.md
+M  ALTERNATIVES.jsonl
+M  MEMORY.md
+M  PLAN.md
+M  README.md
+M  SCORES.jsonl
+A  docs/background-convergence-v1.md
+M  internal/animations/registry.go
+M  internal/animations/registry_test.go
+M  internal/app/app.go
+M  internal/app/app_test.go
+M  internal/integrations/httpapi/handlers.go
+M  internal/integrations/httpapi/server.go
+M  internal/integrations/httpapi/server_test.go
+M  internal/matrix/scheduler.go
+M  internal/matrix/scheduler_test.go
+M  internal/matrix/state.go

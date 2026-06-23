@@ -44,6 +44,13 @@ func TestRegistryRenderableHelpersSeparateGeneratedAnimationsFromFirmwarePresets
 	if got, want := registry.IDs(), []string{"alert", "matrix_rain_background", "notification"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("IDs() = %v, want %v", got, want)
 	}
+	if got, want := registry.Catalog(), []CatalogEntry{
+		{ID: "alert", Kind: EntryGenerated, Playable: true},
+		{ID: "matrix_rain_background", Kind: EntryFirmwarePreset, Playable: false},
+		{ID: "notification", Kind: EntryGenerated, Playable: true},
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Catalog() = %+v, want %+v", got, want)
+	}
 }
 
 func TestRegistryEntryAndFirmwarePresetReturnClonedMetadata(t *testing.T) {

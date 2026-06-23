@@ -1,4 +1,3 @@
-[learning] Public background convergence projection is safer when driven by one bounded function shared across scheduler health, readiness, and metrics, reducing multi-channel drift.
 [learning] Due-retry edge behavior should be explicitly modeled as transition states, not inferred ad-hoc from raw retry counters in each observer path.
 [learning] Scheduler-owned controls need explicit terminal completion when executed, canceled, expired, dropped, or queue-cleared; otherwise HTTP waiters can hang until context timeout.
 [anti-pattern] Do not retry every matrix command error as a reconnect signal; permanent firmware status, protocol, and validation errors should surface immediately.
@@ -48,3 +47,4 @@
 [learning] Background retry state must account for both dirty triggers and retry-deadline timing; stale `retrying` after a due deadline is as misleading as `dirty` during a pending retry.
 [learning] Public background convergence is safer when a single projection function feeds scheduler health, app readiness, and Prometheus state gauges.
 [learning] Due-retry edge behavior should be explicitly codified in one bounded contract to prevent contradictory signals between `/readyz.background` and metric one-hot state.
+[pattern] Desired-background duplicate suppression should require explicit state identity, such as a configured background ID or exact preset parameters; pixel-equivalent output alone is not a safe convergence proof.

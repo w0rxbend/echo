@@ -51,6 +51,12 @@ type presetRequest struct {
 	B        byte          `json:"b,omitempty"`
 }
 
+type animationCatalogEntry struct {
+	ID       string `json:"id"`
+	Kind     string `json:"kind"`
+	Playable bool   `json:"playable"`
+}
+
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	var event events.Event
 	if err := decodeJSON(r, &event); err != nil {
@@ -63,6 +69,12 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	if event.Type == "" {
 		writeError(w, http.StatusBadRequest, "type is required")
 		return
+	}
+	if animationID := event.Attributes["animation"]; animationID != "" {
+		if err := s.validatePlayableAnimation(animationID); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	if event.ID == "" {
 		event.ID = s.nextID("event")
@@ -187,6 +199,19 @@ func (s *Server) handleQueueClear(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAnimations(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"animations": s.registry.RenderableIDs()})
+}
+
+func (s *Server) handleAnimationCatalog(w http.ResponseWriter, r *http.Request) {
+	entries := s.registry.Catalog()
+	catalog := make([]animationCatalogEntry, 0, len(entries))
+	for _, entry := range entries {
+		catalog = append(catalog, animationCatalogEntry{
+			ID:       entry.ID,
+			Kind:     string(entry.Kind),
+			Playable: entry.Playable,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"animations": catalog})
 }
 
 func (s *Server) validatePlayableAnimation(id string) error {

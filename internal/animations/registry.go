@@ -34,6 +34,12 @@ type Entry struct {
 	FirmwarePreset *FirmwarePreset
 }
 
+type CatalogEntry struct {
+	ID       string
+	Kind     EntryKind
+	Playable bool
+}
+
 type Registry struct {
 	mu      sync.RWMutex
 	entries map[string]Entry
@@ -165,6 +171,23 @@ func (r *Registry) RenderableIDs() []string {
 	}
 	sort.Strings(ids)
 	return ids
+}
+
+func (r *Registry) Catalog() []CatalogEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	catalog := make([]CatalogEntry, 0, len(r.entries))
+	for id, entry := range r.entries {
+		catalog = append(catalog, CatalogEntry{
+			ID:       id,
+			Kind:     entry.Kind,
+			Playable: entry.Animation != nil,
+		})
+	}
+	sort.Slice(catalog, func(i, j int) bool {
+		return catalog[i].ID < catalog[j].ID
+	})
+	return catalog
 }
 
 func cloneEntry(entry Entry) Entry {

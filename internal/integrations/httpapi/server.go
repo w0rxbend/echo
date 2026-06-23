@@ -89,6 +89,7 @@ func (s *Server) Router() http.Handler {
 	r.With(s.adminOnly).Get("/queue", s.handleQueue)
 	r.With(s.adminOnly).Delete("/queue", s.handleQueueClear)
 	r.Get("/animations", s.handleAnimations)
+	r.Get("/animations/catalog", s.handleAnimationCatalog)
 
 	r.Route("/matrix", func(r chi.Router) {
 		r.Use(s.adminOnly)

@@ -23,6 +23,8 @@ import (
 	"github.com/worxbend/echo/internal/animations"
 	"github.com/worxbend/echo/internal/app"
 	"github.com/worxbend/echo/internal/config"
+	"github.com/worxbend/echo/internal/events"
+	"github.com/worxbend/echo/internal/integrations/httpapi"
 	"github.com/worxbend/echo/internal/matrix"
 )
 
@@ -845,6 +847,50 @@ func TestAnimationsEndpointListsOnlyRenderableAnimations(t *testing.T) {
 	}
 }
 
+func TestAnimationCatalogEndpointIncludesNonPlayableMetadata(t *testing.T) {
+	httpServer := newAnimationAPITestServer(t)
+
+	resp, err := http.Get(httpServer.URL + "/api/v1/animations/catalog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("GET /animations/catalog status = %d, body = %s, want %d", resp.StatusCode, data, http.StatusOK)
+	}
+
+	var body struct {
+		Animations []struct {
+			ID       string `json:"id"`
+			Kind     string `json:"kind"`
+			Playable bool   `json:"playable"`
+		} `json:"animations"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []struct {
+		ID       string
+		Kind     string
+		Playable bool
+	}{
+		{ID: "matrix_rain_background", Kind: string(animations.EntryFirmwarePreset), Playable: false},
+		{ID: animations.NotificationAnimationID, Kind: string(animations.EntryGenerated), Playable: true},
+	}
+	if len(body.Animations) != len(want) {
+		t.Fatalf("GET /animations/catalog animations = %+v, want %+v", body.Animations, want)
+	}
+	for i := range want {
+		if body.Animations[i].ID != want[i].ID ||
+			body.Animations[i].Kind != want[i].Kind ||
+			body.Animations[i].Playable != want[i].Playable {
+			t.Fatalf("GET /animations/catalog animations = %+v, want %+v", body.Animations, want)
+		}
+	}
+}
+
 func TestPlayValidatesPlayableAnimation(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -953,6 +999,102 @@ func TestNotifyAnimationOverrideValidatesPlayableAnimation(t *testing.T) {
 				if !strings.Contains(string(data), part) {
 					t.Fatalf("POST /notify body = %s, want to contain %q", data, part)
 				}
+			}
+		})
+	}
+}
+
+func TestEventsAnimationOverrideValidatesPlayableAnimationBeforePublish(t *testing.T) {
+	tests := []struct {
+		name           string
+		animation      string
+		wantStatus     int
+		wantErrorParts []string
+		wantPublished  bool
+	}{
+		{
+			name:          "renderable override",
+			animation:     animations.NotificationAnimationID,
+			wantStatus:    http.StatusAccepted,
+			wantPublished: true,
+		},
+		{
+			name:           "firmware preset override",
+			animation:      "matrix_rain_background",
+			wantStatus:     http.StatusBadRequest,
+			wantErrorParts: []string{"matrix_rain_background", "not renderable/playable"},
+		},
+		{
+			name:           "unknown override",
+			animation:      "unknown_animation",
+			wantStatus:     http.StatusBadRequest,
+			wantErrorParts: []string{"unknown_animation", "unknown animation"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bus := events.MustNewBus(4)
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+			ch, unsubscribe := bus.Subscribe(ctx)
+			t.Cleanup(unsubscribe)
+
+			registry := registryWithFirmwarePreset(t, "matrix_rain_background", animations.FirmwarePreset{
+				EffectID: 12,
+				Interval: 90 * time.Millisecond,
+				Color:    animations.RGB{G: 255, B: 85},
+			})
+			api, err := httpapi.New(httpapi.Options{
+				Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+				Bus:        bus,
+				Registry:   registry,
+				ServerAddr: "127.0.0.1:0",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			httpServer := httptest.NewServer(api.Router())
+			t.Cleanup(httpServer.Close)
+
+			body := bytes.NewBufferString(fmt.Sprintf(
+				`{"type":"notify","attributes":{"animation":%q}}`,
+				tt.animation,
+			))
+			resp, err := http.Post(httpServer.URL+"/events", "application/json", body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			data, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resp.StatusCode != tt.wantStatus {
+				t.Fatalf("POST /events status = %d, body = %s, want %d", resp.StatusCode, data, tt.wantStatus)
+			}
+			for _, part := range tt.wantErrorParts {
+				if !strings.Contains(string(data), part) {
+					t.Fatalf("POST /events body = %s, want to contain %q", data, part)
+				}
+			}
+
+			if tt.wantPublished {
+				select {
+				case event := <-ch:
+					if got := event.Attributes["animation"]; got != tt.animation {
+						t.Fatalf("published attributes.animation = %q, want %q", got, tt.animation)
+					}
+				case <-time.After(time.Second):
+					t.Fatal("timed out waiting for accepted event to publish")
+				}
+				return
+			}
+
+			select {
+			case event := <-ch:
+				t.Fatalf("invalid animation override was published to async event path: %#v", event)
+			case <-time.After(50 * time.Millisecond):
 			}
 		})
 	}
