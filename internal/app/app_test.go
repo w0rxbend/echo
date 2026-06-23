@@ -935,6 +935,48 @@ func TestAppStreamsGeneratedBackgroundFramesThroughFakeESP(t *testing.T) {
 	assertNoBufferedSetFrame(t, matrixServer)
 }
 
+func TestAppPlaysConfigAuthoredFrameAnimationThroughFakeESP(t *testing.T) {
+	matrixServer := newFakeESPServer(t)
+	defer matrixServer.Close()
+
+	cfg := loadFramePlaybackTestConfig(t, matrixServer.Addr())
+	animation, ok := cfg.AnimationRegistry.Get("orientation_badge")
+	if !ok {
+		t.Fatal("config-authored frame animation is not registered")
+	}
+	frames, err := animation.Render(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	expectedPayloads := expectedPackedPayloads(t, cfg, frames)
+	assertFramePlaybackFixtureCatchesUncompensatedLayout(t, frames, expectedPayloads)
+
+	application, err := app.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := runAppWorkers(t, application, ctx)
+	defer func() {
+		cancel()
+		waitAppWorkers(t, done)
+	}()
+
+	httpServer := httptest.NewServer(application.Handler())
+	defer httpServer.Close()
+	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
+	drainMatrixFrames(matrixServer)
+
+	postJSON(t, httpServer.URL+"/api/v1/play", `{"animation":"orientation_badge","duration":"250ms","restore":"leave"}`, http.StatusAccepted)
+	waitForExactSetFramePayloads(t, matrixServer, expectedPayloads)
+	waitForMetricLine(t, httpServer.URL, "matrix_proxy_animation_render_duration_seconds_count",
+		`animation="orientation_badge"`)
+	waitForSchedulerState(t, httpServer.URL, "ready")
+	waitForGaugeValue(t, httpServer.URL, "matrix_proxy_play_queue_depth", "0")
+	assertNoBufferedSetFrame(t, matrixServer)
+}
+
 func TestMetricsRemainReliableWhenOutcomeObserverDropsUnderBackpressure(t *testing.T) {
 	matrixServer := newFakeESPServer(t)
 	defer matrixServer.Close()
@@ -2246,6 +2288,94 @@ rules_file: %q
 	return cfg
 }
 
+func loadFramePlaybackTestConfig(t *testing.T, matrixAddr string) config.Config {
+	t.Helper()
+	t.Setenv("MATRIX_PROXY_CONFIG", "")
+
+	host, portText, err := net.SplitHostPort(matrixAddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	animationsPath := filepath.Join(dir, "animations.yaml")
+	if err := os.WriteFile(animationsPath, []byte(`
+animations:
+  orientation_badge:
+    type: frames
+    palette:
+      ".": "#000000"
+      A: "#110203"
+      B: "#220506"
+      C: "#330809"
+      D: "#440B0C"
+      E: "#550E0F"
+      F: "#661112"
+      G: "#771415"
+      H: "#881718"
+    frames:
+      - delay: 1ms
+        rows:
+          - "A......B"
+          - ".C....D."
+          - "..E..F.."
+          - "...GH..."
+          - "H...G..."
+          - "..F..E.."
+          - ".D....C."
+          - "B......A"
+      - delay: 1ms
+        rows:
+          - "B......A"
+          - "..D..C.."
+          - ".F....E."
+          - "G......H"
+          - "A......B"
+          - ".E....F."
+          - "..C..D.."
+          - "H......G"
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	rulesPath := filepath.Join(dir, "rules.yaml")
+	if err := os.WriteFile(rulesPath, []byte("rules: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	configPath := filepath.Join(dir, "config.yaml")
+	data := fmt.Sprintf(`server:
+  addr: "127.0.0.1:0"
+  admin_token_env: ""
+matrix:
+  host: %q
+  port: %d
+  connect_timeout: 20ms
+  response_timeout: 1s
+  heartbeat_interval: 20ms
+  probe_timeout: 50ms
+  reconnect_min_delay: 10ms
+  reconnect_max_delay: 50ms
+queue:
+  events_buffer: 16
+  play_buffer: 16
+animations_file: %q
+rules_file: %q
+`, host, port, animationsPath, rulesPath)
+	if err := os.WriteFile(configPath, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
 func findRepoFile(t *testing.T, relativePath string) string {
 	t.Helper()
 	dir, err := os.Getwd()
@@ -3171,6 +3301,29 @@ func assertGeneratedBackgroundFixtureCatchesRawDisplayBypass(t *testing.T, frame
 		raw := rawDisplayPayload(frame)
 		if bytes.Equal(raw, packedPayloads[i]) {
 			t.Fatalf("generated background fixture frame %d raw display payload equals packed payload; test would not catch layout bypass", i)
+		}
+	}
+}
+
+func assertFramePlaybackFixtureCatchesUncompensatedLayout(t *testing.T, frames []animations.Frame, packedPayloads [][]byte) {
+	t.Helper()
+	uncompensatedLayout, err := animations.NewLayout(
+		animations.CanvasWidth,
+		animations.CanvasHeight,
+		animations.WiringHorizontalTopLeft,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uncompensatedPacker, err := animations.NewPacker(uncompensatedLayout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, frame := range frames {
+		uncompensated := uncompensatedPacker.Pack(frame)
+		if bytes.Equal(uncompensated[:], packedPayloads[i]) {
+			t.Fatalf("frame playback fixture frame %d matches uncompensated h-tl packing; test would not catch missing odd-row display compensation", i)
 		}
 	}
 }

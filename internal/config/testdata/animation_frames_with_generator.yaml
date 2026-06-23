@@ -1,0 +1,17 @@
+animations:
+  stray_frames:
+    type: frames
+    generator: notification
+    palette:
+      ".": "#000000"
+    frames:
+      - delay: 100ms
+        rows:
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"

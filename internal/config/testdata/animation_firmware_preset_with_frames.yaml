@@ -1,0 +1,16 @@
+animations:
+  stray_firmware_preset:
+    type: firmware_preset
+    effect_id: 12
+    interval: 90ms
+    frames:
+      - delay: 100ms
+        rows:
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"

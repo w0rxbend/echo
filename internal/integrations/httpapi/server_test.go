@@ -2910,9 +2910,18 @@ type readyDetails struct {
 	Draining        bool             `json:"draining"`
 	SchedulerState  string           `json:"scheduler_state"`
 	MatrixConnected bool             `json:"matrix_connected"`
+	Background      readyBackground  `json:"background"`
 	EventWorker     readyEventWorker `json:"event_worker"`
 	LastSuccess     *time.Time       `json:"last_success"`
 	LastFailure     *time.Time       `json:"last_failure"`
+}
+
+type readyBackground struct {
+	ConfiguredID string `json:"configured_id"`
+	Kind         string `json:"kind"`
+	State        string `json:"state"`
+	Dirty        bool   `json:"dirty"`
+	Converged    bool   `json:"converged"`
 }
 
 type readyEventWorker struct {

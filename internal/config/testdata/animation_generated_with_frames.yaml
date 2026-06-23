@@ -1,0 +1,15 @@
+animations:
+  stray_generated:
+    type: generated
+    generator: notification
+    frames:
+      - delay: 100ms
+        rows:
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"

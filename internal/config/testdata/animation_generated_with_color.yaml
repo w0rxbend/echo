@@ -1,0 +1,5 @@
+animations:
+  stray_generated:
+    type: generated
+    generator: notification
+    color: "#00FF55"

@@ -59,7 +59,8 @@ Verified during this review:
 - `go test ./...` passes.
 - `go vet ./...` passes.
 - `go test -race ./...` passes.
-- `go test -race ./internal/animations ./internal/config ./internal/integrations/httpapi -run 'TestFrameAnimation|TestLoadFrameAnimation|TestLoadRejectsInvalidFrameAnimation|TestConfigAuthoredFrameAnimationPublicSurfaces|TestAnimationCatalog' -count=10` passes.
+- `go test -race ./internal/animations ./internal/config ./internal/app ./internal/integrations/httpapi -run 'TestFrameAnimation|TestLoadFrameAnimation|TestLoadRejectsInvalidFrameAnimation|TestLoadRejectsStrayAnimationTypeFields|TestConfigAuthoredFrameAnimationPublicSurfaces|TestAnimationCatalog|TestAppPlaysConfigAuthoredFrameAnimationThroughFakeESP|TestReadyzAndMetricsProjectGeneratedBackgroundKind|TestRegistryCatalogProjectsInternalRenderableKindToGenerated' -count=10` passes.
+- `go test -race ./internal/app -run 'TestAppPlaysConfigAuthoredFrameAnimationThroughFakeESP' -count=20` passes.
 
 Core implementation status:
 
@@ -87,8 +88,12 @@ Core implementation status:
 - Runtime animation config loads generated aliases, metadata-only firmware
   presets, and declarative `type: frames` animations.
 - Frame animations are authored as 8x8 display-space rows, validate palette
-  symbols/dimensions/delays at config load, render immutable frame copies, and
-  remain generated/playable entries in public discovery.
+  symbols/dimensions/delays at config load, render immutable frame copies,
+  reject known type-specific stray fields, and remain generated/playable
+  entries in public discovery.
+- Config-authored frame animation playback is covered end-to-end through app
+  workers, HTTP `/play`, scheduler playback, fake ESP `SetFullFrame` commands,
+  and layout-packed physical-chain payload assertions.
 - `matrix_rain_background` is config-authored as a metadata-only firmware
   preset background.
 - Animation registry distinguishes generated/playable animations from
@@ -142,26 +147,23 @@ High severity:
 
 Medium severity:
 
-- Frame animation public-surface coverage proves config loading, catalog
-  projection, `/animations`, `/play`, and `/events` ingress acceptance, but it
-  does not prove end-to-end playback through a running scheduler and fake ESP.
-  Add a black-box test that submits a config-authored frame animation and
-  verifies the emitted `SetFullFrame` payloads match layout-packed
-  display-space rows.
-- Animation config type schemas share one struct, so type-specific irrelevant
-  fields can be silently ignored. For example, `type: frames` with
-  `effect_id`, or `type: firmware_preset` with `frames`, does not currently
-  fail validation. Tighten this before the animation file becomes a larger
-  operator-facing surface.
+- Animation config now rejects known cross-type stray fields, but the YAML
+  decoder still ignores completely unknown or misspelled keys. A typo such as
+  `pallete` or an unsupported future-looking field can still be silently
+  dropped before type validation. Add strict unknown-field validation for
+  `animations.yaml`, with clear errors that include animation ID and field path.
+- Catalog wire-shape compatibility is strong today, but the handler depends on
+  a hand-written DTO conversion. Future metadata additions must update the DTO,
+  README, contract doc, and compatibility tests together or risk accidental API
+  broadening.
 - Frame animations are registered with generator ID `"frames"` but do not expose
-  a distinct internal/public animation subtype. This is acceptable for v1
-  because public kind remains `generated`, but future catalog expansion should
-  avoid overloading `kind` if operators need to distinguish generated aliases
-  from config-authored frame animations.
+  a distinct public subtype. This remains acceptable for v1 because public kind
+  is deliberately `generated`; add only a bounded optional `subtype` later if
+  operators need to distinguish generated aliases from config-authored frames.
 - Background restore event metrics use `ProjectBackgroundConvergence`, but the
   event-time path still constructs a partial projection input and uses wall
   clock time at callback execution. `/metrics` refreshes from scheduler health,
-  so black-box behavior is correct, but future event-time metric updates should
+  so black-box behavior is correct, but future event-time gauge updates should
   remain subordinate to scheduler health to avoid stale or contradictory gauges.
 - The scheduler idle hook makes previous-frame dedupe tests deterministic, but
   it is package-private production state used only by tests. Keep it contained;
@@ -197,37 +199,37 @@ Low severity:
 
 ## Next Iteration Priorities
 
-### Phase 1: Seal Declarative Frame Animation Contracts
+### Phase 1: Make Animation Config Schema Strict
 
-1. Add fake-ESP playback coverage for config-authored frame animations. (high)
-   - Start app workers with a config-authored `type: frames` animation.
-   - Submit `/play`, `/notify`, or a rules-driven event for that animation.
-   - Assert the fake ESP receives `SetFullFrame` payloads in physical chain
-     order, packed only through the layout mapper from display-space rows.
-   - Include an asymmetric fixture so display-space orientation mistakes are
-     visible.
+1. Reject unknown keys in `animations.yaml`. (high)
+   - Use YAML node-level validation or `KnownFields`-style decoding for
+     animation entries, frame objects, palette/color objects, and top-level
+     fields.
+   - Include the animation ID and offending key in errors.
+   - Preserve intentional schema-agnostic behavior only for event attributes,
+     not operator-authored animation config.
 
-2. Reject type-specific stray animation fields at config load. (high)
-   - `type: generated` should reject firmware preset fields and frame fields.
-   - `type: firmware_preset` should reject `generator`, `palette`, and
+2. Keep type-specific stray-field validation locked. (high)
+   - Preserve generated rejection of firmware preset fields and frame fields.
+   - Preserve firmware preset rejection of `generator`, `palette`, and
      `frames`.
-   - `type: frames` should reject `generator`, `effect_id`, `interval`, and
+   - Preserve frame rejection of `generator`, `effect_id`, `interval`, and
      `color`.
-   - Add targeted validation tests with clear error vocabulary.
+   - Add regression cases for empty-but-present disallowed fields so presence,
+     not only value, drives rejection.
 
-3. Freeze frame animation catalog behavior. (medium)
-   - Preserve `kind: "generated"` and `playable: true` for frame animations.
-   - Preserve absence of firmware metadata on generated/frame entries.
-   - If operators need to distinguish built-in aliases from frame animations,
-     add a new bounded optional field instead of changing `kind`.
+3. Keep frame-animation playback coverage black-box. (medium)
+   - Preserve the fake-ESP test that submits a config-authored frame animation
+     through `/play` and verifies exact physical-chain `SetFullFrame` payloads.
+   - Keep an asymmetric fixture that fails if display-space rows bypass the
+     layout mapper or odd-row display compensation.
 
-### Phase 2: Preserve Public Surface Compatibility
+### Phase 2: Preserve Public Animation Discovery Contracts
 
 1. Keep catalog wire shape locked. (high)
-   - Preserve tests asserting JSON types for `effect_id`, `interval`, and
-     `color`.
+   - Preserve JSON type tests for `effect_id`, `interval`, and `color`.
    - Keep stable required fields `id`, `kind`, and `playable`.
-   - Keep firmware metadata optional, bounded, and absent from generated
+   - Keep firmware metadata optional, bounded, and absent from generated/frame
      entries.
 
 2. Keep explicit HTTP DTOs for catalog responses. (medium)
@@ -240,6 +242,8 @@ Low severity:
      in `/readyz.background`, background metrics, and catalog output.
    - Any new public surface must include a negative check that internal
      `renderable` cannot leak.
+   - Do not change `kind` to distinguish frame animations; use a bounded
+     optional field only if that operator need becomes concrete.
 
 ### Phase 3: Background Projection And Dedupe Stability
 
@@ -313,10 +317,10 @@ Low severity:
 Keep existing coverage and expand in these areas:
 
 - Declarative frame animation tests for display-space parsing, palette
-  validation, immutable render output, config load rejection, public catalog
-  projection, and fake-ESP packed-frame playback.
-- Animation config schema tests for type-specific stray fields and clear error
-  vocabulary.
+  validation, immutable render output, type-specific rejection, unknown-key
+  rejection, public catalog projection, and fake-ESP packed-frame playback.
+- Animation config schema tests for strict unknown fields, type-specific stray
+  fields, empty-but-present disallowed fields, and clear error vocabulary.
 - Protocol builder checksum and payload limits, including 196-byte custom frame
   uploads.
 - Response parser validation and typed status mapping.

@@ -69,13 +69,13 @@ type schemaAnimationsFile struct {
 }
 
 type schemaAnimation struct {
-	Type      string             `yaml:"type"`
-	Generator string             `yaml:"generator"`
-	EffectID  *int               `yaml:"effect_id"`
-	Interval  *schemaDuration    `yaml:"interval"`
-	Color     *schemaRGB         `yaml:"color"`
-	Palette   schemaFramePalette `yaml:"palette"`
-	Frames    []schemaFrame      `yaml:"frames"`
+	Type      string              `yaml:"type"`
+	Generator *string             `yaml:"generator"`
+	EffectID  *int                `yaml:"effect_id"`
+	Interval  *schemaDuration     `yaml:"interval"`
+	Color     *schemaRGB          `yaml:"color"`
+	Palette   *schemaFramePalette `yaml:"palette"`
+	Frames    *[]schemaFrame      `yaml:"frames"`
 }
 
 type schemaRGB struct {
@@ -190,15 +190,21 @@ func resolveReferencedPath(configPath, referencedPath string) string {
 func registerConfiguredAnimation(registry *animations.Registry, id string, entry schemaAnimation) error {
 	switch entry.Type {
 	case string(animations.EntryGenerated):
-		if entry.Generator == "" {
+		if err := rejectAnimationFields(entry.Type, entry, "effect_id", "interval", "color", "palette", "frames"); err != nil {
+			return err
+		}
+		if entry.Generator == nil || *entry.Generator == "" {
 			return errors.New("generator is required for generated animation")
 		}
-		animation, err := animations.NewGeneratedAnimation(entry.Generator)
+		animation, err := animations.NewGeneratedAnimation(*entry.Generator)
 		if err != nil {
 			return err
 		}
-		return registry.RegisterGenerated(id, entry.Generator, animation)
+		return registry.RegisterGenerated(id, *entry.Generator, animation)
 	case string(animations.EntryFirmwarePreset):
+		if err := rejectAnimationFields(entry.Type, entry, "generator", "palette", "frames"); err != nil {
+			return err
+		}
 		if entry.EffectID == nil {
 			return errors.New("effect_id is required for firmware_preset animation")
 		}
@@ -217,6 +223,9 @@ func registerConfiguredAnimation(registry *animations.Registry, id string, entry
 		}
 		return registry.RegisterFirmwarePreset(id, preset)
 	case "frames":
+		if err := rejectAnimationFields(entry.Type, entry, "generator", "effect_id", "interval", "color"); err != nil {
+			return err
+		}
 		return registerConfiguredFrameAnimation(registry, id, entry)
 	case "":
 		return errors.New("type is required")
@@ -225,13 +234,46 @@ func registerConfiguredAnimation(registry *animations.Registry, id string, entry
 	}
 }
 
+func rejectAnimationFields(animationType string, entry schemaAnimation, fields ...string) error {
+	for _, field := range fields {
+		if !animationFieldPresent(entry, field) {
+			continue
+		}
+		return fmt.Errorf("field %q is not allowed for %s animation", field, animationType)
+	}
+	return nil
+}
+
+func animationFieldPresent(entry schemaAnimation, field string) bool {
+	switch field {
+	case "generator":
+		return entry.Generator != nil
+	case "effect_id":
+		return entry.EffectID != nil
+	case "interval":
+		return entry.Interval != nil
+	case "color":
+		return entry.Color != nil
+	case "palette":
+		return entry.Palette != nil
+	case "frames":
+		return entry.Frames != nil
+	default:
+		return false
+	}
+}
+
 func registerConfiguredFrameAnimation(registry *animations.Registry, id string, entry schemaAnimation) error {
 	if entry.Palette == nil {
 		return errors.New("palette is required for frames animation")
 	}
 
-	specs := make([]animations.FrameSpec, 0, len(entry.Frames))
-	for i, frame := range entry.Frames {
+	frames := []schemaFrame(nil)
+	if entry.Frames != nil {
+		frames = *entry.Frames
+	}
+	specs := make([]animations.FrameSpec, 0, len(frames))
+	for i, frame := range frames {
 		if frame.Delay == nil {
 			return fmt.Errorf("frame %d delay is required", i)
 		}
@@ -241,7 +283,7 @@ func registerConfiguredFrameAnimation(registry *animations.Registry, id string, 
 		})
 	}
 
-	animation, err := animations.NewFrameAnimation(specs, []animations.FramePaletteEntry(entry.Palette))
+	animation, err := animations.NewFrameAnimation(specs, []animations.FramePaletteEntry(*entry.Palette))
 	if err != nil {
 		return err
 	}

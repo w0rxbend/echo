@@ -4168,3 +4168,96 @@ A  internal/animations/frames_test.go
 M  internal/config/config_test.go
 M  internal/config/loader.go
 M  internal/integrations/httpapi/server_test.go
+2026-06-23T12:23:40Z iteration 4 started remaining=16153s
+2026-06-23T12:23:40Z iteration 4 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T12:23:40Z iteration 4 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-sh8fchdf/repo copied_entries=58
+2026-06-23T12:23:40Z iteration 4 ideator phase started count=3
+2026-06-23T12:23:40Z iteration 4 ideator phase concurrency workers=3
+2026-06-23T12:23:40Z iteration 4 ideator 1 role="the pragmatist" started
+2026-06-23T12:23:40Z iteration 4 ideator 2 role="the architect" started
+2026-06-23T12:23:40Z iteration 4 ideator 3 role="the contrarian" started
+2026-06-23T12:23:50Z iteration 4 ideator 2 role="the architect" completed status=0
+2026-06-23T12:23:51Z iteration 4 ideator 1 role="the pragmatist" completed status=0
+2026-06-23T12:23:51Z iteration 4 ideator 3 role="the contrarian" completed status=0
+2026-06-23T12:23:51Z iteration 4 ideator phase completed approaches=3
+2026-06-23T12:23:51Z iteration 4 selector started approaches=3
+2026-06-23T12:24:01Z iteration 4 selector completed status=0
+2026-06-23T12:24:01Z iteration 4 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-sh8fchdf/repo
+2026-06-23T12:24:01Z iteration 4 selector rejected alternative role="the architect" approach="Contract-First Frame Boundary Hardening: treat declarative frame animations as a boundary-contract stabilization effort before adding broader scheduler or reload features, seque..." reason="Strong framing around vertical contract proof, but not explicit enough about negative validation as a first-class planning concern. Silent acceptance of stray type-specific fields is one of the clearest current risks."
+2026-06-23T12:24:01Z iteration 4 selector rejected alternative role="the pragmatist" approach="Contract-First Hardening: treat the next iteration as a public and firmware contract freeze before adding new behavior. Drive sequencing from the highest-risk boundary outward:..." reason="Very close to the selected strategy, but its happy-path-first sequence should be balanced with earlier negative contract locks so the planner does not defer schema and catalog guardrails behind playback proof."
+2026-06-23T12:24:01Z iteration 4 selector rejected alternative role="the contrarian" approach="Contract-Negative First: treat the next iteration as a boundary-hardening pass driven primarily by what must be impossible, not by what should work. Start from the declarative a..." reason="Correctly emphasizes impossible states and accidental API expansion, but selected as-is it risks underweighting the explicit high-priority fake-ESP playback gap that proves display-space rows reach the firmware in physical chain order."
+2026-06-23T12:24:01Z iteration 4 selector alternatives persisted count=3
+2026-06-23T12:24:01Z iteration 4 selector structured alternatives persisted count=3
+2026-06-23T12:24:01Z iteration 4 planner started
+2026-06-23T12:24:18Z iteration 4 plan: 4 task(s) in 3 phase(s). This iteration focuses on sealing the newest operator-facing declarative frame animation boundary. Phase 1 changes config validation first because later tests should rely on the stricter schema. Phase 2 can run in parallel because catalog/public projection tests touch separate surfaces. Phase 3 depends on valid frame config semantics and then proves the full config-to-HTTP-to-scheduler-to-firmware payload path.
+2026-06-23T12:24:18Z iteration 4 phase 1 started parallel=False tasks=1
+2026-06-23T12:26:20Z iteration 4 task t1 ('Reject stray animation config fields') status=0
+2026-06-23T12:26:20Z iteration 4 phase 2 started parallel=True tasks=2
+2026-06-23T12:27:38Z iteration 4 task t2 ('Freeze frame animation catalog contract') status=0
+2026-06-23T12:29:04Z iteration 4 task t3 ('Preserve public kind projection guardrails') status=0
+2026-06-23T12:29:04Z iteration 4 phase 3 started parallel=False tasks=1
+2026-06-23T12:31:25Z iteration 4 task t4 ('Add fake ESP playback test for frame animations') status=0
+2026-06-23T12:31:25Z iteration 4 reviewer started
+
+## Reviewer Summary - Iteration 4
+
+### What Was Done
+
+- Inspected the exact git diff and every created or modified file in this iteration: config loader/tests, new config fixtures, new animation/catalog and HTTP readiness/catalog tests, app fake-ESP playback tests, and orchestration metadata.
+- Confirmed known type-specific animation fields are now rejected at config load: generated entries reject firmware/frame fields, firmware presets reject generator/palette/frames, and frame animations reject generator/effect/interval/color.
+- Confirmed frame animation catalog behavior is covered: frame animations remain `kind: "generated"`, `playable: true`, omit firmware metadata, and do not leak internal `renderable` vocabulary.
+- Confirmed public kind projection guardrails were extended with registry and `/readyz`/metrics tests for generated backgrounds.
+- Confirmed config-authored frame animation playback is now covered end-to-end through app workers, HTTP `/play`, scheduler playback, fake ESP `SetFullFrame`, and exact layout-packed physical-chain payload checks with an asymmetric fixture.
+
+### What Was Found
+
+- No high-severity runtime regression was found. `go test ./...`, `go vet ./...`, `go test -race ./...`, focused race checks for touched surfaces, and a repeated fake-ESP frame playback race test all pass.
+- The four planned tasks were fully implemented: stray known fields are rejected, frame catalog shape is frozen, public kind guardrails are preserved, and fake-ESP playback coverage exists.
+- Medium severity: animation config validation still is not strict for completely unknown or misspelled YAML keys. The new validation catches known cross-type fields, but a typo such as `pallete` can still be silently ignored by YAML decoding.
+- Medium severity: the catalog DTO boundary remains hand-maintained. Future metadata additions must update the HTTP DTO, docs, and compatibility tests together to avoid accidental API broadening.
+- Existing accepted limitations remain: no background retry `failure_count` metric, synchronous heartbeat probe latency, TCP metric callbacks under the TCP mutex, blocking event-bus v1 delivery, ignored `InterruptMode`, and no admin reload endpoint.
+
+### Top Improvement Proposals
+
+1. Add strict unknown-key validation for `animations.yaml`, including animation IDs and field paths in errors; preserve schema-agnostic behavior only for event attributes.
+2. Add empty-but-present disallowed field regressions so type-specific validation remains based on field presence, not only nonzero values.
+3. Keep the fake-ESP frame playback test as the contract for display-space-to-physical-chain packing; preserve its asymmetric fixture when refactoring frame rendering or layout code.
+4. Keep explicit HTTP catalog DTOs and wire-shape tests synchronized with README and `docs/background-convergence-v1.md` whenever catalog metadata changes.
+5. Continue with strict animation config schema work before expanding frame animation subtype metadata, interrupt behavior, reload, or event delivery semantics.
+
+### Verification
+
+- `go test ./...` passed.
+- `go vet ./...` passed.
+- `go test -race ./...` passed.
+- `go test -race ./internal/animations ./internal/config ./internal/app ./internal/integrations/httpapi -run 'TestFrameAnimation|TestLoadFrameAnimation|TestLoadRejectsInvalidFrameAnimation|TestLoadRejectsStrayAnimationTypeFields|TestConfigAuthoredFrameAnimationPublicSurfaces|TestAnimationCatalog|TestAppPlaysConfigAuthoredFrameAnimationThroughFakeESP|TestReadyzAndMetricsProjectGeneratedBackgroundKind|TestRegistryCatalogProjectsInternalRenderableKindToGenerated' -count=10` passed.
+- `go test -race ./internal/app -run 'TestAppPlaysConfigAuthoredFrameAnimationThroughFakeESP' -count=20` passed.
+2026-06-23T12:34:37Z iteration 4 reviewer completed status=0
+2026-06-23T12:34:37Z iteration 4 memory updated
+2026-06-23T12:34:38Z iteration 4 completed validation_status=0
+2026-06-23T12:34:38Z iteration 4 checkpoint started
+2026-06-23T12:34:38Z iteration 4 checkpoint status before commit:
+M  AGENT_LOG.md
+M  ALTERNATIVES.jsonl
+M  MEMORY.md
+M  PLAN.md
+M  SCORES.jsonl
+A  internal/animations/catalog_test.go
+M  internal/app/app_test.go
+M  internal/config/config_test.go
+M  internal/config/loader.go
+A  internal/config/testdata/animation_firmware_preset_with_frames.yaml
+A  internal/config/testdata/animation_firmware_preset_with_generator.yaml
+A  internal/config/testdata/animation_firmware_preset_with_palette.yaml
+A  internal/config/testdata/animation_frames_with_color.yaml
+A  internal/config/testdata/animation_frames_with_effect_id.yaml
+A  internal/config/testdata/animation_frames_with_generator.yaml
+A  internal/config/testdata/animation_frames_with_interval.yaml
+A  internal/config/testdata/animation_generated_with_color.yaml
+A  internal/config/testdata/animation_generated_with_effect_id.yaml
+A  internal/config/testdata/animation_generated_with_frames.yaml
+A  internal/config/testdata/animation_generated_with_interval.yaml
+A  internal/config/testdata/animation_generated_with_palette.yaml
+A  internal/integrations/httpapi/animations_test.go
+A  internal/integrations/httpapi/readyz_test.go
+M  internal/integrations/httpapi/server_test.go

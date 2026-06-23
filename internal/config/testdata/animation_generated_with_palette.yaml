@@ -1,0 +1,6 @@
+animations:
+  stray_generated:
+    type: generated
+    generator: notification
+    palette:
+      ".": "#000000"

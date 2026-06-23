@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -313,6 +314,13 @@ queue:
 	if catalogEntry.EffectID != nil || catalogEntry.Interval != nil || catalogEntry.Color != nil {
 		t.Fatalf("frame animation catalog entry exposes firmware metadata: %+v", catalogEntry)
 	}
+	catalogJSON, err := json.Marshal(cfg.AnimationRegistry.Catalog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(catalogJSON), "renderable") {
+		t.Fatalf("frame animation catalog leaked internal kind: %s", catalogJSON)
+	}
 }
 
 func TestLoadRejectsUnknownAnimationType(t *testing.T) {
@@ -323,6 +331,45 @@ animations:
 `, validRules("notification"))
 	if err == nil || !strings.Contains(err.Error(), `unknown animation type "sparkle"`) {
 		t.Fatalf("Load() error = %v, want unknown animation type", err)
+	}
+}
+
+func TestLoadRejectsStrayAnimationTypeFields(t *testing.T) {
+	tests := []struct {
+		name          string
+		fixture       string
+		animationType string
+		field         string
+	}{
+		{name: "generated effect id", fixture: "animation_generated_with_effect_id.yaml", animationType: "generated", field: "effect_id"},
+		{name: "generated interval", fixture: "animation_generated_with_interval.yaml", animationType: "generated", field: "interval"},
+		{name: "generated color", fixture: "animation_generated_with_color.yaml", animationType: "generated", field: "color"},
+		{name: "generated palette", fixture: "animation_generated_with_palette.yaml", animationType: "generated", field: "palette"},
+		{name: "generated frames", fixture: "animation_generated_with_frames.yaml", animationType: "generated", field: "frames"},
+		{name: "firmware preset generator", fixture: "animation_firmware_preset_with_generator.yaml", animationType: "firmware_preset", field: "generator"},
+		{name: "firmware preset palette", fixture: "animation_firmware_preset_with_palette.yaml", animationType: "firmware_preset", field: "palette"},
+		{name: "firmware preset frames", fixture: "animation_firmware_preset_with_frames.yaml", animationType: "firmware_preset", field: "frames"},
+		{name: "frames generator", fixture: "animation_frames_with_generator.yaml", animationType: "frames", field: "generator"},
+		{name: "frames effect id", fixture: "animation_frames_with_effect_id.yaml", animationType: "frames", field: "effect_id"},
+		{name: "frames interval", fixture: "animation_frames_with_interval.yaml", animationType: "frames", field: "interval"},
+		{name: "frames color", fixture: "animation_frames_with_color.yaml", animationType: "frames", field: "color"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := loadWithAnimationFixture(t, tt.fixture)
+			if err == nil {
+				t.Fatal("Load() error = nil, want stray field rejection")
+			}
+			for _, want := range []string{
+				`field "` + tt.field + `"`,
+				tt.animationType + " animation",
+			} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("Load() error = %v, want containing %q", err, want)
+				}
+			}
+		})
 	}
 }
 
@@ -651,6 +698,16 @@ queue:
 `)
 	_, err := Load(path)
 	return err
+}
+
+func loadWithAnimationFixture(t *testing.T, fixture string) error {
+	t.Helper()
+
+	body, err := os.ReadFile(filepath.Join("testdata", fixture))
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", fixture, err)
+	}
+	return loadWithAnimations(t, string(body), validRules("notification"))
 }
 
 func validRules(animationID string) string {
