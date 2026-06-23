@@ -1887,6 +1887,106 @@ func TestEventsSchemaAgnosticAttributesPassInterruptValidation(t *testing.T) {
 	}
 }
 
+func TestPlayHigherPriorityInterruptEvictsQueuedLowerPriorityItems(t *testing.T) {
+	matrixServer := newFakeESPServer(t)
+	defer matrixServer.Close()
+
+	application, err := app.New(newHTTPMatrixTestConfig(t, matrixServer.Addr()), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := runAppWorkers(t, application)
+	defer func() {
+		matrixServer.ResumePausedFrameResponse()
+		shutdownAppWorkers(t, application, done)
+	}()
+
+	httpServer := httptest.NewServer(application.Handler())
+	defer httpServer.Close()
+	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
+
+	// Pause the fake ESP before it responds to the first SetFrame command,
+	// keeping the first animation in-flight so we can queue more behind it.
+	pausedFrameResponse := matrixServer.PauseNextFrameResponse()
+
+	// 1. POST the first animation at priority 0 — it will become the in-flight item.
+	lowPrioBody := fmt.Sprintf(`{"animation":%q,"duration":"2s","restore":"leave","priority":0}`, animations.NotificationAnimationID)
+	resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", bytes.NewBufferString(lowPrioBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("POST /play (in-flight) status = %d, want %d", resp.StatusCode, http.StatusAccepted)
+	}
+
+	// Wait for the ESP to receive the SetFrame, then for the ESP to signal it is paused.
+	waitForMatrixCommand(t, matrixServer, testCommandSetFrame)
+	select {
+	case <-pausedFrameResponse:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first frame response to pause")
+	}
+
+	// 2. Queue two more low-priority animations behind the in-flight item.
+	for i := 0; i < 2; i++ {
+		resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", bytes.NewBufferString(lowPrioBody))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusAccepted {
+			t.Fatalf("POST /play (queued %d) status = %d, want %d", i+1, resp.StatusCode, http.StatusAccepted)
+		}
+	}
+
+	// 3. Confirm both low-priority items are sitting in the queue.
+	waitForQueueDepth(t, httpServer.URL, 2)
+
+	// 4. POST a high-priority animation with interrupt_mode "higher_priority".
+	//    The scheduler will evict the two queued low-priority items synchronously
+	//    inside EnqueueRequest, leaving only this item in the queue.
+	highPrioBody := fmt.Sprintf(`{"animation":%q,"duration":"500ms","restore":"leave","priority":10,"interrupt_mode":"higher_priority"}`, animations.NotificationAnimationID)
+	resp, err = http.Post(httpServer.URL+"/api/v1/play", "application/json", bytes.NewBufferString(highPrioBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("POST /play (high-priority interrupt) status = %d, want %d", resp.StatusCode, http.StatusAccepted)
+	}
+
+	// 5. Poll until queue depth == 1: the two low-priority items were evicted and only
+	//    the high-priority item remains waiting.  The in-flight item (priority 0) is NOT
+	//    cancelled — higher_priority mode only evicts queued items, not in-flight ones.
+	waitForQueueDepth(t, httpServer.URL, 1)
+
+	queueResp, err := http.Get(httpServer.URL + "/api/v1/queue")
+	if err != nil {
+		t.Fatal(err)
+	}
+	queueData, err := io.ReadAll(queueResp.Body)
+	_ = queueResp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	queue := decodeQueueResponse(t, queueData)
+	if queue.State == "draining" {
+		t.Fatalf("GET /queue state = %q after interrupt, want not draining", queue.State)
+	}
+	if len(queue.Items) != 1 || queue.Items[0].Priority != 10 {
+		t.Fatalf("GET /queue items = %+v after interrupt, want 1 item with priority 10", queue.Items)
+	}
+
+	// 6. Resume the fake ESP so the in-flight low-priority animation can complete.
+	matrixServer.ResumePausedCommandResponse()
+
+	// 7. Wait for the high-priority animation to run and send its first SetFrame.
+	//    This proves the interrupt wired all the way through: HTTP → scheduler → ESP.
+	waitForMatrixCommand(t, matrixServer, testCommandSetFrame)
+}
+
 func newAnimationAPITestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	cfg := newAdminAuthTestConfig(t)
