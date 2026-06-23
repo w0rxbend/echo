@@ -1,0 +1,15 @@
+rules:
+  - id: http_notify_default
+    when:
+      source: http
+      type: notify
+    play:
+      animation: notification
+      priority: 50
+      duration: 2s
+      interrupt: none
+      # Restore controls the immediate post-playback behavior. With
+      # background.restore_on_idle enabled, the configured background still owns
+      # the eventual idle matrix state even if a rule uses leave,
+      # previous_frame, clear, or blank here.
+      restore: background

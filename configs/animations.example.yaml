@@ -1,0 +1,18 @@
+animations:
+  # Generated entries are renderable/playable and may be used by rules, /play,
+  # /notify animation overrides, or background restore. When used as a
+  # background, generated animations are rendered as finite frame sequences; they
+  # are not infinite background queue items.
+  alert_pulse:
+    type: generated
+    generator: notification
+
+  # Firmware presets are metadata-only background entries. They describe an
+  # effect already implemented by the matrix firmware. They are applied only by
+  # the scheduler background path and are not directly playable animation IDs for
+  # rules, /play, /notify overrides, or /api/v1/animations.
+  matrix_rain_background:
+    type: firmware_preset
+    effect_id: 12
+    interval: 90ms
+    color: "#00FF55"

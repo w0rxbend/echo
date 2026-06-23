@@ -1,0 +1,93 @@
+server:
+  addr: ":8080"
+  admin_token_env: "MATRIX_PROXY_ADMIN_TOKEN"
+
+matrix:
+  host: "192.168.1.127"
+  port: 7777
+  connect_timeout: 5s
+  response_timeout: 2s
+  heartbeat_interval: 5s
+  # Idle heartbeat probes run on the scheduler selection path. Newly queued
+  # matrix work can wait up to this timeout behind an in-progress probe.
+  probe_timeout: 2s
+  reconnect_min_delay: 500ms
+  reconnect_max_delay: 10s
+  brightness: 30
+  layout:
+    width: 8
+    height: 8
+    wiring: "h-tl"
+    odd_row_display_flip: true
+
+queue:
+  # Event bus subscriber channel capacity. matrix_proxy_event_queue_depth reports
+  # only buffered events waiting in the app event-worker subscriber channel; it
+  # does not include the event currently being processed. Use
+  # matrix_proxy_event_worker_inflight for that separate active-event signal.
+  events_buffer: 512
+  play_buffer: 128
+  # Only "block" is currently supported. HTTP and event publishers fan out
+  # sequentially and can wait behind a full app-worker subscriber until that
+  # subscriber receives or the publish context expires. Close and unsubscribe do
+  # not release an already blocked publisher. Publish failure is not atomic
+  # non-delivery: earlier subscribers may already have received the event before
+  # a later blocked subscriber causes context expiry. Publisher
+  # backpressure is exposed through total-only metrics that intentionally keep
+  # no subscriber labels:
+  # matrix_proxy_event_publish_backpressure_duration_seconds records blocked
+  # publish duration, and matrix_proxy_event_publish_backpressure_timeouts_total
+  # counts publish context expiry while blocked. The obsolete
+  # matrix_proxy_event_publish_backpressure_wait_seconds family is not
+  # registered.
+  overflow_policy: "block"
+  # Nonzero dedup windows are rejected until event deduplication is implemented.
+  dedup_window: 0s
+
+background:
+  # This ID is loaded from configs/animations.example.yaml as a firmware_preset.
+  # When restore_on_idle is true and animation is set, the scheduler treats this
+  # background as desired device state. It applies it after the first
+  # firmware-verified connection, restores it after reconnect, and converges
+  # back to it whenever the scheduler returns to idle after ordinary playback or
+  # direct matrix controls.
+  # Playback restore policies affect only immediate post-playback behavior:
+  # "restore: background" requests an immediate background restore, while
+  # policies such as "leave", "previous_frame", "clear", and "blank" do not
+  # permanently suppress idle convergence to this configured background.
+  # Direct fill, clear, and preset controls are transient maintenance operations
+  # too. They execute through the scheduler, then the configured background is
+  # applied again once the scheduler is idle.
+  # For manual hardware validation where fill, clear, or preset commands should
+  # remain visible indefinitely, temporarily set restore_on_idle to false or set
+  # animation to the background/preset you want to validate.
+  # The animation may point at either a renderable animation or a firmware_preset.
+  # Firmware presets are background-only metadata and must not be used as rule
+  # play.animation values, direct /play IDs, or /api/v1/animations entries.
+  # Renderable backgrounds are applied through finite rendered frames, not as
+  # long-running queue items. All background commands use the scheduler-owned
+  # matrix path; integrations and HTTP handlers do not talk directly to the TCP
+  # client.
+  # Background retry bounds are intentionally fixed v1 behavior and have no
+  # config keys: retryable failures back off from 1s to 30s, permanent failures
+  # back off from 30s to 5m, and both retry forever with capped backoff.
+  # Only a successful background restore marks the configured background clean.
+  # /readyz.background reports next_retry and failure_count; failure_count is
+  # not exported as a Prometheus metric. While next_retry is pending, state is
+  # "retrying": the configured background is dirty, next_retry is in the future,
+  # and the scheduler suppresses another restore attempt until that deadline.
+  # Plain "dirty" means restore is needed with no failed retry state recorded.
+  # "failed" means the configured background is still dirty after a failed
+  # restore, and no future retry deadline is suppressing attempts because
+  # next_retry is absent, due, or in the past. The scheduler will retry at the
+  # next eligible idle and connected opportunity. next_retry is retained as the
+  # scheduled timestamp when it becomes due; the Prometheus
+  # matrix_proxy_background_next_retry_seconds gauge reports 0 once next_retry
+  # is due, in the past, or absent.
+  # "restore: background" before next_retry cannot bypass the deadline, force a
+  # restore attempt, or change state away from "retrying".
+  animation: "matrix_rain_background"
+  restore_on_idle: true
+
+animations_file: "configs/animations.example.yaml"
+rules_file: "configs/rules.example.yaml"
