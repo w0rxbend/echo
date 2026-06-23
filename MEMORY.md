@@ -1,4 +1,3 @@
-[learning] Due-retry edge behavior should be explicitly modeled as transition states, not inferred ad-hoc from raw retry counters in each observer path.
 [learning] Scheduler-owned controls need explicit terminal completion when executed, canceled, expired, dropped, or queue-cleared; otherwise HTTP waiters can hang until context timeout.
 [anti-pattern] Do not retry every matrix command error as a reconnect signal; permanent firmware status, protocol, and validation errors should surface immediately.
 [learning] Readiness based on last successful matrix command goes stale while idle; use an active heartbeat or equivalent connectivity source of truth.
@@ -48,3 +47,4 @@
 [learning] Public background convergence is safer when a single projection function feeds scheduler health, app readiness, and Prometheus state gauges.
 [learning] Due-retry edge behavior should be explicitly codified in one bounded contract to prevent contradictory signals between `/readyz.background` and metric one-hot state.
 [pattern] Desired-background duplicate suppression should require explicit state identity, such as a configured background ID or exact preset parameters; pixel-equivalent output alone is not a safe convergence proof.
+[learning] Generic event endpoints should validate known override keys at ingress while preserving unknown attributes as schema-agnostic data; otherwise bad intents fail asynchronously.

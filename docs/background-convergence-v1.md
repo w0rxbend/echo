@@ -63,6 +63,21 @@ The scheduler uses fixed v1 behavior (no config knob):
 
 Background restore failures are surfaced independently from playback metrics.
 
+## Previous-frame duplicate suppression telemetry
+
+When `restore: previous_frame` successfully restores a display state that is
+explicitly known to match the configured background, the scheduler may mark the
+desired background clean/converged and suppress a duplicate idle background
+restore. This is playback-restore convergence, not a scheduler-owned
+background restore command.
+
+That path does not update background restore attempt/success metadata and does
+not increment scheduler-owned background restore attempt or failure counters.
+The v1 Prometheus contract does not expose a background restore success counter.
+Operators should use `/readyz.background` for current convergence state.
+Prometheus background restore counters represent scheduler-owned restore
+commands only.
+
 ## Exported channels
 
 - `/readyz` exposes `background` object fields:
@@ -72,3 +87,34 @@ Background restore failures are surfaced independently from playback metrics.
 
 Top-level `/readyz` still returns HTTP 200 when workers are running and matrix is connected,
 regardless of dirty/attempting/failed/retrying background state.
+
+## Animation discovery
+
+`GET /api/v1/animations` is the backward-compatible playable list. It returns
+`{"animations":[...]}` with only renderable animation IDs that may be submitted
+to playback endpoints.
+
+`GET /api/v1/animations/catalog` is the structured catalog. It returns entries
+with the stable fields `id`, `kind`, and `playable`:
+
+```json
+{
+  "animations": [
+    {
+      "id": "notification",
+      "kind": "renderable",
+      "playable": true
+    },
+    {
+      "id": "matrix_rain_background",
+      "kind": "firmware_preset",
+      "playable": false
+    }
+  ]
+}
+```
+
+Firmware preset entries are metadata-only and background-safe. They are exposed
+in the catalog with `kind: "firmware_preset"` and `playable: false`, but must
+not be submitted to `POST /api/v1/play`, `POST /api/v1/notify`, or generic
+`POST /api/v1/events` as `attributes.animation`.

@@ -70,11 +70,9 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "type is required")
 		return
 	}
-	if animationID := event.Attributes["animation"]; animationID != "" {
-		if err := s.validatePlayableAnimation(animationID); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
+	if err := s.validateEventOverrides(event.Attributes); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	if event.ID == "" {
 		event.ID = s.nextID("event")
@@ -221,6 +219,21 @@ func (s *Server) validatePlayableAnimation(id string) error {
 	}
 	if entry.Animation == nil {
 		return fmt.Errorf("animation %q is not renderable/playable", id)
+	}
+	return nil
+}
+
+func (s *Server) validateEventOverrides(attrs map[string]string) error {
+	if animationID := attrs["animation"]; animationID != "" {
+		if err := s.validatePlayableAnimation(animationID); err != nil {
+			return err
+		}
+	}
+	if restore := attrs["restore"]; restore != "" && !validRestorePolicy(animations.RestorePolicy(restore)) {
+		return errors.New("invalid restore policy")
+	}
+	if _, err := parseOptionalDuration(attrs["duration"]); err != nil {
+		return err
 	}
 	return nil
 }

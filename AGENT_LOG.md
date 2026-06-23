@@ -2957,3 +2957,87 @@ M  internal/integrations/httpapi/server_test.go
 M  internal/matrix/scheduler.go
 M  internal/matrix/scheduler_test.go
 M  internal/matrix/state.go
+2026-06-23T09:53:22Z iteration 19 started remaining=4279s
+2026-06-23T09:53:22Z iteration 19 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T09:53:22Z iteration 19 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-c65uazxz/repo copied_entries=55
+2026-06-23T09:53:22Z iteration 19 ideator phase started count=3
+2026-06-23T09:53:22Z iteration 19 ideator phase concurrency workers=3
+2026-06-23T09:53:22Z iteration 19 ideator 1 role="the pragmatist" started
+2026-06-23T09:53:22Z iteration 19 ideator 2 role="the architect" started
+2026-06-23T09:53:22Z iteration 19 ideator 3 role="the contrarian" started
+2026-06-23T09:53:31Z iteration 19 ideator 2 role="the architect" completed status=0
+2026-06-23T09:53:31Z iteration 19 ideator 3 role="the contrarian" completed status=0
+2026-06-23T09:53:32Z iteration 19 ideator 1 role="the pragmatist" completed status=0
+2026-06-23T09:53:32Z iteration 19 ideator phase completed approaches=3
+2026-06-23T09:53:32Z iteration 19 selector started approaches=3
+2026-06-23T09:53:40Z iteration 19 selector completed status=0
+2026-06-23T09:53:40Z iteration 19 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-c65uazxz/repo
+2026-06-23T09:53:40Z iteration 19 selector rejected alternative role="the architect" approach="Contract-First Public Surface Freeze: Treat the next iteration as an API truthfulness pass before adding capability, tightening the documented HTTP/event/catalog contracts and u..." reason="Not selected as-is because it underemphasizes the need to tie documentation changes to focused executable guardrails; a pure documentation-led pass could still leave ingress validation and telemetry semantics drifting."
+2026-06-23T09:53:40Z iteration 19 selector rejected alternative role="the contrarian" approach="Contract-First Truthfulness Pass: freeze the public API and operator-facing semantics before expanding behavior. The next planner should treat README/API docs, HTTP boundary val..." reason="Not selected as-is because it bundles catalog metadata, readiness, and metrics into too broad a coherence problem; the planner should avoid widening public schemas unless the contract decision is clearly justified."
+2026-06-23T09:53:40Z iteration 19 selector rejected alternative role="the pragmatist" approach="Contract-First Truthfulness Pass: stabilize the public API boundary before expanding behavior, using docs and executable compatibility checks as the planning anchor." reason="Not selected as-is because it is the clearest and safest baseline but slightly too narrow: background dedupe telemetry semantics are also operator-facing truthfulness and should remain in scope for planning consideration."
+2026-06-23T09:53:40Z iteration 19 selector alternatives persisted count=3
+2026-06-23T09:53:40Z iteration 19 selector structured alternatives persisted count=3
+2026-06-23T09:53:40Z iteration 19 planner started
+2026-06-23T09:54:01Z iteration 19 plan: 6 task(s) in 4 phase(s). The slice is contract-first: first audit current code, then independently document and lock down animation catalog truthfulness, then tighten generic event ingress validation, and finally freeze the subtle background dedupe telemetry interpretation. Phase 4 is parallel only if assigned implementors coordinate because t5 and t6 may both touch HTTP/app tests; if the same test files are edited heavily, run them serially.
+2026-06-23T09:54:01Z iteration 19 phase 1 started parallel=False tasks=1
+2026-06-23T09:54:57Z iteration 19 task t1 ('Audit public API surfaces') status=0
+2026-06-23T09:54:57Z iteration 19 phase 2 started parallel=True tasks=2
+2026-06-23T09:55:53Z iteration 19 task t2 ('Document animation catalog contract') status=0
+2026-06-23T09:55:55Z iteration 19 task t3 ('Add animation catalog compatibility tests') status=0
+2026-06-23T09:55:55Z iteration 19 phase 3 started parallel=False tasks=1
+2026-06-23T09:56:42Z iteration 19 task t4 ('Validate generic event overrides at HTTP boundary') status=0
+2026-06-23T09:56:42Z iteration 19 phase 4 started parallel=True tasks=2
+2026-06-23T09:58:13Z iteration 19 task t5 ('Test invalid generic event override rejection') status=0
+2026-06-23T09:58:51Z iteration 19 task t6 ('Document background dedupe telemetry semantics') status=0
+2026-06-23T09:58:51Z iteration 19 reviewer started
+
+## Reviewer Summary - Iteration 19
+
+### What Was Done
+
+- Inspected the exact git diff and all files modified in this iteration: README, `docs/background-convergence-v1.md`, HTTP handlers/tests, app background telemetry tests, `PLAN.md`, `AGENT_LOG.md`, and appended orchestration metadata.
+- Confirmed `GET /api/v1/animations/catalog` is documented as the structured catalog with stable `id`, `kind`, and `playable` fields, while `GET /api/v1/animations` remains documented and tested as the playable-only backward-compatible list.
+- Confirmed generic `POST /api/v1/events` validates known override fields at the HTTP boundary before publish: unknown/non-renderable `attributes.animation`, invalid `attributes.restore`, and malformed or negative `attributes.duration` now return `400` and do not reach the async event worker.
+- Confirmed schema-agnostic custom event attributes are still preserved and published, including `param.*` attributes.
+- Confirmed previous-frame background dedupe telemetry is documented and tested as playback-restore convergence: it may mark the desired background clean/converged without updating scheduler-owned background restore `last_success` or attempt/failure counters.
+- Rewrote `PLAN.md` to mark the iteration 19 public API/documentation work complete and reprioritize remaining gaps around event API docs, optional catalog metadata, renderable-background identity guardrails, declarative frame animations, and longer-running scheduler/event limitations.
+
+### What Was Found
+
+- No high-severity runtime regression was found in this iteration.
+- The planned implementation work landed and passed validation: `go test ./...`, `go vet ./...`, `go test -race ./...`, and targeted race checks for app/httpapi catalog, event validation, and previous-frame dedupe behavior all passed.
+- Medium severity: README/operator API docs still do not explicitly document the new generic `/api/v1/events` `attributes.restore` and `attributes.duration` validation contract or the choice to keep unknown/custom attributes schema-agnostic.
+- Medium severity: the structured catalog remains intentionally minimal. Operators can discover firmware presets as `playable=false`, but cannot inspect preset parameters such as effect ID, interval, or color through HTTP.
+- Medium severity: renderable-background dedupe has positive coverage, but still lacks a negative identity regression proving pixel-equivalent frames from non-background sources do not mark the configured background clean.
+- Low severity: previous-frame duplicate suppression tests still rely on a short real sleep to detect no later idle background command. They passed, but a deterministic no-extra-command helper would be stronger if a clean seam is available.
+- Existing accepted limitations remain: no declarative frame/pixel-art animations, no interrupt semantics, synchronous heartbeat probe latency, blocking event-bus v1 delivery, no admin reload endpoint, and no background retry `failure_count` metric.
+
+### Top Improvement Proposals
+
+1. Document generic `/api/v1/events` override behavior in README/API docs: known override fields are validated before publish, while unknown/custom attributes remain schema-agnostic and preserved.
+2. Decide whether `/api/v1/animations/catalog` should expose bounded firmware-preset metadata (`effect_id`, `interval`, `color`) without making presets playable or adding runtime state.
+3. Add renderable-background dedupe identity regressions, especially the negative case where identical frame bytes without the configured `BackgroundID` must not suppress idle background convergence.
+4. Replace sleep-based no-duplicate-command assertions with a deterministic fake-client quiet assertion or scheduler idle hook if one can be added without shaping production code.
+5. Continue with declarative frame/pixel-art animation support only after the API/catalog and dedupe guardrails are fully contract-backed.
+
+### Verification
+
+- `go test ./...` passed.
+- `go vet ./...` passed.
+- `go test -race ./...` passed.
+- `go test -race ./internal/app ./internal/integrations/httpapi -run 'TestReadyAndMetricsExposePreviousFrameBackgroundDedupe|TestEventsOverrideValidation|TestEventsAnimationOverride|TestAnimationCatalog|TestAnimationsEndpoint' -count=5` passed.
+2026-06-23T10:01:35Z iteration 19 reviewer completed status=0
+2026-06-23T10:01:35Z iteration 19 memory updated
+2026-06-23T10:01:35Z iteration 19 completed validation_status=0
+2026-06-23T10:01:35Z iteration 19 checkpoint started
+2026-06-23T10:01:35Z iteration 19 checkpoint status before commit:
+M  AGENT_LOG.md
+M  ALTERNATIVES.jsonl
+M  MEMORY.md
+M  PLAN.md
+M  README.md
+M  SCORES.jsonl
+M  docs/background-convergence-v1.md
+M  internal/app/app_test.go
+M  internal/integrations/httpapi/handlers.go
+M  internal/integrations/httpapi/server_test.go

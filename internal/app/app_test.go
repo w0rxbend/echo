@@ -209,6 +209,85 @@ func TestAppRestoresConfiguredFirmwarePresetBackgroundThroughScheduler(t *testin
 	}
 }
 
+func TestReadyAndMetricsExposePreviousFrameBackgroundDedupeAsPlaybackRestoreConvergence(t *testing.T) {
+	matrixServer := newFakeESPServer(t)
+	defer matrixServer.Close()
+
+	const backgroundID = "matrix_rain_background"
+	cfg := newHTTPMatrixTestConfig(t, matrixServer.Addr())
+	cfg.Background.Animation = backgroundID
+	cfg.Background.RestoreOnIdle = true
+	cfg.AnimationRegistry = registryWithFirmwarePreset(t, backgroundID, animations.FirmwarePreset{
+		EffectID: 44,
+		Interval: 123 * time.Millisecond,
+		Color:    animations.RGB{R: 1, G: 2, B: 3},
+	})
+
+	application, err := app.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := runAppWorkers(t, application, ctx)
+	defer func() {
+		cancel()
+		waitAppWorkers(t, done)
+	}()
+
+	httpServer := httptest.NewServer(application.Handler())
+	defer httpServer.Close()
+
+	ready, status := waitForReadyBackground(t, httpServer.URL, backgroundID, "firmware_preset", "converged")
+	if status != http.StatusOK {
+		t.Fatalf("GET /readyz status = %d, body = %#v, want %d", status, ready, http.StatusOK)
+	}
+	if ready.Background.LastSuccess == nil {
+		t.Fatalf("/readyz background last_success is nil after startup background restore: %#v", ready.Background)
+	}
+	initialLastSuccess := *ready.Background.LastSuccess
+	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
+		1, `kind="firmware_preset"`)
+	initialAttempts := currentMetricLineValue(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
+		`kind="firmware_preset"`)
+	if initialAttempts != 1 {
+		t.Fatalf("background restore attempts after startup = %g, want 1", initialAttempts)
+	}
+	initialPreset := waitForMatrixCommand(t, matrixServer, testCommandSetPreset)
+	wantPresetPayload := []byte{44, 123, 0, 1, 2, 3}
+	if !bytes.Equal(initialPreset.Payload, wantPresetPayload) {
+		t.Fatalf("startup background preset payload = %v, want %v", initialPreset.Payload, wantPresetPayload)
+	}
+
+	postJSON(t, httpServer.URL+"/api/v1/play", `{"animation":"notification","duration":"1ms","restore":"previous_frame"}`, http.StatusAccepted)
+	waitForMatrixCommand(t, matrixServer, testCommandSetFrame)
+	restoredPreset := waitForMatrixCommand(t, matrixServer, testCommandSetPreset)
+	if !bytes.Equal(restoredPreset.Payload, wantPresetPayload) {
+		t.Fatalf("previous-frame restored preset payload = %v, want %v", restoredPreset.Payload, wantPresetPayload)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	ready, status = waitForReadyBackground(t, httpServer.URL, backgroundID, "firmware_preset", "converged")
+	if status != http.StatusOK {
+		t.Fatalf("GET /readyz status = %d, body = %#v, want %d", status, ready, http.StatusOK)
+	}
+	if ready.Background.Dirty || !ready.Background.Converged {
+		t.Fatalf("/readyz background dirty/converged = %v/%v, want false/true after previous-frame restore: %#v",
+			ready.Background.Dirty, ready.Background.Converged, ready.Background)
+	}
+	if ready.Background.LastSuccess == nil || !ready.Background.LastSuccess.Equal(initialLastSuccess) {
+		t.Fatalf("/readyz background last_success = %v, want unchanged %v after playback restore convergence: %#v",
+			ready.Background.LastSuccess, initialLastSuccess, ready.Background)
+	}
+	if got := currentMetricLineValue(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
+		`kind="firmware_preset"`); got != initialAttempts {
+		t.Fatalf("background restore attempts after previous-frame convergence = %g, want unchanged %g", got, initialAttempts)
+	}
+	assertNoMetricLine(t, httpServer.URL, "matrix_proxy_background_restore_failures_total", `kind="firmware_preset"`)
+	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_state",
+		`kind="firmware_preset"`, `state="converged"`, " 1")
+}
+
 func TestReadyAndMetricsExposeFirmwarePresetBackgroundFailureAndRecoveryWithoutPlaybackPollution(t *testing.T) {
 	matrixServer := newFakeESPServer(t)
 	defer matrixServer.Close()
@@ -2705,6 +2784,37 @@ func currentMetricValue(t *testing.T, baseURL, metric string) float64 {
 		return value
 	}
 	t.Fatalf("metrics missing %s in:\n%s", metric, body)
+	return 0
+}
+
+func currentMetricLineValue(t *testing.T, baseURL, metric string, parts ...string) float64 {
+	t.Helper()
+	body := getMetrics(t, baseURL)
+	for _, line := range strings.Split(body, "\n") {
+		if !strings.HasPrefix(line, metric) {
+			continue
+		}
+		matched := true
+		for _, part := range parts {
+			if !strings.Contains(line, part) {
+				matched = false
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		value, err := strconv.ParseFloat(fields[len(fields)-1], 64)
+		if err != nil {
+			t.Fatalf("parse metric value from %q: %v", line, err)
+		}
+		return value
+	}
+	t.Fatalf("metrics missing %s with %v in:\n%s", metric, parts, body)
 	return 0
 }
 

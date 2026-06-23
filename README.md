@@ -60,6 +60,41 @@ packed through the layout mapper; they are not long-running queue items and do
 not block later transient events. HTTP handlers and app event processing do not
 call the TCP matrix client directly.
 
+### Animation Discovery
+
+`GET /api/v1/animations` returns the backward-compatible response shape
+`{"animations":[...]}`. The list contains only renderable, directly playable
+animation IDs, so clients that already submit discovered IDs to playback
+endpoints can keep using this endpoint. Metadata-only firmware preset IDs such
+as `matrix_rain_background` are intentionally excluded.
+
+`GET /api/v1/animations/catalog` returns the structured discovery catalog for
+all registry entries. Each entry exposes the stable fields `id`, `kind`, and
+`playable`; no other catalog fields are part of this contract.
+
+```json
+{
+  "animations": [
+    {
+      "id": "notification",
+      "kind": "renderable",
+      "playable": true
+    },
+    {
+      "id": "matrix_rain_background",
+      "kind": "firmware_preset",
+      "playable": false
+    }
+  ]
+}
+```
+
+Firmware preset catalog entries are metadata-only and safe for configured
+background use. They have `playable: false` and must not be submitted to
+ordinary playback surfaces, including `POST /api/v1/play`,
+`POST /api/v1/notify`, or generic `POST /api/v1/events` with
+`attributes.animation`.
+
 ### Desired Background Convergence
 
 `/readyz.background` and matrix background observability are v1 contract-fixed; full
@@ -97,8 +132,20 @@ cannot downgrade the state to `dirty`. Playback restore policies such as
 state away from `retrying`, or force another restore attempt. Once `next_retry`
 is due or in the past, it is retained as the last scheduled retry timestamp and
 the state becomes `failed` until the scheduler starts another restore attempt.
-A successful background restore is the only path that marks a dirty configured
-background clean.
+A successful scheduler-owned background restore is the normal path that marks a
+dirty configured background clean.
+
+There is one conservative duplicate-suppression case: when
+`restore: previous_frame` successfully restores a display state explicitly
+known to match the configured background, the scheduler may mark the desired
+background clean/converged and skip a later duplicate idle background restore.
+That is playback-restore convergence, not a scheduler-owned background restore
+command. It does not update `/readyz.background.last_success` and does not
+increment scheduler-owned background restore attempt counters; this v1
+Prometheus contract does not expose a background restore success counter.
+Operators should use `/readyz.background` for current convergence state;
+Prometheus background restore counters represent scheduler-owned restore
+commands only.
 
 Verified reconnect recovery and successful direct display controls reset the
 retry delay so the scheduler can make one prompt background restore attempt
@@ -170,11 +217,6 @@ only in `/readyz.background`; there is intentionally no Prometheus
 failure-count metric in this v1 contract. Background restore attempts, failures,
 and state gauges are independent of ordinary playback outcome metrics, so
 scheduler-owned restore work remains separate from `matrix_proxy_play_items_total`.
-
-`GET /api/v1/animations` returns the backward-compatible response shape
-`{"animations":[...]}`, but the list contains only renderable, directly
-playable animation IDs. Metadata-only firmware preset IDs such as
-`matrix_rain_background` are intentionally excluded.
 
 ## Manual Hardware Validation
 

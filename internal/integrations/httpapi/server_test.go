@@ -825,6 +825,7 @@ func registryWithFirmwarePreset(t *testing.T, id string, preset animations.Firmw
 
 func TestAnimationsEndpointListsOnlyRenderableAnimations(t *testing.T) {
 	httpServer := newAnimationAPITestServer(t)
+	const firmwarePresetID = "matrix_rain_background"
 
 	resp, err := http.Get(httpServer.URL + "/api/v1/animations")
 	if err != nil {
@@ -845,10 +846,14 @@ func TestAnimationsEndpointListsOnlyRenderableAnimations(t *testing.T) {
 	if got, want := body.Animations, []string{animations.NotificationAnimationID}; !equalStrings(got, want) {
 		t.Fatalf("GET /animations animations = %v, want %v", got, want)
 	}
+	if containsString(body.Animations, firmwarePresetID) {
+		t.Fatalf("GET /animations animations = %v, must exclude firmware preset %q", body.Animations, firmwarePresetID)
+	}
 }
 
 func TestAnimationCatalogEndpointIncludesNonPlayableMetadata(t *testing.T) {
 	httpServer := newAnimationAPITestServer(t)
+	const firmwarePresetID = "matrix_rain_background"
 
 	resp, err := http.Get(httpServer.URL + "/api/v1/animations/catalog")
 	if err != nil {
@@ -861,31 +866,39 @@ func TestAnimationCatalogEndpointIncludesNonPlayableMetadata(t *testing.T) {
 	}
 
 	var body struct {
-		Animations []struct {
-			ID       string `json:"id"`
-			Kind     string `json:"kind"`
-			Playable bool   `json:"playable"`
-		} `json:"animations"`
+		Animations []map[string]any `json:"animations"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
 
-	want := []struct {
+	type catalogEntry struct {
 		ID       string
 		Kind     string
 		Playable bool
-	}{
-		{ID: "matrix_rain_background", Kind: string(animations.EntryFirmwarePreset), Playable: false},
+	}
+	want := []catalogEntry{
+		{ID: firmwarePresetID, Kind: string(animations.EntryFirmwarePreset), Playable: false},
 		{ID: animations.NotificationAnimationID, Kind: string(animations.EntryGenerated), Playable: true},
 	}
 	if len(body.Animations) != len(want) {
 		t.Fatalf("GET /animations/catalog animations = %+v, want %+v", body.Animations, want)
 	}
 	for i := range want {
-		if body.Animations[i].ID != want[i].ID ||
-			body.Animations[i].Kind != want[i].Kind ||
-			body.Animations[i].Playable != want[i].Playable {
+		entry := body.Animations[i]
+		id, ok := entry["id"].(string)
+		if !ok {
+			t.Fatalf("GET /animations/catalog entry %d missing stable string field id: %+v", i, entry)
+		}
+		kind, ok := entry["kind"].(string)
+		if !ok {
+			t.Fatalf("GET /animations/catalog entry %d missing stable string field kind: %+v", i, entry)
+		}
+		playable, ok := entry["playable"].(bool)
+		if !ok {
+			t.Fatalf("GET /animations/catalog entry %d missing stable bool field playable: %+v", i, entry)
+		}
+		if id != want[i].ID || kind != want[i].Kind || playable != want[i].Playable {
 			t.Fatalf("GET /animations/catalog animations = %+v, want %+v", body.Animations, want)
 		}
 	}
@@ -1100,6 +1113,143 @@ func TestEventsAnimationOverrideValidatesPlayableAnimationBeforePublish(t *testi
 	}
 }
 
+func TestEventsOverrideValidationRejectsInvalidRestoreAndDurationBeforePublish(t *testing.T) {
+	tests := []struct {
+		name           string
+		attributes     string
+		wantErrorParts []string
+	}{
+		{
+			name:           "invalid restore",
+			attributes:     `"restore":"afterglow"`,
+			wantErrorParts: []string{"invalid restore policy"},
+		},
+		{
+			name:           "malformed duration",
+			attributes:     `"duration":"not-a-duration"`,
+			wantErrorParts: []string{"invalid duration"},
+		},
+		{
+			name:           "out of bounds duration",
+			attributes:     `"duration":"-1ms"`,
+			wantErrorParts: []string{"duration cannot be negative"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bus := events.MustNewBus(4)
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+			ch, unsubscribe := bus.Subscribe(ctx)
+			t.Cleanup(unsubscribe)
+
+			registry, err := animations.NewDefaultRegistry()
+			if err != nil {
+				t.Fatal(err)
+			}
+			api, err := httpapi.New(httpapi.Options{
+				Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+				Bus:        bus,
+				Registry:   registry,
+				ServerAddr: "127.0.0.1:0",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			httpServer := httptest.NewServer(api.Router())
+			t.Cleanup(httpServer.Close)
+
+			body := bytes.NewBufferString(fmt.Sprintf(
+				`{"type":"notify","attributes":{%s}}`,
+				tt.attributes,
+			))
+			resp, err := http.Post(httpServer.URL+"/events", "application/json", body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			data, err := io.ReadAll(resp.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("POST /events status = %d, body = %s, want %d", resp.StatusCode, data, http.StatusBadRequest)
+			}
+			for _, part := range tt.wantErrorParts {
+				if !strings.Contains(string(data), part) {
+					t.Fatalf("POST /events body = %s, want to contain %q", data, part)
+				}
+			}
+
+			select {
+			case event := <-ch:
+				t.Fatalf("invalid override event was published to async event path: %#v", event)
+			case <-time.After(50 * time.Millisecond):
+			}
+		})
+	}
+}
+
+func TestEventsOverrideValidationAllowsCustomAttributesBeforePublish(t *testing.T) {
+	bus := events.MustNewBus(4)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	ch, unsubscribe := bus.Subscribe(ctx)
+	t.Cleanup(unsubscribe)
+
+	registry, err := animations.NewDefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	api, err := httpapi.New(httpapi.Options{
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Bus:        bus,
+		Registry:   registry,
+		ServerAddr: "127.0.0.1:0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpServer := httptest.NewServer(api.Router())
+	t.Cleanup(httpServer.Close)
+
+	body := bytes.NewBufferString(`{"type":"notify","attributes":{"restore":"leave","duration":"250ms","custom":"kept","param.color":"green","param.speed":"fast"}}`)
+	resp, err := http.Post(httpServer.URL+"/events", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("POST /events status = %d, body = %s, want %d", resp.StatusCode, data, http.StatusAccepted)
+	}
+
+	select {
+	case event := <-ch:
+		want := map[string]string{
+			"restore":     "leave",
+			"duration":    "250ms",
+			"custom":      "kept",
+			"param.color": "green",
+			"param.speed": "fast",
+		}
+		if len(event.Attributes) != len(want) {
+			t.Fatalf("published attributes = %#v, want %#v", event.Attributes, want)
+		}
+		for key, value := range want {
+			if got := event.Attributes[key]; got != value {
+				t.Fatalf("published attributes[%q] = %q, want %q; all attributes = %#v", key, got, value, event.Attributes)
+			}
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for accepted event to publish")
+	}
+}
+
 func newAnimationAPITestServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	cfg := newAdminAuthTestConfig(t)
@@ -1132,6 +1282,15 @@ func equalStrings(got, want []string) bool {
 		}
 	}
 	return true
+}
+
+func containsString(values []string, needle string) bool {
+	for _, value := range values {
+		if value == needle {
+			return true
+		}
+	}
+	return false
 }
 
 func TestMatrixFillWaitsForCurrentAnimationThroughScheduler(t *testing.T) {
