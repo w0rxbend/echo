@@ -22,6 +22,16 @@ type Frame struct {
 	Delay  time.Duration `json:"delay" yaml:"delay"`
 }
 
+type FramePaletteEntry struct {
+	Symbol string
+	Color  RGB
+}
+
+type FrameSpec struct {
+	Delay time.Duration
+	Rows  []string
+}
+
 type PackedFrame [192]byte
 
 type Params map[string]string

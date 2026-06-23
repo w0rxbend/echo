@@ -32,6 +32,57 @@ metadata instead of app-level special cases. Firmware preset entries are
 background-only metadata; they are not generated animations and cannot be used
 as ordinary rule `play.animation` values or direct playback requests.
 
+Animation config is additive under the top-level `animations` map. Each key is
+the registry ID and must be unique after all animation sources are merged. The
+supported entry forms are:
+
+- `type: generated`: a generated alias for a built-in app renderer. The
+  `generator` field names the built-in generator, such as `notification`.
+  Generated aliases are playable and may be used by rules, `POST /api/v1/play`,
+  `POST /api/v1/notify`, generic event `attributes.animation`, or configured
+  backgrounds.
+- `type: firmware_preset`: metadata for an effect implemented by the matrix
+  firmware. The entry may configure `effect_id`, `interval`, and `color`.
+  Firmware presets are not playable through ordinary playback; they are
+  scheduler-owned background metadata and are exposed as `playable: false`.
+- `type: frames`: a config-authored 8x8 frame animation. The `palette` maps
+  one-character symbols to colors, and `frames` is a non-empty list of frames.
+  Each frame has a positive `delay` duration and exactly eight `rows`; each row
+  is exactly eight symbols. Rows are authored in display-space. The only
+  display-to-physical conversion happens later through the layout mapper.
+
+Frame animations are generated/playable animations in public surfaces. They use
+`kind: "generated"` in discovery, can be referenced by rules and playback
+requests, and do not expose firmware metadata fields such as `effect_id`,
+`interval`, or `color` in the catalog.
+
+```yaml
+animations:
+  status_check:
+    type: frames
+    palette:
+      ".": "#000000"
+      G: "#00FF55"
+      W: "#FFFFFF"
+    frames:
+      - delay: 120ms
+        rows:
+          - "........"
+          - "......G."
+          - ".....GG."
+          - ".W..GG.."
+          - ".WW.G..."
+          - "..WWW..."
+          - "...W...."
+          - "........"
+```
+
+Config loading rejects malformed animation entries before they enter the
+registry. Rejections include duplicate animation IDs, frame entries with no
+frames, missing palettes, unknown row symbols, rows that are not exactly eight
+symbols, frame sets that do not contain exactly eight rows per frame, and
+missing, zero, negative, or malformed frame delays.
+
 When `background.restore_on_idle` is true and `background.animation` is set,
 the configured background is scheduler-owned desired matrix state. After the
 first firmware-verified connection, whenever the matrix reconnects, and after

@@ -59,7 +59,7 @@ Verified during this review:
 - `go test ./...` passes.
 - `go vet ./...` passes.
 - `go test -race ./...` passes.
-- `go test -race ./internal/matrix ./internal/app ./internal/integrations/httpapi ./internal/metrics -run 'TestSchedulerPreviousFrameRestore|TestProjectPublicKind|TestReadyAndMetricsExpose.*Background|TestBackgroundHealthMetricsAgreeWithReadyProjection|TestBackgroundRestoreMetricProjectsCurrentStateGauge|TestAnimationCatalog|TestAnimationsEndpoint|TestEventsOverrideValidation|TestOverrideValidationErrorVocabulary|TestBackgroundStateGauges|TestBackgroundRestoreMetrics' -count=5` passes.
+- `go test -race ./internal/animations ./internal/config ./internal/integrations/httpapi -run 'TestFrameAnimation|TestLoadFrameAnimation|TestLoadRejectsInvalidFrameAnimation|TestConfigAuthoredFrameAnimationPublicSurfaces|TestAnimationCatalog' -count=10` passes.
 
 Core implementation status:
 
@@ -84,9 +84,13 @@ Core implementation status:
   lock, per-subscriber ordering, visible partial fan-out on publish errors,
   lifecycle-blocking depth callbacks, and terminal zero-depth lifecycle
   observations.
-- Runtime animation config loads generated `notification` aliases and firmware
-  presets. `matrix_rain_background` is config-authored as a firmware preset
-  background.
+- Runtime animation config loads generated aliases, metadata-only firmware
+  presets, and declarative `type: frames` animations.
+- Frame animations are authored as 8x8 display-space rows, validate palette
+  symbols/dimensions/delays at config load, render immutable frame copies, and
+  remain generated/playable entries in public discovery.
+- `matrix_rain_background` is config-authored as a metadata-only firmware
+  preset background.
 - Animation registry distinguishes generated/playable animations from
   metadata-only firmware presets through `IsRenderable`, `Entry`,
   `RenderableIDs`, and `Catalog`.
@@ -96,14 +100,15 @@ Core implementation status:
   background `renderable` is translated before it reaches public readiness,
   catalog, or Prometheus surfaces.
 - `/api/v1/animations` remains backward-compatible and lists only playable
-  generated IDs.
+  generated IDs, including config-authored frame animations.
 - `/api/v1/animations/catalog` exposes all registry entries through an explicit
   HTTP DTO with stable required fields `{id, kind, playable}`. Firmware presets
   remain `playable=false` and may include bounded optional metadata fields
   `effect_id`, `interval`, and `color`.
 - Catalog firmware preset `interval` is intentionally frozen as a JSON duration
   string such as `"90ms"`; `effect_id` is a JSON number and `color` is a
-  structured RGB object. Generated entries must omit firmware metadata.
+  structured RGB object. Generated entries, including `type: frames`, must omit
+  firmware metadata.
 - Ordinary playback rejects non-renderable firmware preset IDs at config rules,
   `/play`, `/notify`, `/events attributes.animation`, and scheduler guardrail
   boundaries.
@@ -115,15 +120,9 @@ Core implementation status:
   first verified connection, remains outside the ordinary queue, is restored
   after reconnects and transient display changes, and is observable through
   readiness and Prometheus.
-- Background convergence uses the v1 bounded public state vocabulary:
-  `unknown`, `dirty`, `attempting`, `converged`, `failed`, `retrying`.
-- Public background state is projected by one shared function,
+- Background convergence uses one shared projection function,
   `ProjectBackgroundConvergence`, consumed by scheduler health,
   `/readyz.background`, and `matrix_proxy_background_state`.
-- Due-retry semantics are frozen for v1: a dirty background with future
-  `next_retry` projects as `retrying`; a dirty background with failure evidence
-  and no future suppression projects as `failed`; `attempting` wins while a
-  restore command is running.
 - Background retry policy is fixed for v1: retryable failures back off
   `1s..30s`, permanent failures back off `30s..5m`, forever until convergence
   or a reset trigger.
@@ -131,9 +130,6 @@ Core implementation status:
   `restore: previous_frame` successfully restores a display state that
   explicitly matches the configured background. Firmware presets compare preset
   parameters; generated backgrounds rely on recorded background identity.
-- Deduped previous-frame background convergence is documented as
-  playback-restore convergence: it can mark the desired background clean without
-  updating scheduler-owned background restore attempt/success telemetry.
 - `docs/background-convergence-v1.md` is the source-of-truth public contract
   for background state projection, retry semantics, animation discovery,
   generic event override validation, and duplicate-suppression telemetry.
@@ -146,14 +142,27 @@ High severity:
 
 Medium severity:
 
-- Background restore event metrics now use `ProjectBackgroundConvergence`, but
-  the event-time path still constructs a partial projection input and uses wall
+- Frame animation public-surface coverage proves config loading, catalog
+  projection, `/animations`, `/play`, and `/events` ingress acceptance, but it
+  does not prove end-to-end playback through a running scheduler and fake ESP.
+  Add a black-box test that submits a config-authored frame animation and
+  verifies the emitted `SetFullFrame` payloads match layout-packed
+  display-space rows.
+- Animation config type schemas share one struct, so type-specific irrelevant
+  fields can be silently ignored. For example, `type: frames` with
+  `effect_id`, or `type: firmware_preset` with `frames`, does not currently
+  fail validation. Tighten this before the animation file becomes a larger
+  operator-facing surface.
+- Frame animations are registered with generator ID `"frames"` but do not expose
+  a distinct internal/public animation subtype. This is acceptable for v1
+  because public kind remains `generated`, but future catalog expansion should
+  avoid overloading `kind` if operators need to distinguish generated aliases
+  from config-authored frame animations.
+- Background restore event metrics use `ProjectBackgroundConvergence`, but the
+  event-time path still constructs a partial projection input and uses wall
   clock time at callback execution. `/metrics` refreshes from scheduler health,
   so black-box behavior is correct, but future event-time metric updates should
   remain subordinate to scheduler health to avoid stale or contradictory gauges.
-- Catalog wire-shape compatibility is covered in HTTP tests, but the handler is
-  still a hand-written DTO conversion. If more catalog fields are added, update
-  the DTO, README, contract doc, and wire-shape tests in the same change.
 - The scheduler idle hook makes previous-frame dedupe tests deterministic, but
   it is package-private production state used only by tests. Keep it contained;
   prefer a fake-client quiet assertion or test-only helper if more idle
@@ -172,7 +181,6 @@ Medium severity:
   and total-only backpressure metrics.
 - `InterruptMode` is mapped but ignored; `higher_priority` and `critical`
   interruption behavior is not implemented.
-- Declarative frame/pixel-art animations are not implemented.
 - `/api/v1/admin/reload` is planned but absent.
 
 Low severity:
@@ -189,30 +197,53 @@ Low severity:
 
 ## Next Iteration Priorities
 
-### Phase 1: Freeze Catalog And Projection Compatibility
+### Phase 1: Seal Declarative Frame Animation Contracts
+
+1. Add fake-ESP playback coverage for config-authored frame animations. (high)
+   - Start app workers with a config-authored `type: frames` animation.
+   - Submit `/play`, `/notify`, or a rules-driven event for that animation.
+   - Assert the fake ESP receives `SetFullFrame` payloads in physical chain
+     order, packed only through the layout mapper from display-space rows.
+   - Include an asymmetric fixture so display-space orientation mistakes are
+     visible.
+
+2. Reject type-specific stray animation fields at config load. (high)
+   - `type: generated` should reject firmware preset fields and frame fields.
+   - `type: firmware_preset` should reject `generator`, `palette`, and
+     `frames`.
+   - `type: frames` should reject `generator`, `effect_id`, `interval`, and
+     `color`.
+   - Add targeted validation tests with clear error vocabulary.
+
+3. Freeze frame animation catalog behavior. (medium)
+   - Preserve `kind: "generated"` and `playable: true` for frame animations.
+   - Preserve absence of firmware metadata on generated/frame entries.
+   - If operators need to distinguish built-in aliases from frame animations,
+     add a new bounded optional field instead of changing `kind`.
+
+### Phase 2: Preserve Public Surface Compatibility
 
 1. Keep catalog wire shape locked. (high)
-   - Add or preserve tests that assert exact JSON types for `effect_id`,
-     `interval`, and `color`.
+   - Preserve tests asserting JSON types for `effect_id`, `interval`, and
+     `color`.
    - Keep stable required fields `id`, `kind`, and `playable`.
    - Keep firmware metadata optional, bounded, and absent from generated
      entries.
 
-2. Keep registry structs out of HTTP wire contracts. (medium)
-   - Continue using explicit handler DTOs instead of returning registry structs
-     directly.
-   - If more metadata is added, update DTO, docs, and compatibility tests in the
-     same change.
+2. Keep explicit HTTP DTOs for catalog responses. (medium)
+   - Do not return registry structs directly from handlers.
+   - If more metadata is added, update the DTO, README, contract doc, and
+     compatibility tests in the same change.
 
-3. Add broader contract checks for public kind vocabulary. (medium)
-   - Preserve tests that generated backgrounds expose `kind: "generated"` in
-     `/readyz.background`, background metrics, and catalog output.
-   - Add negative checks to any new public background/animation surface so
-     internal `renderable` cannot leak.
+3. Preserve public kind projection guardrails. (medium)
+   - Generated backgrounds and frame animations must expose `kind: "generated"`
+     in `/readyz.background`, background metrics, and catalog output.
+   - Any new public surface must include a negative check that internal
+     `renderable` cannot leak.
 
-### Phase 2: Harden Background Projection And Dedupe Semantics
+### Phase 3: Background Projection And Dedupe Stability
 
-1. Keep one background projection authority. (high)
+1. Keep one background projection authority. (medium)
    - Route readiness, scheduler health, and current-state gauges through
      `ProjectBackgroundConvergence`.
    - Treat restore attempt/failure callbacks as event telemetry; prefer
@@ -231,22 +262,6 @@ Low severity:
      tests.
    - If more tests need it, prefer an explicit test helper or fake-client quiet
      assertion that does not add production behavior.
-
-### Phase 3: Declarative Animation Expansion
-
-1. Add declarative frame/pixel-art animations. (medium)
-   - Parse palette and 8-row pixel art in display-space.
-   - Add brightness/simple transforms only if needed for v1 examples.
-   - Keep config-authored frames in display-space and pack only through the
-     layout mapper.
-   - Reject malformed dimensions, unknown palette symbols, empty frame sets,
-     invalid delays, and duplicate IDs at config load.
-
-2. Tighten animation config docs. (medium)
-   - Document generated aliases, firmware presets, and frame animation schema in
-     one place.
-   - Decide whether relative `animations_file` and `rules_file` should resolve
-     strictly relative to the config file.
 
 ### Phase 4: Event Delivery Boundary
 
@@ -297,6 +312,11 @@ Low severity:
 
 Keep existing coverage and expand in these areas:
 
+- Declarative frame animation tests for display-space parsing, palette
+  validation, immutable render output, config load rejection, public catalog
+  projection, and fake-ESP packed-frame playback.
+- Animation config schema tests for type-specific stray fields and clear error
+  vocabulary.
 - Protocol builder checksum and payload limits, including 196-byte custom frame
   uploads.
 - Response parser validation and typed status mapping.
@@ -339,6 +359,7 @@ Manual hardware validation remains required before unattended LAN deployment:
 - Fill red/green/blue.
 - Draw an asymmetric 8x8 orientation fixture.
 - Play the 2 second notification animation.
+- Play a config-authored frame animation with an asymmetric fixture.
 - Queue three notifications and verify serial playback.
 - Start configured background preset, trigger notification, verify restore, then
   exercise manual fill/clear/preset behavior with `restore_on_idle`
@@ -351,6 +372,8 @@ Manual hardware validation remains required before unattended LAN deployment:
   visible-only in `/readyz.background`?
 - Should background retry `failure_count` be exposed as a bounded Prometheus
   gauge, or remain `/readyz`-only?
+- Should frame animations expose an optional subtype in the catalog, or is
+  public `kind: "generated"` sufficient for v1?
 - Should generic `/api/v1/events` remain schema-agnostic beyond known override
   fields?
 - Should background retry remain fixed v1 policy, or become configurable after

@@ -943,8 +943,18 @@ func TestAnimationCatalogEndpointIncludesNonPlayableMetadata(t *testing.T) {
 			}
 		}
 		if color, ok := entry["color"]; ok {
-			if _, ok := color.(map[string]any); !ok {
+			colorObject, ok := color.(map[string]any)
+			if !ok {
 				t.Fatalf("GET /animations/catalog firmware entry %d id=%s color has type %T, want JSON object", i, id, color)
+			}
+			if _, ok := colorObject["r"].(json.Number); !ok {
+				t.Fatalf("GET /animations/catalog firmware entry %d id=%s color.r has type %T, want JSON number", i, id, colorObject["r"])
+			}
+			if _, ok := colorObject["g"].(json.Number); !ok {
+				t.Fatalf("GET /animations/catalog firmware entry %d id=%s color.g has type %T, want JSON number", i, id, colorObject["g"])
+			}
+			if _, ok := colorObject["b"].(json.Number); !ok {
+				t.Fatalf("GET /animations/catalog firmware entry %d id=%s color.b has type %T, want JSON number", i, id, colorObject["b"])
 			}
 		}
 		if _, ok := seen[id]; ok {
@@ -988,6 +998,110 @@ func TestAnimationCatalogEndpointIncludesNonPlayableMetadata(t *testing.T) {
 			t.Fatalf("GET /animations/catalog missing required entry: %+v", expected)
 		}
 	}
+}
+
+func TestConfigAuthoredFrameAnimationPublicSurfaces(t *testing.T) {
+	const (
+		frameAnimationID = "pixel_badge"
+		firmwarePresetID = "matrix_rain_background"
+	)
+	httpServer := newConfigAuthoredFrameAnimationAPITestServer(t)
+
+	resp, err := http.Get(httpServer.URL + "/api/v1/animations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("GET /animations status = %d, body = %s, want %d", resp.StatusCode, data, http.StatusOK)
+	}
+	var animationsBody struct {
+		Animations []string `json:"animations"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&animationsBody); err != nil {
+		t.Fatal(err)
+	}
+	if !containsString(animationsBody.Animations, frameAnimationID) {
+		t.Fatalf("GET /animations animations = %v, want %q", animationsBody.Animations, frameAnimationID)
+	}
+	if containsString(animationsBody.Animations, firmwarePresetID) {
+		t.Fatalf("GET /animations animations = %v, must exclude firmware preset %q", animationsBody.Animations, firmwarePresetID)
+	}
+
+	catalogResp, err := http.Get(httpServer.URL + "/api/v1/animations/catalog")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer catalogResp.Body.Close()
+	if catalogResp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(catalogResp.Body)
+		t.Fatalf("GET /animations/catalog status = %d, body = %s, want %d", catalogResp.StatusCode, data, http.StatusOK)
+	}
+	var catalogBody struct {
+		Animations []map[string]any `json:"animations"`
+	}
+	decoder := json.NewDecoder(catalogResp.Body)
+	decoder.UseNumber()
+	if err := decoder.Decode(&catalogBody); err != nil {
+		t.Fatal(err)
+	}
+	var frameCatalog map[string]any
+	for i, entry := range catalogBody.Animations {
+		id, _ := entry["id"].(string)
+		kind, _ := entry["kind"].(string)
+		if kind == "renderable" {
+			t.Fatalf("GET /animations/catalog entry %d id=%s leaked internal kind %q", i, id, kind)
+		}
+		if id == frameAnimationID {
+			frameCatalog = entry
+		}
+	}
+	if frameCatalog == nil {
+		t.Fatalf("GET /animations/catalog missing %q: %+v", frameAnimationID, catalogBody.Animations)
+	}
+	if got := frameCatalog["kind"]; got != string(animations.PublicKindGenerated) {
+		t.Fatalf("GET /animations/catalog %s kind = %v, want %q", frameAnimationID, got, animations.PublicKindGenerated)
+	}
+	if got := frameCatalog["playable"]; got != true {
+		t.Fatalf("GET /animations/catalog %s playable = %v, want true", frameAnimationID, got)
+	}
+	for _, field := range []string{"effect_id", "interval", "color"} {
+		if _, ok := frameCatalog[field]; ok {
+			t.Fatalf("GET /animations/catalog frame animation leaked firmware metadata field %q: %+v", field, frameCatalog)
+		}
+	}
+
+	playResp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", bytes.NewBufferString(`{"animation":"pixel_badge","duration":"50ms","restore":"leave"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer playResp.Body.Close()
+	if data, err := io.ReadAll(playResp.Body); err != nil {
+		t.Fatal(err)
+	} else if playResp.StatusCode != http.StatusAccepted {
+		t.Fatalf("POST /play frame animation status = %d, body = %s, want %d", playResp.StatusCode, data, http.StatusAccepted)
+	}
+	waitForQueueDepth(t, httpServer.URL, 1)
+
+	eventsResp, err := http.Post(httpServer.URL+"/api/v1/events", "application/json", bytes.NewBufferString(`{"type":"notify","attributes":{"animation":"pixel_badge","duration":"50ms","restore":"leave"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer eventsResp.Body.Close()
+	if data, err := io.ReadAll(eventsResp.Body); err != nil {
+		t.Fatal(err)
+	} else if eventsResp.StatusCode != http.StatusAccepted {
+		t.Fatalf("POST /events frame override status = %d, body = %s, want %d", eventsResp.StatusCode, data, http.StatusAccepted)
+	}
+
+	firmwareResp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", bytes.NewBufferString(`{"animation":"matrix_rain_background","duration":"50ms","restore":"leave"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer firmwareResp.Body.Close()
+	assertFirmwarePresetRejected(t, "POST /play", firmwareResp)
+	waitForQueueDepth(t, httpServer.URL, 1)
 }
 
 func TestFirmwarePresetIsNotPlayableThroughPublicAnimationIngress(t *testing.T) {
@@ -1563,6 +1677,94 @@ func newAnimationAPITestServer(t *testing.T) *httptest.Server {
 		Color:    animations.RGB{G: 255, B: 85},
 	})
 
+	application, err := app.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		shutdownApp(t, application)
+	})
+
+	httpServer := httptest.NewServer(application.Handler())
+	t.Cleanup(httpServer.Close)
+	return httpServer
+}
+
+func newConfigAuthoredFrameAnimationAPITestServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	dir := t.TempDir()
+	animationsPath := dir + "/animations.yaml"
+	rulesPath := dir + "/rules.yaml"
+	configPath := dir + "/config.yaml"
+
+	if err := os.WriteFile(animationsPath, []byte(`
+animations:
+  pixel_badge:
+    type: frames
+    palette:
+      ".": "#000000"
+      R: "#FF0000"
+      G: "#00FF00"
+    frames:
+      - delay: 50ms
+        rows:
+          - "R......."
+          - ".G......"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+  matrix_rain_background:
+    type: firmware_preset
+    effect_id: 12
+    interval: 90ms
+    color: "#00FF55"
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rulesPath, []byte(`
+rules:
+  - id: frame_notify
+    when:
+      source: http
+      type: notify
+    play:
+      animation: pixel_badge
+      priority: 50
+      duration: 2s
+      interrupt: none
+      restore: background
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte(fmt.Sprintf(`
+animations_file: %q
+rules_file: %q
+server:
+  addr: "127.0.0.1:0"
+  admin_token_env: ""
+matrix:
+  host: "127.0.0.1"
+  port: 1
+  connect_timeout: 1s
+  response_timeout: 1s
+  reconnect_min_delay: 10ms
+  reconnect_max_delay: 50ms
+queue:
+  events_buffer: 16
+  play_buffer: 16
+  overflow_policy: block
+  dedup_window: 0s
+`, animationsPath, rulesPath)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	application, err := app.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)

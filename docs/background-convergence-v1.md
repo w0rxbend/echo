@@ -143,6 +143,61 @@ in the catalog with `kind: "firmware_preset"` and `playable: false`, but must
 not be submitted to `POST /api/v1/play`, `POST /api/v1/notify`, or generic
 `POST /api/v1/events` as `attributes.animation`.
 
+## Animation config schema
+
+The animation config file is additive under a top-level `animations` map. The
+map key is the animation ID, and duplicate IDs across the merged registry are
+rejected during config load.
+
+Supported entry forms:
+
+- `type: generated`: a generated alias. The `generator` field names an existing
+  built-in app renderer, for example `notification`. These entries are
+  playable generated animations.
+- `type: firmware_preset`: firmware metadata for scheduler-owned background
+  use. These entries can carry `effect_id`, `interval`, and `color`, but are
+  not ordinary playable animations.
+- `type: frames`: a declarative 8x8 frame animation authored in display-space.
+  The entry must define a `palette` whose keys are one-character symbols and
+  whose values are colors, plus a non-empty `frames` list. Every frame must have
+  a positive `delay` and exactly eight `rows`; every row must contain exactly
+  eight symbols from the palette.
+
+Frame animations are exposed publicly the same way as other generated
+animations: `kind: "generated"` and `playable: true`. Firmware metadata remains
+absent from generated entries, including frame animations. Firmware presets
+remain `kind: "firmware_preset"` and `playable: false`.
+
+Display-space frame rows are not pre-packed in config loading. They are packed
+only when rendered output crosses the layout mapper boundary toward the matrix
+physical chain order.
+
+```yaml
+animations:
+  status_check:
+    type: frames
+    palette:
+      ".": "#000000"
+      G: "#00FF55"
+      W: "#FFFFFF"
+    frames:
+      - delay: 120ms
+        rows:
+          - "........"
+          - "......G."
+          - ".....GG."
+          - ".W..GG.."
+          - ".WW.G..."
+          - "..WWW..."
+          - "...W...."
+          - "........"
+```
+
+Config load rejects malformed dimensions, unknown palette symbols, empty frame
+sets, missing or invalid palettes, missing/zero/negative/malformed frame
+delays, references from rules to unknown or non-renderable animations, and
+duplicate animation IDs.
+
 ## Generic event override validation
 
 `POST /api/v1/events` keeps the event payload schema-agnostic except for known

@@ -1,4 +1,3 @@
-[learning] Queue removal for canceled controls should use an internal queue identity, not caller-provided item IDs; duplicate IDs can complete or remove the wrong waiter.
 [learning] Bounded heartbeat probes prevent indefinite scheduler stalls, but synchronous probes still add queue latency up to the probe timeout.
 [learning] Read-only queue snapshots must not expose live pointers or mutable slices; otherwise callers can mutate queued work after scheduler admission.
 [learning] Defining a terminal outcome is not enough if nothing observes it; queue-cleared animations need metrics/logs or outcome hooks, not only a local error value.
@@ -48,3 +47,4 @@
 [anti-pattern] Regression tests should avoid exact queue-depth ordering assumptions when scheduler preemption can legitimately interleave item admission and removal.
 [anti-pattern] Returning internal contract-bearing structs directly from handlers can accidentally broaden API shape; enforce an explicit API-facing DTO or schema gate so additive fields stay intentional.
 [learning] Public API examples must be verified against actual JSON wire encoding; Go-native types like `time.Duration` can serialize differently than operator-friendly docs imply.
+[learning] Declarative config entries with a `type` discriminator need type-specific field validation; otherwise irrelevant or misspelled fields can be silently ignored.

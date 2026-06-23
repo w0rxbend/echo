@@ -4084,3 +4084,87 @@ A  internal/app/background_metrics_test.go
 M  internal/integrations/httpapi/handlers.go
 M  internal/integrations/httpapi/server_test.go
 M  internal/matrix/scheduler.go
+2026-06-23T12:12:10Z iteration 3 started remaining=16844s
+2026-06-23T12:12:10Z iteration 3 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T12:12:10Z iteration 3 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-9c95y4an/repo copied_entries=56
+2026-06-23T12:12:10Z iteration 3 ideator phase started count=3
+2026-06-23T12:12:10Z iteration 3 ideator phase concurrency workers=3
+2026-06-23T12:12:10Z iteration 3 ideator 1 role="the pragmatist" started
+2026-06-23T12:12:10Z iteration 3 ideator 2 role="the architect" started
+2026-06-23T12:12:10Z iteration 3 ideator 3 role="the contrarian" started
+2026-06-23T12:12:19Z iteration 3 ideator 3 role="the contrarian" completed status=0
+2026-06-23T12:12:19Z iteration 3 ideator 1 role="the pragmatist" completed status=0
+2026-06-23T12:12:19Z iteration 3 ideator 2 role="the architect" completed status=0
+2026-06-23T12:12:19Z iteration 3 ideator phase completed approaches=3
+2026-06-23T12:12:19Z iteration 3 selector started approaches=3
+2026-06-23T12:12:32Z iteration 3 selector completed status=0
+2026-06-23T12:12:32Z iteration 3 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-9c95y4an/repo
+2026-06-23T12:12:32Z iteration 3 selector rejected alternative role="the contrarian" approach="Contract-First Skepticism: treat the next iteration as a compatibility freeze with selective pressure on public seams before adding capability" reason="Not selected as-is because it leans too far toward a pure freeze. That would reduce drift risk, but the project also needs measured forward movement on planned capabilities once the compatibility gates are explicit."
+2026-06-23T12:12:32Z iteration 3 selector rejected alternative role="the pragmatist" approach="Contract-First Expansion: freeze every public/runtime boundary before adding new behavior, then introduce the smallest next feature behind those existing contracts." reason="Not rejected in substance, but selected as part of the synthesis. Its emphasis on bounded additive change is strong, though the Planner should make the compatibility gate even more explicit before choosing the next feature."
+2026-06-23T12:12:32Z iteration 3 selector rejected alternative role="the architect" approach="Contract-First Expansion: keep the scheduler/TCP boundary frozen while introducing any new capability only after its public contract, projection vocabulary, and compatibility te..." reason="Not rejected in substance, but selected as part of the synthesis. Its boundary-first framing is strong, though it should be tempered with the pragmatist's bias toward one small implementation target rather than broad contract design."
+2026-06-23T12:12:32Z iteration 3 selector alternatives persisted count=3
+2026-06-23T12:12:32Z iteration 3 selector structured alternatives persisted count=3
+2026-06-23T12:12:32Z iteration 3 planner started
+2026-06-23T12:13:15Z iteration 3 plan: 5 task(s) in 4 phase(s). This chooses the highest-value next slice: lock existing catalog/public-kind compatibility first, then add declarative frame animations behind the existing registry, config, scheduler, and layout boundaries. Phase 2 can run concurrently because core animation code and documentation/examples touch separate files and the schema is specified in the task text. Config loading depends on the new animation constructor, and final HTTP surface tests depend on both the loader and contract expectations.
+2026-06-23T12:13:15Z iteration 3 phase 1 started parallel=False tasks=1
+2026-06-23T12:13:54Z iteration 3 task t1 ('Freeze animation catalog wire contract') status=0
+2026-06-23T12:13:54Z iteration 3 phase 2 started parallel=True tasks=2
+2026-06-23T12:14:39Z iteration 3 task t3 ('Document declarative animation schema') status=0
+2026-06-23T12:16:12Z iteration 3 task t2 ('Add declarative frame animation type') status=0
+2026-06-23T12:16:12Z iteration 3 phase 3 started parallel=False tasks=1
+2026-06-23T12:18:32Z iteration 3 task t4 ('Load frame animations from config') status=0
+2026-06-23T12:18:32Z iteration 3 phase 4 started parallel=False tasks=1
+2026-06-23T12:20:15Z iteration 3 task t5 ('Verify public surfaces for frame animations') status=0
+2026-06-23T12:20:15Z iteration 3 reviewer started
+
+## Reviewer Summary - Iteration 3
+
+### What Was Done
+
+- Inspected the exact git diff and every file created or modified in this iteration: README, `configs/animations.example.yaml`, `docs/background-convergence-v1.md`, `internal/animations/animation.go`, new `internal/animations/frames.go`, new `internal/animations/frames_test.go`, config loader/tests, and HTTP public-surface tests.
+- Confirmed declarative `type: frames` animations are implemented as generated/playable animations with 8x8 display-space rows, explicit palettes, positive per-frame delays, immutable render copies, and context-cancel handling.
+- Confirmed config loading parses frame animations from `animations_file`, rejects empty frame sets, missing palettes, unknown symbols, malformed dimensions, missing/zero/negative/malformed delays, and duplicate IDs against the merged registry.
+- Confirmed frame animations appear in `/api/v1/animations`, appear in `/api/v1/animations/catalog` as `kind: "generated"` and `playable: true`, omit firmware metadata, and are accepted by `/play` plus generic `/events attributes.animation` validation.
+- Confirmed docs and example animation config now describe generated aliases, firmware presets, and declarative frame animations in one place.
+
+### What Was Found
+
+- No high-severity runtime regression was found. `go test ./...`, `go vet ./...`, `go test -race ./...`, and focused repeated race tests for animation/config/HTTP frame surfaces all pass.
+- Medium severity: frame animation public-surface coverage proves discovery and ingress, but not actual playback through a running scheduler and fake ESP. There is no black-box test yet proving config-authored display-space rows are layout-packed and sent as `SetFullFrame` payloads.
+- Medium severity: animation config uses one shared schema struct, so type-specific irrelevant fields can be silently ignored. For example, `type: frames` with firmware preset fields, or `type: firmware_preset` with frame fields, currently does not fail validation.
+- Medium severity: frame animations are public `kind: "generated"` and internally registered with generator ID `"frames"`. That is acceptable for v1, but future operator discovery should add a bounded optional subtype instead of changing `kind` if distinguishing built-in aliases from config-authored frames becomes necessary.
+- Existing accepted limitations remain: no background retry `failure_count` metric, synchronous heartbeat probe latency, TCP metric callbacks under the TCP mutex, blocking event-bus v1 delivery, ignored `InterruptMode`, and no admin reload endpoint.
+
+### Top Improvement Proposals
+
+1. Add fake-ESP black-box playback coverage for config-authored frame animations with an asymmetric fixture, verifying `SetFullFrame` payloads are physical-chain packed only through the layout mapper.
+2. Add type-specific animation config validation so generated, firmware preset, and frame entries reject fields that belong to other entry kinds with clear error vocabulary.
+3. Preserve the catalog contract for frames: `kind: "generated"`, `playable: true`, and no firmware metadata; add a separate bounded optional subtype only if operators need it.
+4. Keep the explicit HTTP catalog DTO and wire-shape tests when adding any animation metadata so registry internals do not accidentally become API shape.
+5. Continue broader scheduler/event/TCP work only after the frame animation playback and config-schema guardrails are covered.
+
+### Verification
+
+- `go test ./...` passed.
+- `go vet ./...` passed.
+- `go test -race ./...` passed.
+- `go test -race ./internal/animations ./internal/config ./internal/integrations/httpapi -run 'TestFrameAnimation|TestLoadFrameAnimation|TestLoadRejectsInvalidFrameAnimation|TestConfigAuthoredFrameAnimationPublicSurfaces|TestAnimationCatalog' -count=10` passed.
+2026-06-23T12:23:38Z iteration 3 reviewer completed status=0
+2026-06-23T12:23:38Z iteration 3 memory updated
+2026-06-23T12:23:38Z iteration 3 completed validation_status=0
+2026-06-23T12:23:38Z iteration 3 checkpoint started
+2026-06-23T12:23:38Z iteration 3 checkpoint status before commit:
+M  AGENT_LOG.md
+M  ALTERNATIVES.jsonl
+M  MEMORY.md
+M  PLAN.md
+M  README.md
+M  SCORES.jsonl
+M  configs/animations.example.yaml
+M  docs/background-convergence-v1.md
+M  internal/animations/animation.go
+A  internal/animations/frames.go
+A  internal/animations/frames_test.go
+M  internal/config/config_test.go
+M  internal/config/loader.go
+M  internal/integrations/httpapi/server_test.go

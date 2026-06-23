@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -233,14 +234,237 @@ queue:
 	}
 }
 
+func TestLoadFrameAnimationFromConfig(t *testing.T) {
+	animationsPath := writeFile(t, "animations.yaml", `
+animations:
+  pixel_badge:
+    type: frames
+    palette:
+      ".": "#000000"
+      R: "#FF0000"
+      G:
+        r: 0
+        g: 255
+        b: 0
+      B: "#0000FF"
+    frames:
+      - delay: 125ms
+        rows:
+          - "R......."
+          - ".G......"
+          - "...B...."
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+`)
+	rulesPath := writeFile(t, "rules.yaml", validRules("pixel_badge"))
+	path := writeConfig(t, `
+animations_file: "`+animationsPath+`"
+rules_file: "`+rulesPath+`"
+queue:
+  overflow_policy: block
+  dedup_window: 0s
+`)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if !containsString(cfg.AnimationRegistry.RenderableIDs(), "pixel_badge") {
+		t.Fatalf("RenderableIDs() = %v, want pixel_badge", cfg.AnimationRegistry.RenderableIDs())
+	}
+	animation, ok := cfg.AnimationRegistry.Get("pixel_badge")
+	if !ok {
+		t.Fatal("frame animation is not registered as renderable")
+	}
+	frames, err := animation.Render(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+	if len(frames) != 1 {
+		t.Fatalf("Render() returned %d frames, want 1", len(frames))
+	}
+	if frames[0].Delay != 125*time.Millisecond {
+		t.Fatalf("frame delay = %s, want 125ms", frames[0].Delay)
+	}
+	assertConfigFramePixel(t, frames[0], 0, 0, animations.RGB{R: 255})
+	assertConfigFramePixel(t, frames[0], 1, 1, animations.RGB{G: 255})
+	assertConfigFramePixel(t, frames[0], 3, 2, animations.RGB{B: 255})
+	assertConfigFramePixel(t, frames[0], 7, 7, animations.RGB{})
+
+	var catalogEntry animations.CatalogEntry
+	found := false
+	for _, entry := range cfg.AnimationRegistry.Catalog() {
+		if entry.ID == "pixel_badge" {
+			catalogEntry = entry
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("Catalog() = %+v, want pixel_badge", cfg.AnimationRegistry.Catalog())
+	}
+	if catalogEntry.Kind != animations.PublicKindGenerated || !catalogEntry.Playable {
+		t.Fatalf("catalog entry = %+v, want playable generated", catalogEntry)
+	}
+	if catalogEntry.EffectID != nil || catalogEntry.Interval != nil || catalogEntry.Color != nil {
+		t.Fatalf("frame animation catalog entry exposes firmware metadata: %+v", catalogEntry)
+	}
+}
+
 func TestLoadRejectsUnknownAnimationType(t *testing.T) {
 	err := loadWithAnimations(t, `
 animations:
   wave:
-    type: frames
+    type: sparkle
 `, validRules("notification"))
-	if err == nil || !strings.Contains(err.Error(), `unknown animation type "frames"`) {
+	if err == nil || !strings.Contains(err.Error(), `unknown animation type "sparkle"`) {
 		t.Fatalf("Load() error = %v, want unknown animation type", err)
+	}
+}
+
+func TestLoadRejectsInvalidFrameAnimationConfig(t *testing.T) {
+	tests := []struct {
+		name      string
+		animation string
+		wantErr   string
+	}{
+		{
+			name: "missing palette",
+			animation: `
+animations:
+  pixels:
+    type: frames
+    frames:
+      - delay: 100ms
+        rows:
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+`,
+			wantErr: "palette is required for frames animation",
+		},
+		{
+			name: "empty frames",
+			animation: `
+animations:
+  pixels:
+    type: frames
+    palette:
+      ".": "#000000"
+    frames: []
+`,
+			wantErr: "frame animation requires at least one frame",
+		},
+		{
+			name: "missing delay",
+			animation: `
+animations:
+  pixels:
+    type: frames
+    palette:
+      ".": "#000000"
+    frames:
+      - rows:
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+`,
+			wantErr: "frame 0 delay is required",
+		},
+		{
+			name: "zero delay",
+			animation: validFrameAnimationConfig("0s", []string{
+				"........", "........", "........", "........",
+				"........", "........", "........", "........",
+			}),
+			wantErr: "frame 0 delay must be positive",
+		},
+		{
+			name: "negative delay",
+			animation: validFrameAnimationConfig("-1ms", []string{
+				"........", "........", "........", "........",
+				"........", "........", "........", "........",
+			}),
+			wantErr: "frame 0 delay must be positive",
+		},
+		{
+			name: "invalid delay",
+			animation: validFrameAnimationConfig("soon", []string{
+				"........", "........", "........", "........",
+				"........", "........", "........", "........",
+			}),
+			wantErr: `parse duration "soon"`,
+		},
+		{
+			name: "wrong row count",
+			animation: validFrameAnimationConfig("100ms", []string{
+				"........", "........", "........", "........",
+				"........", "........", "........",
+			}),
+			wantErr: "frame 0 must have exactly 8 rows",
+		},
+		{
+			name: "wrong row width",
+			animation: validFrameAnimationConfig("100ms", []string{
+				".......", "........", "........", "........",
+				"........", "........", "........", "........",
+			}),
+			wantErr: "frame 0 row 0 must have exactly 8 symbols",
+		},
+		{
+			name: "unknown symbol",
+			animation: validFrameAnimationConfig("100ms", []string{
+				"X.......", "........", "........", "........",
+				"........", "........", "........", "........",
+			}),
+			wantErr: "uses unknown palette symbol",
+		},
+		{
+			name: "duplicate palette symbol",
+			animation: `
+animations:
+  pixels:
+    type: frames
+    palette:
+      ".": "#000000"
+      ".": "#111111"
+    frames:
+      - delay: 100ms
+        rows:
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+`,
+			wantErr: `duplicate palette symbol "."`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := loadWithAnimations(t, tt.animation, validRules("notification"))
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("Load() error = %v, want containing %q", err, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -440,6 +664,47 @@ rules:
       animation: ` + animationID + `
       duration: 2s
 `
+}
+
+func validFrameAnimationConfig(delay string, rows []string) string {
+	var builder strings.Builder
+	builder.WriteString(`
+animations:
+  pixels:
+    type: frames
+    palette:
+      ".": "#000000"
+    frames:
+      - delay: `)
+	builder.WriteString(delay)
+	builder.WriteString(`
+        rows:
+`)
+	for _, row := range rows {
+		builder.WriteString(`          - "`)
+		builder.WriteString(row)
+		builder.WriteString(`"
+`)
+	}
+	return builder.String()
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func assertConfigFramePixel(t *testing.T, frame animations.Frame, x, y int, want animations.RGB) {
+	t.Helper()
+
+	got := frame.Pixels[y*animations.CanvasWidth+x]
+	if got != want {
+		t.Fatalf("display pixel (%d,%d) = %+v, want %+v", x, y, got, want)
+	}
 }
 
 func writeConfig(t *testing.T, body string) string {

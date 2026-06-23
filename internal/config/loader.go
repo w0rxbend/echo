@@ -69,15 +69,24 @@ type schemaAnimationsFile struct {
 }
 
 type schemaAnimation struct {
-	Type      string          `yaml:"type"`
-	Generator string          `yaml:"generator"`
-	EffectID  *int            `yaml:"effect_id"`
-	Interval  *schemaDuration `yaml:"interval"`
-	Color     *schemaRGB      `yaml:"color"`
+	Type      string             `yaml:"type"`
+	Generator string             `yaml:"generator"`
+	EffectID  *int               `yaml:"effect_id"`
+	Interval  *schemaDuration    `yaml:"interval"`
+	Color     *schemaRGB         `yaml:"color"`
+	Palette   schemaFramePalette `yaml:"palette"`
+	Frames    []schemaFrame      `yaml:"frames"`
 }
 
 type schemaRGB struct {
 	animations.RGB
+}
+
+type schemaFramePalette []animations.FramePaletteEntry
+
+type schemaFrame struct {
+	Delay *schemaDuration `yaml:"delay"`
+	Rows  []string        `yaml:"rows"`
 }
 
 func (c *schemaRGB) UnmarshalYAML(unmarshal func(any) error) error {
@@ -96,6 +105,38 @@ func (c *schemaRGB) UnmarshalYAML(unmarshal func(any) error) error {
 		return err
 	}
 	c.RGB = rgb
+	return nil
+}
+
+func (p *schemaFramePalette) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return errors.New("palette must be a mapping of one-character symbols to colors")
+	}
+
+	seen := make(map[string]struct{}, len(node.Content)/2)
+	entries := make([]animations.FramePaletteEntry, 0, len(node.Content)/2)
+	for i := 0; i < len(node.Content); i += 2 {
+		key := node.Content[i]
+		value := node.Content[i+1]
+		if key.Kind != yaml.ScalarNode {
+			return fmt.Errorf("palette entry %d symbol must be a scalar", i/2)
+		}
+		symbol := key.Value
+		if _, exists := seen[symbol]; exists {
+			return fmt.Errorf("duplicate palette symbol %q", symbol)
+		}
+		seen[symbol] = struct{}{}
+
+		var color schemaRGB
+		if err := value.Decode(&color); err != nil {
+			return fmt.Errorf("palette symbol %q color: %w", symbol, err)
+		}
+		entries = append(entries, animations.FramePaletteEntry{
+			Symbol: symbol,
+			Color:  color.RGB,
+		})
+	}
+	*p = entries
 	return nil
 }
 
@@ -175,11 +216,36 @@ func registerConfiguredAnimation(registry *animations.Registry, id string, entry
 			preset.Color = entry.Color.RGB
 		}
 		return registry.RegisterFirmwarePreset(id, preset)
+	case "frames":
+		return registerConfiguredFrameAnimation(registry, id, entry)
 	case "":
 		return errors.New("type is required")
 	default:
 		return fmt.Errorf("unknown animation type %q", entry.Type)
 	}
+}
+
+func registerConfiguredFrameAnimation(registry *animations.Registry, id string, entry schemaAnimation) error {
+	if entry.Palette == nil {
+		return errors.New("palette is required for frames animation")
+	}
+
+	specs := make([]animations.FrameSpec, 0, len(entry.Frames))
+	for i, frame := range entry.Frames {
+		if frame.Delay == nil {
+			return fmt.Errorf("frame %d delay is required", i)
+		}
+		specs = append(specs, animations.FrameSpec{
+			Delay: frame.Delay.Duration,
+			Rows:  frame.Rows,
+		})
+	}
+
+	animation, err := animations.NewFrameAnimation(specs, []animations.FramePaletteEntry(entry.Palette))
+	if err != nil {
+		return err
+	}
+	return registry.RegisterGenerated(id, "frames", animation)
 }
 
 func validateRuleAnimationReferences(path string, registry *animations.Registry) error {

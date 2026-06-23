@@ -1,16 +1,39 @@
 animations:
-  # Generated entries are renderable/playable and may be used by rules, /play,
-  # /notify animation overrides, or background restore. When used as a
-  # background, generated animations are rendered as finite frame sequences; they
-  # are not infinite background queue items.
+  # Generated aliases are renderable/playable and may be used by rules, /play,
+  # /notify animation overrides, generic event attributes.animation, or
+  # background restore. The generator names a built-in app renderer.
   alert_pulse:
     type: generated
     generator: notification
 
+  # Declarative frame animations are also generated/playable entries. Rows are
+  # authored in display-space as exactly eight 8-symbol strings per frame; the
+  # layout mapper is the only display-to-physical packing boundary. Palette keys
+  # are one-character symbols and every row symbol must exist in the palette.
+  # Each frame delay must be positive.
+  status_check:
+    type: frames
+    palette:
+      ".": "#000000"
+      G: "#00FF55"
+      W: "#FFFFFF"
+    frames:
+      - delay: 120ms
+        rows:
+          - "........"
+          - "......G."
+          - ".....GG."
+          - ".W..GG.."
+          - ".WW.G..."
+          - "..WWW..."
+          - "...W...."
+          - "........"
+
   # Firmware presets are metadata-only background entries. They describe an
   # effect already implemented by the matrix firmware. They are applied only by
   # the scheduler background path and are not directly playable animation IDs for
-  # rules, /play, /notify overrides, or /api/v1/animations.
+  # rules, /play, /notify overrides, generic event attributes.animation, or
+  # /api/v1/animations.
   matrix_rain_background:
     type: firmware_preset
     effect_id: 12
