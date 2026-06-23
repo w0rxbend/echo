@@ -13,6 +13,9 @@ type Event struct {
 	ID         string            `json:"id" yaml:"id"`
 	Source     Source            `json:"source" yaml:"source"`
 	Type       string            `json:"type" yaml:"type"`
+	// Target is the device ID this event is routed to. Set automatically from
+	// the URL path parameter when submitted via /api/v1/devices/{device}/events.
+	Target     string            `json:"target,omitempty" yaml:"target,omitempty"`
 	Actor      string            `json:"actor,omitempty" yaml:"actor,omitempty"`
 	Text       string            `json:"text,omitempty" yaml:"text,omitempty"`
 	Channel    string            `json:"channel,omitempty" yaml:"channel,omitempty"`

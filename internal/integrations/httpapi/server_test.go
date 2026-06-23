@@ -138,7 +138,7 @@ func TestAdminRoutesRequireBearerTokenForNonLocalBind(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, err := http.NewRequest(http.MethodDelete, httpServer.URL+"/api/v1/queue", nil)
+			req, err := http.NewRequest(http.MethodDelete, httpServer.URL+"/api/v1/devices/default/queue", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -187,7 +187,7 @@ func TestQueueInspectionRequiresBearerTokenForNonLocalBind(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, err := http.NewRequest(http.MethodGet, httpServer.URL+"/api/v1/queue", nil)
+			req, err := http.NewRequest(http.MethodGet, httpServer.URL+"/api/v1/devices/default/queue", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -220,7 +220,7 @@ func TestQueueInspectionAllowsLocalBindWithoutToken(t *testing.T) {
 	httpServer := httptest.NewServer(application.Handler())
 	defer httpServer.Close()
 
-	resp, err := http.Get(httpServer.URL + "/api/v1/queue")
+	resp, err := http.Get(httpServer.URL + "/api/v1/devices/default/queue")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +292,7 @@ func TestMetricsExposeTCPImmediateReconnectAfterDroppedCommandResponse(t *testin
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
 	matrixServer.DropNextResponse(testCommandFill)
-	resp, err := http.Post(httpServer.URL+"/api/v1/matrix/fill", "application/json", bytes.NewBufferString(`{"r":4,"g":5,"b":6}`))
+	resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/matrix/fill", "application/json", bytes.NewBufferString(`{"r":4,"g":5,"b":6}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,7 +340,7 @@ func TestMetricsExposeTCPImmediateReconnectFailureWhenReconnectFails(t *testing.
 	matrixServer.Close()
 	reqCtx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, httpServer.URL+"/api/v1/matrix/fill", bytes.NewBufferString(`{"r":4,"g":5,"b":6}`))
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, httpServer.URL+"/api/v1/devices/default/matrix/fill", bytes.NewBufferString(`{"r":4,"g":5,"b":6}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,7 +381,7 @@ func TestMetricsExposeTCPImmediateReconnectFailureWhenRetryTransportFails(t *tes
 	matrixServer.DropResponseOnCommandCount(testCommandFill, fillCount+1)
 	matrixServer.DropResponseOnCommandCount(testCommandFill, fillCount+2)
 	go func() {
-		resp, err := http.Post(httpServer.URL+"/api/v1/matrix/fill", "application/json", bytes.NewBufferString(`{"r":4,"g":5,"b":6}`))
+		resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/matrix/fill", "application/json", bytes.NewBufferString(`{"r":4,"g":5,"b":6}`))
 		if err != nil {
 			donePost <- 0
 			return
@@ -458,7 +458,7 @@ func TestMetricsExposeTCPImmediateRecoveryWithoutFailureOnPermanentRetryErrors(t
 
 			matrixServer.DropNextResponse(testCommandFill)
 			tt.setupRetry(matrixServer)
-			resp, err := http.Post(httpServer.URL+"/api/v1/matrix/fill", "application/json", bytes.NewBufferString(`{"r":4,"g":5,"b":6}`))
+			resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/matrix/fill", "application/json", bytes.NewBufferString(`{"r":4,"g":5,"b":6}`))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -471,17 +471,17 @@ func TestMetricsExposeTCPImmediateRecoveryWithoutFailureOnPermanentRetryErrors(t
 			waitForMetricLine(t, httpServer.URL, "matrix_proxy_matrix_reconnects_total",
 				`source="tcp_immediate"`, `error_kind="retryable"`, " 1")
 			assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_matrix_reconnects_total",
-				[]string{"error_kind", "source"}, `source="tcp_immediate"`, `error_kind="retryable"`)
+				[]string{"device", "error_kind", "source"}, `source="tcp_immediate"`, `error_kind="retryable"`)
 			waitForMetricLine(t, httpServer.URL, "matrix_proxy_matrix_reconnect_recoveries_total",
 				`source="tcp_immediate"`, `state="ready"`, " 1")
 			assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_matrix_reconnect_recoveries_total",
-				[]string{"source", "state"}, `source="tcp_immediate"`, `state="ready"`)
+				[]string{"device", "source", "state"}, `source="tcp_immediate"`, `state="ready"`)
 			waitForMetricLine(t, httpServer.URL, "matrix_proxy_matrix_commands_total",
 				`command="fill"`, `status="transport_error"`, " 1")
 			waitForMetricLine(t, httpServer.URL, "matrix_proxy_matrix_commands_total",
 				`command="fill"`, tt.metricPart, " 1")
 			assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_matrix_commands_total",
-				[]string{"command", "status"}, `command="fill"`, tt.metricPart)
+				[]string{"device", "command", "status"}, `command="fill"`, tt.metricPart)
 			assertNoMetricLine(t, httpServer.URL, "matrix_proxy_matrix_reconnect_failures_total", `source="tcp_immediate"`)
 			if got := matrixServer.CommandCount(testCommandFill); got != 2 {
 				t.Fatalf("fill command frames = %d, want 2", got)
@@ -495,8 +495,8 @@ func TestMetricsDoNotExposeTCPImmediateReadyRecoveryBeforeRetryPingValid(t *test
 	defer matrixServer.Close()
 
 	cfg := newHTTPMatrixTestConfig(t, matrixServer.Addr())
-	cfg.Matrix.HeartbeatInterval = 200 * time.Millisecond
-	cfg.Matrix.ProbeTimeout = 100 * time.Millisecond
+	cfg.Devices["default"].HeartbeatInterval = 200 * time.Millisecond
+	cfg.Devices["default"].ProbeTimeout = 100 * time.Millisecond
 	application, err := app.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
@@ -521,7 +521,7 @@ func TestMetricsDoNotExposeTCPImmediateReadyRecoveryBeforeRetryPingValid(t *test
 	if body.Status != "not_ready" {
 		t.Fatalf("readyz status = %q, want not_ready", body.Status)
 	}
-	if body.MatrixConnected {
+	if body.DefaultDevice().MatrixConnected {
 		t.Fatal("readyz matrix_connected = true, want false after invalid retry ping")
 	}
 	assertNoMetricLine(t, httpServer.URL, "matrix_proxy_matrix_reconnect_recoveries_total",
@@ -567,10 +567,10 @@ func TestMetricsExposeTCPImmediateRetryPingVerificationFailure(t *testing.T) {
 			defer matrixServer.Close()
 
 			cfg := newHTTPMatrixTestConfig(t, matrixServer.Addr())
-			cfg.Matrix.HeartbeatInterval = 200 * time.Millisecond
-			cfg.Matrix.ProbeTimeout = 100 * time.Millisecond
-			cfg.Matrix.ReconnectMinDelay = 10 * time.Second
-			cfg.Matrix.ReconnectMaxDelay = 10 * time.Second
+			cfg.Devices["default"].HeartbeatInterval = 200 * time.Millisecond
+			cfg.Devices["default"].ProbeTimeout = 100 * time.Millisecond
+			cfg.Devices["default"].ReconnectMinDelay = 10 * time.Second
+			cfg.Devices["default"].ReconnectMaxDelay = 10 * time.Second
 			application, err := app.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 			if err != nil {
 				t.Fatal(err)
@@ -592,17 +592,17 @@ func TestMetricsExposeTCPImmediateRetryPingVerificationFailure(t *testing.T) {
 			waitForMetricLine(t, httpServer.URL, "matrix_proxy_matrix_reconnects_total",
 				`source="tcp_immediate"`, `error_kind="retryable"`, " 1")
 			assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_matrix_reconnects_total",
-				[]string{"error_kind", "source"}, `source="tcp_immediate"`, `error_kind="retryable"`)
+				[]string{"device", "error_kind", "source"}, `source="tcp_immediate"`, `error_kind="retryable"`)
 			waitForMetricLine(t, httpServer.URL, "matrix_proxy_matrix_reconnect_failures_total",
 				`source="tcp_immediate"`, `error_kind="permanent"`, `outcome="verification_failed"`, " 1")
 			assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_matrix_reconnect_failures_total",
-				[]string{"error_kind", "outcome", "source"}, `source="tcp_immediate"`, `error_kind="permanent"`, `outcome="verification_failed"`)
+				[]string{"device", "error_kind", "outcome", "source"}, `source="tcp_immediate"`, `error_kind="permanent"`, `outcome="verification_failed"`)
 			waitForMetricLine(t, httpServer.URL, "matrix_proxy_matrix_commands_total",
 				`command="ping"`, `status="transport_error"`, " 1")
 			waitForMetricLine(t, httpServer.URL, "matrix_proxy_matrix_commands_total",
 				`command="ping"`, tt.metricPart, " 1")
 			assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_matrix_commands_total",
-				[]string{"command", "status"}, `command="ping"`, tt.metricPart)
+				[]string{"device", "command", "status"}, `command="ping"`, tt.metricPart)
 			assertNoMetricLine(t, httpServer.URL, "matrix_proxy_matrix_reconnect_recoveries_total",
 				`source="tcp_immediate"`, `state="ready"`)
 
@@ -610,7 +610,7 @@ func TestMetricsExposeTCPImmediateRetryPingVerificationFailure(t *testing.T) {
 			if body.Status != "not_ready" {
 				t.Fatalf("readyz status = %q, want not_ready", body.Status)
 			}
-			if body.WorkersRunning && body.MatrixConnected {
+			if body.WorkersRunning && body.DefaultDevice().MatrixConnected {
 				t.Fatalf("readyz reported running recovered matrix after retry-ping verification failure: %#v", body)
 			}
 		})
@@ -648,16 +648,16 @@ func TestReadyzUnavailableAfterIdleMatrixDisconnect(t *testing.T) {
 	if body.Draining {
 		t.Fatal("readyz draining = true, want false")
 	}
-	if body.SchedulerState != "disconnected" {
-		t.Fatalf("readyz scheduler_state = %q, want disconnected", body.SchedulerState)
+	if body.DefaultDevice().SchedulerState != "disconnected" {
+		t.Fatalf("readyz scheduler_state = %q, want disconnected", body.DefaultDevice().SchedulerState)
 	}
-	if body.MatrixConnected {
+	if body.DefaultDevice().MatrixConnected {
 		t.Fatal("readyz matrix_connected = true, want false")
 	}
-	if body.LastSuccess == nil {
+	if body.DefaultDevice().LastSuccess == nil {
 		t.Fatal("readyz last_success = nil, want timestamp")
 	}
-	if body.LastFailure == nil {
+	if body.DefaultDevice().LastFailure == nil {
 		t.Fatal("readyz last_failure = nil, want timestamp")
 	}
 }
@@ -731,17 +731,17 @@ func TestNotifyStreamsFramesAndRestoresBackground(t *testing.T) {
 	cfg := config.Default()
 	cfg.Server.Addr = "127.0.0.1:0"
 	cfg.Server.AdminTokenEnv = ""
-	cfg.Matrix.Host = host
-	cfg.Matrix.Port = port
-	cfg.Matrix.ConnectTimeout = time.Second
-	cfg.Matrix.ResponseTimeout = time.Second
-	cfg.Matrix.ReconnectMinDelay = 10 * time.Millisecond
-	cfg.Matrix.ReconnectMaxDelay = 50 * time.Millisecond
+	cfg.Devices["default"].Host = host
+	cfg.Devices["default"].Port = port
+	cfg.Devices["default"].ConnectTimeout = time.Second
+	cfg.Devices["default"].ResponseTimeout = time.Second
+	cfg.Devices["default"].ReconnectMinDelay = 10 * time.Millisecond
+	cfg.Devices["default"].ReconnectMaxDelay = 50 * time.Millisecond
 	cfg.Queue.EventsBuffer = 16
 	cfg.Queue.PlayBuffer = 16
 	cfg.RulesFile = rulesPath
-	cfg.Background.Animation = "matrix_rain_background"
-	cfg.Background.RestoreOnIdle = true
+	cfg.Devices["default"].Background.Animation = "matrix_rain_background"
+	cfg.Devices["default"].Background.RestoreOnIdle = true
 	cfg.AnimationRegistry = registryWithFirmwarePreset(t, "matrix_rain_background", animations.FirmwarePreset{
 		EffectID: 12,
 		Interval: 90 * time.Millisecond,
@@ -763,7 +763,7 @@ func TestNotifyStreamsFramesAndRestoresBackground(t *testing.T) {
 	defer httpServer.Close()
 
 	body := bytes.NewBufferString(`{"title":"Test","message":"hello","duration":"50ms"}`)
-	resp, err := http.Post(httpServer.URL+"/api/v1/notify", "application/json", body)
+	resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/notify", "application/json", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1072,7 +1072,7 @@ func TestConfigAuthoredFrameAnimationPublicSurfaces(t *testing.T) {
 		}
 	}
 
-	playResp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", bytes.NewBufferString(`{"animation":"pixel_badge","duration":"50ms","restore":"leave"}`))
+	playResp, err := http.Post(httpServer.URL+"/api/v1/devices/default/play", "application/json", bytes.NewBufferString(`{"animation":"pixel_badge","duration":"50ms","restore":"leave"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1084,7 +1084,7 @@ func TestConfigAuthoredFrameAnimationPublicSurfaces(t *testing.T) {
 	}
 	waitForQueueDepth(t, httpServer.URL, 1)
 
-	eventsResp, err := http.Post(httpServer.URL+"/api/v1/events", "application/json", bytes.NewBufferString(`{"type":"notify","attributes":{"animation":"pixel_badge","duration":"50ms","restore":"leave"}}`))
+	eventsResp, err := http.Post(httpServer.URL+"/api/v1/devices/default/events", "application/json", bytes.NewBufferString(`{"type":"notify","attributes":{"animation":"pixel_badge","duration":"50ms","restore":"leave"}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1095,7 +1095,7 @@ func TestConfigAuthoredFrameAnimationPublicSurfaces(t *testing.T) {
 		t.Fatalf("POST /events frame override status = %d, body = %s, want %d", eventsResp.StatusCode, data, http.StatusAccepted)
 	}
 
-	firmwareResp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", bytes.NewBufferString(`{"animation":"matrix_rain_background","duration":"50ms","restore":"leave"}`))
+	firmwareResp, err := http.Post(httpServer.URL+"/api/v1/devices/default/play", "application/json", bytes.NewBufferString(`{"animation":"matrix_rain_background","duration":"50ms","restore":"leave"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1170,7 +1170,7 @@ func TestFirmwarePresetIsNotPlayableThroughPublicAnimationIngress(t *testing.T) 
 	t.Run("play", func(t *testing.T) {
 		httpServer := newAnimationAPITestServer(t)
 		body := bytes.NewBufferString(fmt.Sprintf(`{"animation":%q,"duration":"50ms","restore":"leave"}`, firmwarePresetID))
-		resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", body)
+		resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/play", "application/json", body)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1182,7 +1182,7 @@ func TestFirmwarePresetIsNotPlayableThroughPublicAnimationIngress(t *testing.T) 
 	t.Run("notify", func(t *testing.T) {
 		httpServer := newAnimationAPITestServer(t)
 		body := bytes.NewBufferString(fmt.Sprintf(`{"title":"Test","message":"hello","animation":%q,"duration":"50ms"}`, firmwarePresetID))
-		resp, err := http.Post(httpServer.URL+"/api/v1/notify", "application/json", body)
+		resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/notify", "application/json", body)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1193,7 +1193,7 @@ func TestFirmwarePresetIsNotPlayableThroughPublicAnimationIngress(t *testing.T) 
 	t.Run("events", func(t *testing.T) {
 		httpServer := newAnimationAPITestServer(t)
 		body := bytes.NewBufferString(fmt.Sprintf(`{"type":"notify","attributes":{"animation":%q}}`, firmwarePresetID))
-		resp, err := http.Post(httpServer.URL+"/api/v1/events", "application/json", body)
+		resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/events", "application/json", body)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1275,7 +1275,7 @@ func TestPlayValidatesPlayableAnimation(t *testing.T) {
 			httpServer := newAnimationAPITestServer(t)
 			body := bytes.NewBufferString(fmt.Sprintf(`{"animation":%q,"duration":"50ms","restore":"leave"}`, tt.animation))
 
-			resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", body)
+			resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/play", "application/json", body)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1332,7 +1332,7 @@ func TestNotifyAnimationOverrideValidatesPlayableAnimation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			httpServer := newAnimationAPITestServer(t)
 
-			resp, err := http.Post(httpServer.URL+"/api/v1/notify", "application/json", bytes.NewBufferString(tt.body))
+			resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/notify", "application/json", bytes.NewBufferString(tt.body))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1364,45 +1364,45 @@ func TestOverrideValidationErrorVocabularyMatchesAcrossHTTPIngresses(t *testing.
 		{
 			name: "unknown animation",
 			requests: map[string]string{
-				"/api/v1/events": `{"type":"notify","attributes":{"animation":"unknown_animation"}}`,
-				"/api/v1/notify": `{"title":"Test","message":"hello","animation":"unknown_animation"}`,
-				"/api/v1/play":   `{"animation":"unknown_animation","duration":"50ms","restore":"leave"}`,
+				"/api/v1/devices/default/events": `{"type":"notify","attributes":{"animation":"unknown_animation"}}`,
+				"/api/v1/devices/default/notify": `{"title":"Test","message":"hello","animation":"unknown_animation"}`,
+				"/api/v1/devices/default/play":   `{"animation":"unknown_animation","duration":"50ms","restore":"leave"}`,
 			},
 			wantParts: []string{"unknown animation", "unknown_animation"},
 		},
 		{
 			name: "non-renderable animation",
 			requests: map[string]string{
-				"/api/v1/events": `{"type":"notify","attributes":{"animation":"matrix_rain_background"}}`,
-				"/api/v1/notify": `{"title":"Test","message":"hello","animation":"matrix_rain_background"}`,
-				"/api/v1/play":   `{"animation":"matrix_rain_background","duration":"50ms","restore":"leave"}`,
+				"/api/v1/devices/default/events": `{"type":"notify","attributes":{"animation":"matrix_rain_background"}}`,
+				"/api/v1/devices/default/notify": `{"title":"Test","message":"hello","animation":"matrix_rain_background"}`,
+				"/api/v1/devices/default/play":   `{"animation":"matrix_rain_background","duration":"50ms","restore":"leave"}`,
 			},
 			wantParts: []string{"matrix_rain_background", "not renderable/playable"},
 		},
 		{
 			name: "invalid restore",
 			requests: map[string]string{
-				"/api/v1/events": `{"type":"notify","attributes":{"restore":"afterglow"}}`,
-				"/api/v1/notify": `{"title":"Test","message":"hello","restore":"afterglow"}`,
-				"/api/v1/play":   `{"animation":"notification","duration":"50ms","restore":"afterglow"}`,
+				"/api/v1/devices/default/events": `{"type":"notify","attributes":{"restore":"afterglow"}}`,
+				"/api/v1/devices/default/notify": `{"title":"Test","message":"hello","restore":"afterglow"}`,
+				"/api/v1/devices/default/play":   `{"animation":"notification","duration":"50ms","restore":"afterglow"}`,
 			},
 			wantParts: []string{"invalid restore policy"},
 		},
 		{
 			name: "malformed duration",
 			requests: map[string]string{
-				"/api/v1/events": `{"type":"notify","attributes":{"duration":"not-a-duration"}}`,
-				"/api/v1/notify": `{"title":"Test","message":"hello","duration":"not-a-duration"}`,
-				"/api/v1/play":   `{"animation":"notification","duration":"not-a-duration","restore":"leave"}`,
+				"/api/v1/devices/default/events": `{"type":"notify","attributes":{"duration":"not-a-duration"}}`,
+				"/api/v1/devices/default/notify": `{"title":"Test","message":"hello","duration":"not-a-duration"}`,
+				"/api/v1/devices/default/play":   `{"animation":"notification","duration":"not-a-duration","restore":"leave"}`,
 			},
 			wantParts: []string{"invalid duration"},
 		},
 		{
 			name: "negative duration",
 			requests: map[string]string{
-				"/api/v1/events": `{"type":"notify","attributes":{"duration":"-1ms"}}`,
-				"/api/v1/notify": `{"title":"Test","message":"hello","duration":"-1ms"}`,
-				"/api/v1/play":   `{"animation":"notification","duration":"-1ms","restore":"leave"}`,
+				"/api/v1/devices/default/events": `{"type":"notify","attributes":{"duration":"-1ms"}}`,
+				"/api/v1/devices/default/notify": `{"title":"Test","message":"hello","duration":"-1ms"}`,
+				"/api/v1/devices/default/play":   `{"animation":"notification","duration":"-1ms","restore":"leave"}`,
 			},
 			wantParts: []string{"duration cannot be negative"},
 		},
@@ -1479,6 +1479,7 @@ func TestEventsAnimationOverrideValidatesPlayableAnimationBeforePublish(t *testi
 			api, err := httpapi.New(httpapi.Options{
 				Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 				Bus:        bus,
+				Schedulers: map[string]*matrix.Scheduler{"default": nil},
 				Registry:   registry,
 				ServerAddr: "127.0.0.1:0",
 			})
@@ -1492,7 +1493,7 @@ func TestEventsAnimationOverrideValidatesPlayableAnimationBeforePublish(t *testi
 				`{"type":"notify","attributes":{"animation":%q}}`,
 				tt.animation,
 			))
-			resp, err := http.Post(httpServer.URL+"/events", "application/json", body)
+			resp, err := http.Post(httpServer.URL+"/devices/default/events", "application/json", body)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1569,6 +1570,7 @@ func TestEventsOverrideValidationRejectsInvalidRestoreAndDurationBeforePublish(t
 			api, err := httpapi.New(httpapi.Options{
 				Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 				Bus:        bus,
+				Schedulers: map[string]*matrix.Scheduler{"default": nil},
 				Registry:   registry,
 				ServerAddr: "127.0.0.1:0",
 			})
@@ -1582,7 +1584,7 @@ func TestEventsOverrideValidationRejectsInvalidRestoreAndDurationBeforePublish(t
 				`{"type":"notify","attributes":{%s}}`,
 				tt.attributes,
 			))
-			resp, err := http.Post(httpServer.URL+"/events", "application/json", body)
+			resp, err := http.Post(httpServer.URL+"/devices/default/events", "application/json", body)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1623,6 +1625,7 @@ func TestEventsOverrideValidationAllowsCustomAttributesBeforePublish(t *testing.
 	api, err := httpapi.New(httpapi.Options{
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Bus:        bus,
+		Schedulers: map[string]*matrix.Scheduler{"default": nil},
 		Registry:   registry,
 		ServerAddr: "127.0.0.1:0",
 	})
@@ -1633,7 +1636,7 @@ func TestEventsOverrideValidationAllowsCustomAttributesBeforePublish(t *testing.
 	t.Cleanup(httpServer.Close)
 
 	body := bytes.NewBufferString(`{"type":"notify","attributes":{"restore":"leave","duration":"250ms","custom":"kept","param.color":"green","param.speed":"fast"}}`)
-	resp, err := http.Post(httpServer.URL+"/events", "application/json", body)
+	resp, err := http.Post(httpServer.URL+"/devices/default/events", "application/json", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1672,7 +1675,7 @@ func TestPlayInterruptModeHigherPriorityIsAccepted(t *testing.T) {
 	httpServer := newAnimationAPITestServer(t)
 	body := bytes.NewBufferString(fmt.Sprintf(`{"animation":%q,"duration":"50ms","restore":"leave","interrupt_mode":"higher_priority"}`, animations.NotificationAnimationID))
 
-	resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", body)
+	resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/play", "application/json", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1690,7 +1693,7 @@ func TestPlayInterruptModeCriticalIsAccepted(t *testing.T) {
 	httpServer := newAnimationAPITestServer(t)
 	body := bytes.NewBufferString(fmt.Sprintf(`{"animation":%q,"duration":"50ms","restore":"leave","interrupt_mode":"critical"}`, animations.NotificationAnimationID))
 
-	resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", body)
+	resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/play", "application/json", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1708,7 +1711,7 @@ func TestPlayInterruptModeEmptyDefaultsToNone(t *testing.T) {
 	httpServer := newAnimationAPITestServer(t)
 	body := bytes.NewBufferString(fmt.Sprintf(`{"animation":%q,"duration":"50ms","restore":"leave"}`, animations.NotificationAnimationID))
 
-	resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", body)
+	resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/play", "application/json", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1726,7 +1729,7 @@ func TestPlayInterruptModeInvalidRejected(t *testing.T) {
 	httpServer := newAnimationAPITestServer(t)
 	body := bytes.NewBufferString(fmt.Sprintf(`{"animation":%q,"duration":"50ms","restore":"leave","interrupt_mode":"immediate"}`, animations.NotificationAnimationID))
 
-	resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", body)
+	resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/play", "application/json", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1757,6 +1760,7 @@ func TestEventsInvalidInterruptModeRejectedAtIngress(t *testing.T) {
 	api, err := httpapi.New(httpapi.Options{
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Bus:        bus,
+		Schedulers: map[string]*matrix.Scheduler{"default": nil},
 		Registry:   registry,
 		ServerAddr: "127.0.0.1:0",
 	})
@@ -1767,7 +1771,7 @@ func TestEventsInvalidInterruptModeRejectedAtIngress(t *testing.T) {
 	t.Cleanup(httpServer.Close)
 
 	body := bytes.NewBufferString(`{"type":"notify","attributes":{"interrupt_mode":"bogus"}}`)
-	resp, err := http.Post(httpServer.URL+"/events", "application/json", body)
+	resp, err := http.Post(httpServer.URL+"/devices/default/events", "application/json", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1804,6 +1808,7 @@ func TestEventsValidInterruptModePassesIngress(t *testing.T) {
 	api, err := httpapi.New(httpapi.Options{
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Bus:        bus,
+		Schedulers: map[string]*matrix.Scheduler{"default": nil},
 		Registry:   registry,
 		ServerAddr: "127.0.0.1:0",
 	})
@@ -1814,7 +1819,7 @@ func TestEventsValidInterruptModePassesIngress(t *testing.T) {
 	t.Cleanup(httpServer.Close)
 
 	body := bytes.NewBufferString(`{"type":"notify","attributes":{"interrupt_mode":"higher_priority"}}`)
-	resp, err := http.Post(httpServer.URL+"/events", "application/json", body)
+	resp, err := http.Post(httpServer.URL+"/devices/default/events", "application/json", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1851,6 +1856,7 @@ func TestEventsSchemaAgnosticAttributesPassInterruptValidation(t *testing.T) {
 	api, err := httpapi.New(httpapi.Options{
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Bus:        bus,
+		Schedulers: map[string]*matrix.Scheduler{"default": nil},
 		Registry:   registry,
 		ServerAddr: "127.0.0.1:0",
 	})
@@ -1861,7 +1867,7 @@ func TestEventsSchemaAgnosticAttributesPassInterruptValidation(t *testing.T) {
 	t.Cleanup(httpServer.Close)
 
 	body := bytes.NewBufferString(`{"type":"notify","attributes":{"param.foo":"bar","x-custom":"val"}}`)
-	resp, err := http.Post(httpServer.URL+"/events", "application/json", body)
+	resp, err := http.Post(httpServer.URL+"/devices/default/events", "application/json", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1912,7 +1918,7 @@ func TestPlayHigherPriorityInterruptEvictsQueuedLowerPriorityItems(t *testing.T)
 
 	// 1. POST the first animation at priority 0 — it will become the in-flight item.
 	lowPrioBody := fmt.Sprintf(`{"animation":%q,"duration":"2s","restore":"leave","priority":0}`, animations.NotificationAnimationID)
-	resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", bytes.NewBufferString(lowPrioBody))
+	resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/play", "application/json", bytes.NewBufferString(lowPrioBody))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1931,7 +1937,7 @@ func TestPlayHigherPriorityInterruptEvictsQueuedLowerPriorityItems(t *testing.T)
 
 	// 2. Queue two more low-priority animations behind the in-flight item.
 	for i := 0; i < 2; i++ {
-		resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", bytes.NewBufferString(lowPrioBody))
+		resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/play", "application/json", bytes.NewBufferString(lowPrioBody))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1948,7 +1954,7 @@ func TestPlayHigherPriorityInterruptEvictsQueuedLowerPriorityItems(t *testing.T)
 	//    The scheduler will evict the two queued low-priority items synchronously
 	//    inside EnqueueRequest, leaving only this item in the queue.
 	highPrioBody := fmt.Sprintf(`{"animation":%q,"duration":"500ms","restore":"leave","priority":10,"interrupt_mode":"higher_priority"}`, animations.NotificationAnimationID)
-	resp, err = http.Post(httpServer.URL+"/api/v1/play", "application/json", bytes.NewBufferString(highPrioBody))
+	resp, err = http.Post(httpServer.URL+"/api/v1/devices/default/play", "application/json", bytes.NewBufferString(highPrioBody))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1962,7 +1968,7 @@ func TestPlayHigherPriorityInterruptEvictsQueuedLowerPriorityItems(t *testing.T)
 	//    cancelled — higher_priority mode only evicts queued items, not in-flight ones.
 	waitForQueueDepth(t, httpServer.URL, 1)
 
-	queueResp, err := http.Get(httpServer.URL + "/api/v1/queue")
+	queueResp, err := http.Get(httpServer.URL + "/api/v1/devices/default/queue")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2134,12 +2140,12 @@ func TestMatrixFillWaitsForCurrentAnimationThroughScheduler(t *testing.T) {
 	cfg := config.Default()
 	cfg.Server.Addr = "127.0.0.1:0"
 	cfg.Server.AdminTokenEnv = ""
-	cfg.Matrix.Host = host
-	cfg.Matrix.Port = port
-	cfg.Matrix.ConnectTimeout = time.Second
-	cfg.Matrix.ResponseTimeout = time.Second
-	cfg.Matrix.ReconnectMinDelay = 10 * time.Millisecond
-	cfg.Matrix.ReconnectMaxDelay = 50 * time.Millisecond
+	cfg.Devices["default"].Host = host
+	cfg.Devices["default"].Port = port
+	cfg.Devices["default"].ConnectTimeout = time.Second
+	cfg.Devices["default"].ResponseTimeout = time.Second
+	cfg.Devices["default"].ReconnectMinDelay = 10 * time.Millisecond
+	cfg.Devices["default"].ReconnectMaxDelay = 50 * time.Millisecond
 	cfg.Queue.EventsBuffer = 16
 	cfg.Queue.PlayBuffer = 16
 	cfg.RulesFile = writeRulesFile(t)
@@ -2160,7 +2166,7 @@ func TestMatrixFillWaitsForCurrentAnimationThroughScheduler(t *testing.T) {
 
 	pausedFrameResponse := matrixServer.PauseNextFrameResponse()
 	notifyBody := bytes.NewBufferString(`{"title":"Test","message":"hello","duration":"750ms","restore":"leave"}`)
-	resp, err := http.Post(httpServer.URL+"/api/v1/notify", "application/json", notifyBody)
+	resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/notify", "application/json", notifyBody)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2193,7 +2199,7 @@ func TestMatrixFillWaitsForCurrentAnimationThroughScheduler(t *testing.T) {
 	fillDone := make(chan error, 1)
 	go func() {
 		fillBody := bytes.NewBufferString(`{"r":1,"g":2,"b":3}`)
-		resp, err := http.Post(httpServer.URL+"/api/v1/matrix/fill", "application/json", fillBody)
+		resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/matrix/fill", "application/json", fillBody)
 		if err != nil {
 			fillDone <- err
 			return
@@ -2264,21 +2270,21 @@ func TestMatrixControlsConvergeToConfiguredBackgroundAfterHTTPControl(t *testing
 	}{
 		{
 			name:        "fill",
-			path:        "/api/v1/matrix/fill",
+			path:        "/api/v1/devices/default/matrix/fill",
 			body:        `{"r":4,"g":5,"b":6}`,
 			command:     testCommandFill,
 			wantPayload: []byte{4, 5, 6},
 		},
 		{
 			name:        "clear",
-			path:        "/api/v1/matrix/clear",
+			path:        "/api/v1/devices/default/matrix/clear",
 			body:        `{}`,
 			command:     testCommandClear,
 			wantPayload: []byte{},
 		},
 		{
 			name:        "preset",
-			path:        "/api/v1/matrix/preset",
+			path:        "/api/v1/devices/default/matrix/preset",
 			body:        `{"effect_id":7,"interval":"25ms","color":{"r":1,"g":2,"b":3}}`,
 			command:     testCommandSetPreset,
 			wantPayload: []byte{7, 25, 0, 1, 2, 3},
@@ -2379,7 +2385,7 @@ func TestMatrixPresetDurationBoundReturnsBadRequest(t *testing.T) {
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
 	pausedFrameResponse := matrixServer.PauseNextFrameResponse()
-	resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", bytes.NewBufferString(`{"animation":"notification","duration":"750ms","restore":"leave"}`))
+	resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/play", "application/json", bytes.NewBufferString(`{"animation":"notification","duration":"750ms","restore":"leave"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2397,7 +2403,7 @@ func TestMatrixPresetDurationBoundReturnsBadRequest(t *testing.T) {
 
 	client := &http.Client{Timeout: 500 * time.Millisecond}
 	start := time.Now()
-	resp, err = client.Post(httpServer.URL+"/api/v1/matrix/preset", "application/json", bytes.NewBufferString(`{"effect_id":1,"interval":"70s"}`))
+	resp, err = client.Post(httpServer.URL+"/api/v1/devices/default/matrix/preset", "application/json", bytes.NewBufferString(`{"effect_id":1,"interval":"70s"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2434,7 +2440,7 @@ func TestMatrixControlFirmwareStatusReturnsBadGateway(t *testing.T) {
 	defer httpServer.Close()
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
-	resp, err := http.Post(httpServer.URL+"/api/v1/matrix/fill", "application/json", bytes.NewBufferString(`{"r":9,"g":8,"b":7}`))
+	resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/matrix/fill", "application/json", bytes.NewBufferString(`{"r":9,"g":8,"b":7}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2467,7 +2473,7 @@ func TestMatrixControlRetryableSocketFailureEventuallySucceeds(t *testing.T) {
 	defer httpServer.Close()
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
-	resp, err := http.Post(httpServer.URL+"/api/v1/matrix/fill", "application/json", bytes.NewBufferString(`{"r":1,"g":2,"b":3}`))
+	resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/matrix/fill", "application/json", bytes.NewBufferString(`{"r":1,"g":2,"b":3}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2501,7 +2507,7 @@ func TestQueueClearUnblocksWaitingMatrixControl(t *testing.T) {
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
 	pausedFrameResponse := matrixServer.PauseNextFrameResponse()
-	resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", bytes.NewBufferString(`{"animation":"notification","duration":"750ms","restore":"leave"}`))
+	resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/play", "application/json", bytes.NewBufferString(`{"animation":"notification","duration":"750ms","restore":"leave"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2519,7 +2525,7 @@ func TestQueueClearUnblocksWaitingMatrixControl(t *testing.T) {
 
 	fillStatus := make(chan int, 1)
 	go func() {
-		resp, err := http.Post(httpServer.URL+"/api/v1/matrix/fill", "application/json", bytes.NewBufferString(`{"r":1,"g":2,"b":3}`))
+		resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/matrix/fill", "application/json", bytes.NewBufferString(`{"r":1,"g":2,"b":3}`))
 		if err != nil {
 			fillStatus <- 0
 			return
@@ -2565,7 +2571,7 @@ func TestQueueInspectionAndClearCoverMixedSchedulerOwnedQueue(t *testing.T) {
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
 	pausedFrameResponse := matrixServer.PauseNextFrameResponse()
-	resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", bytes.NewBufferString(`{"animation":"notification","duration":"750ms","restore":"leave"}`))
+	resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/play", "application/json", bytes.NewBufferString(`{"animation":"notification","duration":"750ms","restore":"leave"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2583,7 +2589,7 @@ func TestQueueInspectionAndClearCoverMixedSchedulerOwnedQueue(t *testing.T) {
 
 	fillStatus := make(chan int, 1)
 	go func() {
-		resp, err := http.Post(httpServer.URL+"/api/v1/matrix/fill", "application/json", bytes.NewBufferString(`{"r":1,"g":2,"b":3}`))
+		resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/matrix/fill", "application/json", bytes.NewBufferString(`{"r":1,"g":2,"b":3}`))
 		if err != nil {
 			fillStatus <- 0
 			return
@@ -2594,7 +2600,7 @@ func TestQueueInspectionAndClearCoverMixedSchedulerOwnedQueue(t *testing.T) {
 	}()
 	waitForQueueDepth(t, httpServer.URL, 1)
 
-	resp, err = http.Post(httpServer.URL+"/api/v1/play", "application/json", bytes.NewBufferString(`{"animation":"notification","duration":"500ms","restore":"leave","priority":7}`))
+	resp, err = http.Post(httpServer.URL+"/api/v1/devices/default/play", "application/json", bytes.NewBufferString(`{"animation":"notification","duration":"500ms","restore":"leave","priority":7}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2689,12 +2695,12 @@ func newAdminAuthTestConfig(t *testing.T) config.Config {
 	cfg := config.Default()
 	cfg.Server.Addr = "127.0.0.1:0"
 	cfg.Server.AdminTokenEnv = ""
-	cfg.Matrix.Host = "127.0.0.1"
-	cfg.Matrix.Port = 1
-	cfg.Matrix.ConnectTimeout = time.Second
-	cfg.Matrix.ResponseTimeout = time.Second
-	cfg.Matrix.ReconnectMinDelay = 10 * time.Millisecond
-	cfg.Matrix.ReconnectMaxDelay = 50 * time.Millisecond
+	cfg.Devices["default"].Host = "127.0.0.1"
+	cfg.Devices["default"].Port = 1
+	cfg.Devices["default"].ConnectTimeout = time.Second
+	cfg.Devices["default"].ResponseTimeout = time.Second
+	cfg.Devices["default"].ReconnectMinDelay = 10 * time.Millisecond
+	cfg.Devices["default"].ReconnectMaxDelay = 50 * time.Millisecond
 	cfg.Queue.EventsBuffer = 16
 	cfg.Queue.PlayBuffer = 16
 	cfg.RulesFile = writeRulesFile(t)
@@ -2717,8 +2723,8 @@ func newHTTPMatrixTestConfig(t *testing.T, matrixAddr string) config.Config {
 func newHTTPMatrixBackgroundTestConfig(t *testing.T, matrixAddr string) config.Config {
 	t.Helper()
 	cfg := newHTTPMatrixTestConfig(t, matrixAddr)
-	cfg.Background.Animation = "matrix_rain_background"
-	cfg.Background.RestoreOnIdle = true
+	cfg.Devices["default"].Background.Animation = "matrix_rain_background"
+	cfg.Devices["default"].Background.RestoreOnIdle = true
 	cfg.AnimationRegistry = registryWithFirmwarePreset(t, "matrix_rain_background", animations.FirmwarePreset{
 		EffectID: 12,
 		Interval: 90 * time.Millisecond,
@@ -2732,14 +2738,14 @@ func newHTTPMatrixTestConfigForHostPort(t *testing.T, host string, port int) con
 	cfg := config.Default()
 	cfg.Server.Addr = "127.0.0.1:0"
 	cfg.Server.AdminTokenEnv = ""
-	cfg.Matrix.Host = host
-	cfg.Matrix.Port = port
-	cfg.Matrix.ConnectTimeout = 20 * time.Millisecond
-	cfg.Matrix.ResponseTimeout = time.Second
-	cfg.Matrix.HeartbeatInterval = 10 * time.Millisecond
-	cfg.Matrix.ProbeTimeout = 50 * time.Millisecond
-	cfg.Matrix.ReconnectMinDelay = 10 * time.Millisecond
-	cfg.Matrix.ReconnectMaxDelay = 50 * time.Millisecond
+	cfg.Devices["default"].Host = host
+	cfg.Devices["default"].Port = port
+	cfg.Devices["default"].ConnectTimeout = 20 * time.Millisecond
+	cfg.Devices["default"].ResponseTimeout = time.Second
+	cfg.Devices["default"].HeartbeatInterval = 10 * time.Millisecond
+	cfg.Devices["default"].ProbeTimeout = 50 * time.Millisecond
+	cfg.Devices["default"].ReconnectMinDelay = 10 * time.Millisecond
+	cfg.Devices["default"].ReconnectMaxDelay = 50 * time.Millisecond
 	cfg.Queue.EventsBuffer = 16
 	cfg.Queue.PlayBuffer = 16
 	cfg.RulesFile = writeRulesFile(t)
@@ -3037,7 +3043,7 @@ func waitForQueueDepth(t *testing.T, baseURL string, want int) {
 	deadline := time.Now().Add(time.Second)
 	var last queueResponse
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(baseURL + "/api/v1/queue")
+		resp, err := http.Get(baseURL + "/api/v1/devices/default/queue")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -3060,7 +3066,7 @@ func waitForQueueSnapshot(t *testing.T, baseURL string, wantDepth int) queueResp
 	deadline := time.Now().Add(time.Second)
 	var last queueResponse
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(baseURL + "/api/v1/queue")
+		resp, err := http.Get(baseURL + "/api/v1/devices/default/queue")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -3081,7 +3087,7 @@ func waitForQueueSnapshot(t *testing.T, baseURL string, wantDepth int) queueResp
 
 func deleteQueue(t *testing.T, baseURL string) int {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodDelete, baseURL+"/api/v1/queue", nil)
+	req, err := http.NewRequest(http.MethodDelete, baseURL+"/api/v1/devices/default/queue", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3224,15 +3230,24 @@ type queueColor struct {
 }
 
 type readyDetails struct {
-	Status          string           `json:"status"`
-	WorkersRunning  bool             `json:"workers_running"`
-	Draining        bool             `json:"draining"`
-	SchedulerState  string           `json:"scheduler_state"`
-	MatrixConnected bool             `json:"matrix_connected"`
-	Background      readyBackground  `json:"background"`
-	EventWorker     readyEventWorker `json:"event_worker"`
-	LastSuccess     *time.Time       `json:"last_success"`
-	LastFailure     *time.Time       `json:"last_failure"`
+	Status         string                      `json:"status"`
+	WorkersRunning bool                        `json:"workers_running"`
+	Draining       bool                        `json:"draining"`
+	EventWorker    readyEventWorker            `json:"event_worker"`
+	Devices        map[string]deviceReadyEntry `json:"devices"`
+}
+
+// DefaultDevice returns the "default" device entry, matching config.DefaultDeviceID.
+func (r readyDetails) DefaultDevice() deviceReadyEntry {
+	return r.Devices["default"]
+}
+
+type deviceReadyEntry struct {
+	SchedulerState  string          `json:"scheduler_state"`
+	MatrixConnected bool            `json:"matrix_connected"`
+	Background      readyBackground `json:"background"`
+	LastSuccess     *time.Time      `json:"last_success"`
+	LastFailure     *time.Time      `json:"last_failure"`
 }
 
 type readyBackground struct {

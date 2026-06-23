@@ -34,9 +34,9 @@ func TestBackgroundRestoreMetricsUseBoundedLabelsAndSeparateFamilies(t *testing.
 		t.Fatal(err)
 	}
 
-	registry.BackgroundRestoreAttemptsTotal.WithLabelValues("firmware_preset").Inc()
-	registry.BackgroundRestoreFailuresTotal.WithLabelValues("generated", "retryable").Inc()
-	registry.PlayItemsTotal.WithLabelValues("animation", "notification", "executed").Inc()
+	registry.BackgroundRestoreAttemptsTotal.WithLabelValues("default", "firmware_preset").Inc()
+	registry.BackgroundRestoreFailuresTotal.WithLabelValues("default", "generated", "retryable").Inc()
+	registry.PlayItemsTotal.WithLabelValues("default", "animation", "notification", "executed").Inc()
 
 	families, err := registry.Gatherer().Gather()
 	if err != nil {
@@ -44,8 +44,8 @@ func TestBackgroundRestoreMetricsUseBoundedLabelsAndSeparateFamilies(t *testing.
 	}
 	byName := metricFamiliesByName(families)
 
-	assertMetricFamilyLabelNames(t, byName, "matrix_proxy_background_restore_attempts_total", []string{"kind"})
-	assertMetricFamilyLabelNames(t, byName, "matrix_proxy_background_restore_failures_total", []string{"error_class", "kind"})
+	assertMetricFamilyLabelNames(t, byName, "matrix_proxy_background_restore_attempts_total", []string{"device", "kind"})
+	assertMetricFamilyLabelNames(t, byName, "matrix_proxy_background_restore_failures_total", []string{"device", "error_class", "kind"})
 	assertMetricFamilyHasNoLabelValue(t, byName, "matrix_proxy_background_restore_attempts_total", "kind", "renderable")
 	assertMetricFamilyHasNoLabelValue(t, byName, "matrix_proxy_background_restore_failures_total", "kind", "renderable")
 	if family := byName["matrix_proxy_play_items_total"]; family == nil {
@@ -61,15 +61,15 @@ func TestBackgroundStateGaugesUseBoundedKindOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	registry.BackgroundDirty.WithLabelValues("firmware_preset").Set(1)
-	registry.BackgroundConverged.WithLabelValues("generated").Set(0)
-	registry.BackgroundNextRetrySeconds.WithLabelValues("firmware_preset").Set(12)
+	registry.BackgroundDirty.WithLabelValues("default", "firmware_preset").Set(1)
+	registry.BackgroundConverged.WithLabelValues("default", "generated").Set(0)
+	registry.BackgroundNextRetrySeconds.WithLabelValues("default", "firmware_preset").Set(12)
 	for _, state := range []string{"unknown", "dirty", "attempting", "converged", "failed", "retrying"} {
 		value := 0.0
 		if state == "retrying" {
 			value = 1
 		}
-		registry.BackgroundState.WithLabelValues("firmware_preset", state).Set(value)
+		registry.BackgroundState.WithLabelValues("default", "firmware_preset", state).Set(value)
 	}
 
 	families, err := registry.Gatherer().Gather()
@@ -79,21 +79,21 @@ func TestBackgroundStateGaugesUseBoundedKindOnly(t *testing.T) {
 	byName := metricFamiliesByName(families)
 
 	assertMetricFamilyHelp(t, byName, "matrix_proxy_background_dirty",
-		"Whether the configured background is currently dirty by bounded background kind: 1 dirty, 0 clean.")
+		"Whether the configured background is currently dirty by device and bounded background kind: 1 dirty, 0 clean.")
 	assertMetricFamilyHelp(t, byName, "matrix_proxy_background_converged",
-		"Whether the configured background is known converged by bounded background kind: 1 converged, 0 not converged.")
+		"Whether the configured background is known converged by device and bounded background kind: 1 converged, 0 not converged.")
 	assertMetricFamilyHelp(t, byName, "matrix_proxy_background_next_retry_seconds",
-		"Seconds until the next configured background retry by bounded background kind, or 0 when no retry is pending.")
+		"Seconds until the next configured background retry by device and bounded background kind, or 0 when no retry is pending.")
 	assertMetricFamilyHelp(t, byName, "matrix_proxy_background_state",
-		"One-hot current configured background convergence state by bounded background kind and state.")
+		"One-hot current configured background convergence state by device, bounded background kind, and state.")
 	assertMetricFamilyType(t, byName, "matrix_proxy_background_dirty", dto.MetricType_GAUGE)
 	assertMetricFamilyType(t, byName, "matrix_proxy_background_converged", dto.MetricType_GAUGE)
 	assertMetricFamilyType(t, byName, "matrix_proxy_background_next_retry_seconds", dto.MetricType_GAUGE)
 	assertMetricFamilyType(t, byName, "matrix_proxy_background_state", dto.MetricType_GAUGE)
-	assertMetricFamilyLabelNames(t, byName, "matrix_proxy_background_dirty", []string{"kind"})
-	assertMetricFamilyLabelNames(t, byName, "matrix_proxy_background_converged", []string{"kind"})
-	assertMetricFamilyLabelNames(t, byName, "matrix_proxy_background_next_retry_seconds", []string{"kind"})
-	assertMetricFamilyLabelNames(t, byName, "matrix_proxy_background_state", []string{"kind", "state"})
+	assertMetricFamilyLabelNames(t, byName, "matrix_proxy_background_dirty", []string{"device", "kind"})
+	assertMetricFamilyLabelNames(t, byName, "matrix_proxy_background_converged", []string{"device", "kind"})
+	assertMetricFamilyLabelNames(t, byName, "matrix_proxy_background_next_retry_seconds", []string{"device", "kind"})
+	assertMetricFamilyLabelNames(t, byName, "matrix_proxy_background_state", []string{"device", "kind", "state"})
 	assertMetricFamilyHasNoLabelNames(t, byName, "matrix_proxy_background_dirty", "background_id", "animation", "id")
 	assertMetricFamilyHasNoLabelNames(t, byName, "matrix_proxy_background_converged", "background_id", "animation", "id")
 	assertMetricFamilyHasNoLabelNames(t, byName, "matrix_proxy_background_next_retry_seconds", "background_id", "animation", "id")
@@ -103,13 +103,15 @@ func TestBackgroundStateGaugesUseBoundedKindOnly(t *testing.T) {
 	assertMetricFamilyHasNoLabelValue(t, byName, "matrix_proxy_background_next_retry_seconds", "kind", "renderable")
 	assertMetricFamilyHasNoLabelValue(t, byName, "matrix_proxy_background_state", "kind", "renderable")
 	assertMetricFamilyGaugeValue(t, byName, "matrix_proxy_background_state", 1, map[string]string{
-		"kind":  "firmware_preset",
-		"state": "retrying",
+		"device": "default",
+		"kind":   "firmware_preset",
+		"state":  "retrying",
 	})
 	for _, state := range []string{"unknown", "dirty", "attempting", "converged", "failed"} {
 		assertMetricFamilyGaugeValue(t, byName, "matrix_proxy_background_state", 0, map[string]string{
-			"kind":  "firmware_preset",
-			"state": state,
+			"device": "default",
+			"kind":   "firmware_preset",
+			"state":  state,
 		})
 	}
 }

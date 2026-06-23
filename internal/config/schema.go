@@ -1,17 +1,24 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"time"
 )
 
+// schemaConfig is the YAML-decoded intermediate representation.
+// It supports both the legacy single-device format (matrix: / background: top-level keys)
+// and the new multi-device format (devices: map). The two formats are mutually exclusive.
 type schemaConfig struct {
-	Server         schemaServerConfig     `yaml:"server"`
-	Matrix         schemaMatrixConfig     `yaml:"matrix"`
-	Queue          schemaQueueConfig      `yaml:"queue"`
-	Background     schemaBackgroundConfig `yaml:"background"`
-	AnimationsFile *string                `yaml:"animations_file"`
-	RulesFile      *string                `yaml:"rules_file"`
+	Server         schemaServerConfig                `yaml:"server"`
+	// Legacy single-device keys — still accepted for backward compatibility.
+	Matrix         *schemaDeviceConfig               `yaml:"matrix"`
+	Background     *schemaBackgroundConfig           `yaml:"background"`
+	// New multi-device key.
+	Devices        map[string]*schemaDeviceConfig    `yaml:"devices"`
+	Queue          schemaQueueConfig                 `yaml:"queue"`
+	AnimationsFile *string                           `yaml:"animations_file"`
+	RulesFile      *string                           `yaml:"rules_file"`
 }
 
 type schemaServerConfig struct {
@@ -19,17 +26,19 @@ type schemaServerConfig struct {
 	AdminTokenEnv *string `yaml:"admin_token_env"`
 }
 
-type schemaMatrixConfig struct {
-	Host              *string         `yaml:"host"`
-	Port              *int            `yaml:"port"`
-	ConnectTimeout    *schemaDuration `yaml:"connect_timeout"`
-	ResponseTimeout   *schemaDuration `yaml:"response_timeout"`
-	HeartbeatInterval *schemaDuration `yaml:"heartbeat_interval"`
-	ProbeTimeout      *schemaDuration `yaml:"probe_timeout"`
-	ReconnectMinDelay *schemaDuration `yaml:"reconnect_min_delay"`
-	ReconnectMaxDelay *schemaDuration `yaml:"reconnect_max_delay"`
-	Brightness        *uint8          `yaml:"brightness"`
-	Layout            schemaLayout    `yaml:"layout"`
+// schemaDeviceConfig is shared by both the legacy "matrix:" key and each entry in "devices:".
+type schemaDeviceConfig struct {
+	Host              *string               `yaml:"host"`
+	Port              *int                  `yaml:"port"`
+	ConnectTimeout    *schemaDuration       `yaml:"connect_timeout"`
+	ResponseTimeout   *schemaDuration       `yaml:"response_timeout"`
+	HeartbeatInterval *schemaDuration       `yaml:"heartbeat_interval"`
+	ProbeTimeout      *schemaDuration       `yaml:"probe_timeout"`
+	ReconnectMinDelay *schemaDuration       `yaml:"reconnect_min_delay"`
+	ReconnectMaxDelay *schemaDuration       `yaml:"reconnect_max_delay"`
+	Brightness        *uint8                `yaml:"brightness"`
+	Layout            schemaLayout          `yaml:"layout"`
+	Background        *schemaBackgroundConfig `yaml:"background"`
 }
 
 type schemaLayout struct {
@@ -81,45 +90,44 @@ func (s schemaConfig) apply(cfg *Config) error {
 	if s.Server.AdminTokenEnv != nil {
 		cfg.Server.AdminTokenEnv = *s.Server.AdminTokenEnv
 	}
-	if s.Matrix.Host != nil {
-		cfg.Matrix.Host = *s.Matrix.Host
+
+	// Mutual exclusion: devices: and matrix: cannot coexist.
+	if len(s.Devices) > 0 && s.Matrix != nil {
+		return errors.New("cannot use both 'devices:' and 'matrix:' in config; use 'devices:' for multi-device")
 	}
-	if s.Matrix.Port != nil {
-		cfg.Matrix.Port = *s.Matrix.Port
+
+	if len(s.Devices) > 0 {
+		// New multi-device format — replace the default devices map entirely.
+		cfg.Devices = make(map[string]*DeviceConfig, len(s.Devices))
+		for id, sd := range s.Devices {
+			device := DefaultDeviceConfig()
+			if sd != nil {
+				sd.apply(device)
+				// Per-device background comes from the device entry's "background:" sub-key.
+				if sd.Background != nil {
+					sd.Background.apply(&device.Background)
+				}
+			}
+			cfg.Devices[id] = device
+		}
+	} else {
+		// Legacy single-device format — patch the "default" device.
+		if cfg.Devices == nil {
+			cfg.Devices = map[string]*DeviceConfig{DefaultDeviceID: DefaultDeviceConfig()}
+		}
+		def := cfg.Devices[DefaultDeviceID]
+		if def == nil {
+			def = DefaultDeviceConfig()
+			cfg.Devices[DefaultDeviceID] = def
+		}
+		if s.Matrix != nil {
+			s.Matrix.apply(def)
+		}
+		if s.Background != nil {
+			s.Background.apply(&def.Background)
+		}
 	}
-	if s.Matrix.ConnectTimeout != nil {
-		cfg.Matrix.ConnectTimeout = s.Matrix.ConnectTimeout.Duration
-	}
-	if s.Matrix.ResponseTimeout != nil {
-		cfg.Matrix.ResponseTimeout = s.Matrix.ResponseTimeout.Duration
-	}
-	if s.Matrix.HeartbeatInterval != nil {
-		cfg.Matrix.HeartbeatInterval = s.Matrix.HeartbeatInterval.Duration
-	}
-	if s.Matrix.ProbeTimeout != nil {
-		cfg.Matrix.ProbeTimeout = s.Matrix.ProbeTimeout.Duration
-	}
-	if s.Matrix.ReconnectMinDelay != nil {
-		cfg.Matrix.ReconnectMinDelay = s.Matrix.ReconnectMinDelay.Duration
-	}
-	if s.Matrix.ReconnectMaxDelay != nil {
-		cfg.Matrix.ReconnectMaxDelay = s.Matrix.ReconnectMaxDelay.Duration
-	}
-	if s.Matrix.Brightness != nil {
-		cfg.Matrix.Brightness = *s.Matrix.Brightness
-	}
-	if s.Matrix.Layout.Width != nil {
-		cfg.Matrix.Layout.Width = *s.Matrix.Layout.Width
-	}
-	if s.Matrix.Layout.Height != nil {
-		cfg.Matrix.Layout.Height = *s.Matrix.Layout.Height
-	}
-	if s.Matrix.Layout.Wiring != nil {
-		cfg.Matrix.Layout.Wiring = *s.Matrix.Layout.Wiring
-	}
-	if s.Matrix.Layout.OddRowDisplayFlip != nil {
-		cfg.Matrix.Layout.OddRowDisplayFlip = *s.Matrix.Layout.OddRowDisplayFlip
-	}
+
 	if s.Queue.EventsBuffer != nil {
 		cfg.Queue.EventsBuffer = *s.Queue.EventsBuffer
 	}
@@ -132,12 +140,6 @@ func (s schemaConfig) apply(cfg *Config) error {
 	if s.Queue.DedupWindow != nil {
 		cfg.Queue.DedupWindow = s.Queue.DedupWindow.Duration
 	}
-	if s.Background.Animation != nil {
-		cfg.Background.Animation = *s.Background.Animation
-	}
-	if s.Background.RestoreOnIdle != nil {
-		cfg.Background.RestoreOnIdle = *s.Background.RestoreOnIdle
-	}
 	if s.AnimationsFile != nil {
 		cfg.AnimationsFile = *s.AnimationsFile
 	}
@@ -146,4 +148,63 @@ func (s schemaConfig) apply(cfg *Config) error {
 	}
 
 	return nil
+}
+
+// apply patches a DeviceConfig with the non-nil fields from the schema.
+// Background is NOT applied here because it lives on a sub-key; callers handle it.
+func (s *schemaDeviceConfig) apply(d *DeviceConfig) {
+	if s == nil {
+		return
+	}
+	if s.Host != nil {
+		d.Host = *s.Host
+	}
+	if s.Port != nil {
+		d.Port = *s.Port
+	}
+	if s.ConnectTimeout != nil {
+		d.ConnectTimeout = s.ConnectTimeout.Duration
+	}
+	if s.ResponseTimeout != nil {
+		d.ResponseTimeout = s.ResponseTimeout.Duration
+	}
+	if s.HeartbeatInterval != nil {
+		d.HeartbeatInterval = s.HeartbeatInterval.Duration
+	}
+	if s.ProbeTimeout != nil {
+		d.ProbeTimeout = s.ProbeTimeout.Duration
+	}
+	if s.ReconnectMinDelay != nil {
+		d.ReconnectMinDelay = s.ReconnectMinDelay.Duration
+	}
+	if s.ReconnectMaxDelay != nil {
+		d.ReconnectMaxDelay = s.ReconnectMaxDelay.Duration
+	}
+	if s.Brightness != nil {
+		d.Brightness = *s.Brightness
+	}
+	if s.Layout.Width != nil {
+		d.Layout.Width = *s.Layout.Width
+	}
+	if s.Layout.Height != nil {
+		d.Layout.Height = *s.Layout.Height
+	}
+	if s.Layout.Wiring != nil {
+		d.Layout.Wiring = *s.Layout.Wiring
+	}
+	if s.Layout.OddRowDisplayFlip != nil {
+		d.Layout.OddRowDisplayFlip = *s.Layout.OddRowDisplayFlip
+	}
+}
+
+func (s *schemaBackgroundConfig) apply(b *BackgroundConfig) {
+	if s == nil {
+		return
+	}
+	if s.Animation != nil {
+		b.Animation = *s.Animation
+	}
+	if s.RestoreOnIdle != nil {
+		b.RestoreOnIdle = *s.RestoreOnIdle
+	}
 }

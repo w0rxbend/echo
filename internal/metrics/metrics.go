@@ -7,33 +7,36 @@ import (
 type Registry struct {
 	registry *prometheus.Registry
 
+	// Event-bus metrics are global (no device label) because the bus is shared.
 	EventsTotal                     *prometheus.CounterVec
 	EventsDroppedTotal              *prometheus.CounterVec
-	PlayItemsTotal                  *prometheus.CounterVec
-	PlayItemOutcomesDropped         prometheus.CounterFunc
-	PlayItemOutcomeRecordingPanics  prometheus.CounterFunc
-	TCPReconnectLogEventsDropped    prometheus.CounterFunc
-	PlayQueueDepth                  prometheus.Gauge
 	EventQueueDepth                 prometheus.Gauge
 	EventWorkerInflight             prometheus.Gauge
 	EventPublishBackpressureWait    prometheus.Histogram
 	EventPublishBackpressureTimeout prometheus.Counter
-	MatrixCommandsTotal             *prometheus.CounterVec
-	MatrixCommandDuration           *prometheus.HistogramVec
-	MatrixReconnectsTotal           *prometheus.CounterVec
-	MatrixReconnectDelay            *prometheus.HistogramVec
-	MatrixReconnectRecoveriesTotal  *prometheus.CounterVec
-	MatrixReconnectFailuresTotal    *prometheus.CounterVec
-	MatrixProbeFailuresTotal        *prometheus.CounterVec
-	BackgroundRestoreAttemptsTotal  *prometheus.CounterVec
-	BackgroundRestoreFailuresTotal  *prometheus.CounterVec
-	BackgroundDirty                 *prometheus.GaugeVec
-	BackgroundConverged             *prometheus.GaugeVec
-	BackgroundNextRetrySeconds      *prometheus.GaugeVec
-	BackgroundState                 *prometheus.GaugeVec
-	MatrixObservabilityPanicsTotal  []prometheus.CounterFunc
-	MatrixConnected                 prometheus.Gauge
-	AnimationRenderDuration         *prometheus.HistogramVec
+
+	// Per-device metrics all carry a "device" label.
+	PlayItemsTotal                 *prometheus.CounterVec
+	PlayQueueDepth                 *prometheus.GaugeVec
+	MatrixCommandsTotal            *prometheus.CounterVec
+	MatrixCommandDuration          *prometheus.HistogramVec
+	MatrixReconnectsTotal          *prometheus.CounterVec
+	MatrixReconnectDelay           *prometheus.HistogramVec
+	MatrixReconnectRecoveriesTotal *prometheus.CounterVec
+	MatrixReconnectFailuresTotal   *prometheus.CounterVec
+	MatrixProbeFailuresTotal       *prometheus.CounterVec
+	BackgroundRestoreAttemptsTotal *prometheus.CounterVec
+	BackgroundRestoreFailuresTotal *prometheus.CounterVec
+	BackgroundDirty                *prometheus.GaugeVec
+	BackgroundConverged            *prometheus.GaugeVec
+	BackgroundNextRetrySeconds     *prometheus.GaugeVec
+	BackgroundState                *prometheus.GaugeVec
+	MatrixConnected                *prometheus.GaugeVec
+	AnimationRenderDuration        *prometheus.HistogramVec
+
+	// CounterFuncs registered per-device at wire-up time.
+	MatrixObservabilityPanicsTotal []prometheus.CounterFunc
+	perDeviceCounterFuncs          []prometheus.CounterFunc
 }
 
 func New() (*Registry, error) {
@@ -47,14 +50,6 @@ func New() (*Registry, error) {
 		Name: "matrix_proxy_events_dropped_total",
 		Help: "Total normalized events dropped by reason.",
 	}, []string{"reason"})
-	r.PlayItemsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "matrix_proxy_play_items_total",
-		Help: "Total matrix play items by item kind, item name, and terminal outcome.",
-	}, []string{"item_kind", "item", "outcome"})
-	r.PlayQueueDepth = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "matrix_proxy_play_queue_depth",
-		Help: "Current number of matrix play items waiting to run.",
-	})
 	r.EventQueueDepth = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "matrix_proxy_event_queue_depth",
 		Help: "Current number of normalized events waiting in the app event-worker subscriber channel.",
@@ -72,138 +67,108 @@ func New() (*Registry, error) {
 		Name: "matrix_proxy_event_publish_backpressure_timeouts_total",
 		Help: "Total event publish attempts that failed because the publish context expired while blocked behind subscriber backpressure.",
 	})
+
+	r.PlayItemsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "matrix_proxy_play_items_total",
+		Help: "Total matrix play items by device, item kind, item name, and terminal outcome.",
+	}, []string{"device", "item_kind", "item", "outcome"})
+	r.PlayQueueDepth = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "matrix_proxy_play_queue_depth",
+		Help: "Current number of matrix play items waiting to run, by device.",
+	}, []string{"device"})
 	r.MatrixCommandsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "matrix_proxy_matrix_commands_total",
-		Help: "Total TCP command frame attempts sent to the matrix controller by command name and status; this is not a count of logical scheduler commands.",
-	}, []string{"command", "status"})
+		Help: "Total TCP command frame attempts sent to the matrix controller by device, command name, and status.",
+	}, []string{"device", "command", "status"})
 	r.MatrixCommandDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "matrix_proxy_matrix_command_duration_seconds",
-		Help:    "Matrix command round-trip duration in seconds.",
+		Help:    "Matrix command round-trip duration in seconds by device.",
 		Buckets: prometheus.DefBuckets,
-	}, []string{"command"})
+	}, []string{"device", "command"})
 	r.MatrixReconnectsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "matrix_proxy_matrix_reconnects_total",
-		Help: "Total matrix reconnect attempts started by bounded source and error kind. Sources include tcp_immediate socket-error reconnects and scheduler_backoff delayed reconnect loops.",
-	}, []string{"source", "error_kind"})
+		Help: "Total matrix reconnect attempts started by device, bounded source, and error kind.",
+	}, []string{"device", "source", "error_kind"})
 	r.MatrixReconnectDelay = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "matrix_proxy_matrix_reconnect_delay_seconds",
-		Help:    "Matrix scheduler reconnect backoff delay in seconds by bounded reconnect source; tcp_immediate attempts do not wait on this delay.",
+		Help:    "Matrix scheduler reconnect backoff delay in seconds by device and bounded reconnect source.",
 		Buckets: prometheus.DefBuckets,
-	}, []string{"source"})
+	}, []string{"device", "source"})
 	r.MatrixReconnectRecoveriesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "matrix_proxy_matrix_reconnect_recoveries_total",
-		Help: "Total matrix reconnect attempts that reached firmware-verified replacement connectivity by bounded source and resulting scheduler state. For non-ping tcp_immediate commands, a later retried-command transport failure is command telemetry, not proof that reconnect verification failed.",
-	}, []string{"source", "state"})
+		Help: "Total matrix reconnect attempts that reached firmware-verified replacement connectivity by device, bounded source, and resulting scheduler state. For non-ping tcp_immediate commands, a later retried-command transport failure is command telemetry, not proof that reconnect verification failed.",
+	}, []string{"device", "source", "state"})
 	r.MatrixReconnectFailuresTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "matrix_proxy_matrix_reconnect_failures_total",
-		Help: "Total terminal matrix reconnect failures before firmware-verified replacement connectivity by bounded source, error kind, and outcome. outcome=verification_failed means a replacement connection opened but firmware status/protocol/validation verification failed; outcome=failed with error_kind=retryable covers reconnect transport or dial failure.",
-	}, []string{"source", "error_kind", "outcome"})
+		Help: "Total terminal matrix reconnect failures before firmware-verified replacement connectivity by device, bounded source, error kind, and outcome. outcome=verification_failed means a replacement connection opened but firmware status/protocol/validation verification failed; outcome=failed with error_kind=retryable covers reconnect transport or dial failure.",
+	}, []string{"device", "source", "error_kind", "outcome"})
 	r.MatrixProbeFailuresTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "matrix_proxy_matrix_probe_failures_total",
-		Help: "Total matrix probe failures by error kind and bounded failure reason.",
-	}, []string{"error_kind", "reason"})
+		Help: "Total matrix probe failures by device, error kind, and bounded failure reason.",
+	}, []string{"device", "error_kind", "reason"})
 	r.BackgroundRestoreAttemptsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "matrix_proxy_background_restore_attempts_total",
-		Help: "Total scheduler-owned desired-background restore attempts by bounded background kind.",
-	}, []string{"kind"})
+		Help: "Total scheduler-owned desired-background restore attempts by device and bounded background kind.",
+	}, []string{"device", "kind"})
 	r.BackgroundRestoreFailuresTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "matrix_proxy_background_restore_failures_total",
-		Help: "Total scheduler-owned desired-background restore failures by bounded background kind and error class.",
-	}, []string{"kind", "error_class"})
+		Help: "Total scheduler-owned desired-background restore failures by device, bounded background kind, and error class.",
+	}, []string{"device", "kind", "error_class"})
 	r.BackgroundDirty = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "matrix_proxy_background_dirty",
-		Help: "Whether the configured background is currently dirty by bounded background kind: 1 dirty, 0 clean.",
-	}, []string{"kind"})
+		Help: "Whether the configured background is currently dirty by device and bounded background kind: 1 dirty, 0 clean.",
+	}, []string{"device", "kind"})
 	r.BackgroundConverged = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "matrix_proxy_background_converged",
-		Help: "Whether the configured background is known converged by bounded background kind: 1 converged, 0 not converged.",
-	}, []string{"kind"})
+		Help: "Whether the configured background is known converged by device and bounded background kind: 1 converged, 0 not converged.",
+	}, []string{"device", "kind"})
 	r.BackgroundNextRetrySeconds = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "matrix_proxy_background_next_retry_seconds",
-		Help: "Seconds until the next configured background retry by bounded background kind, or 0 when no retry is pending.",
-	}, []string{"kind"})
+		Help: "Seconds until the next configured background retry by device and bounded background kind, or 0 when no retry is pending.",
+	}, []string{"device", "kind"})
 	r.BackgroundState = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "matrix_proxy_background_state",
-		Help: "One-hot current configured background convergence state by bounded background kind and state.",
-	}, []string{"kind", "state"})
-	r.MatrixConnected = prometheus.NewGauge(prometheus.GaugeOpts{
+		Help: "One-hot current configured background convergence state by device, bounded background kind, and state.",
+	}, []string{"device", "kind", "state"})
+	r.MatrixConnected = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "matrix_proxy_matrix_connected",
-		Help: "Whether the matrix controller is currently connected: 1 connected, 0 disconnected.",
-	})
+		Help: "Whether the matrix controller is currently connected by device: 1 connected, 0 disconnected.",
+	}, []string{"device"})
 	r.AnimationRenderDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "matrix_proxy_animation_render_duration_seconds",
-		Help:    "Animation render duration in seconds.",
+		Help:    "Animation render duration in seconds by device.",
 		Buckets: prometheus.DefBuckets,
-	}, []string{"animation"})
+	}, []string{"device", "animation"})
 
-	if err := r.registry.Register(r.EventsTotal); err != nil {
-		return nil, err
+	collectors := []prometheus.Collector{
+		r.EventsTotal,
+		r.EventsDroppedTotal,
+		r.EventQueueDepth,
+		r.EventWorkerInflight,
+		r.EventPublishBackpressureWait,
+		r.EventPublishBackpressureTimeout,
+		r.PlayItemsTotal,
+		r.PlayQueueDepth,
+		r.MatrixCommandsTotal,
+		r.MatrixCommandDuration,
+		r.MatrixReconnectsTotal,
+		r.MatrixReconnectDelay,
+		r.MatrixReconnectRecoveriesTotal,
+		r.MatrixReconnectFailuresTotal,
+		r.MatrixProbeFailuresTotal,
+		r.BackgroundRestoreAttemptsTotal,
+		r.BackgroundRestoreFailuresTotal,
+		r.BackgroundDirty,
+		r.BackgroundConverged,
+		r.BackgroundNextRetrySeconds,
+		r.BackgroundState,
+		r.MatrixConnected,
+		r.AnimationRenderDuration,
 	}
-	if err := r.registry.Register(r.EventsDroppedTotal); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.PlayItemsTotal); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.PlayQueueDepth); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.EventQueueDepth); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.EventWorkerInflight); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.EventPublishBackpressureWait); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.EventPublishBackpressureTimeout); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.MatrixCommandsTotal); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.MatrixCommandDuration); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.MatrixReconnectsTotal); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.MatrixReconnectDelay); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.MatrixReconnectRecoveriesTotal); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.MatrixReconnectFailuresTotal); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.MatrixProbeFailuresTotal); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.BackgroundRestoreAttemptsTotal); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.BackgroundRestoreFailuresTotal); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.BackgroundDirty); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.BackgroundConverged); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.BackgroundNextRetrySeconds); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.BackgroundState); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.MatrixConnected); err != nil {
-		return nil, err
-	}
-	if err := r.registry.Register(r.AnimationRenderDuration); err != nil {
-		return nil, err
+	for _, c := range collectors {
+		if err := r.registry.Register(c); err != nil {
+			return nil, err
+		}
 	}
 
 	return r, nil
@@ -213,35 +178,50 @@ func (r *Registry) Gatherer() prometheus.Gatherer {
 	return r.registry
 }
 
-func (r *Registry) RegisterPlayItemOutcomesDropped(value func() float64) error {
-	r.PlayItemOutcomesDropped = prometheus.NewCounterFunc(prometheus.CounterOpts{
-		Name: "matrix_proxy_play_item_outcomes_dropped_total",
-		Help: "Total terminal matrix play item outcome reports dropped before external observer delivery.",
+func (r *Registry) RegisterPlayItemOutcomesDropped(deviceID string, value func() float64) error {
+	counter := prometheus.NewCounterFunc(prometheus.CounterOpts{
+		Name:        "matrix_proxy_play_item_outcomes_dropped_total",
+		Help:        "Total terminal matrix play item outcome reports dropped before external observer delivery.",
+		ConstLabels: prometheus.Labels{"device": deviceID},
 	}, value)
-	return r.registry.Register(r.PlayItemOutcomesDropped)
+	if err := r.registry.Register(counter); err != nil {
+		return err
+	}
+	r.perDeviceCounterFuncs = append(r.perDeviceCounterFuncs, counter)
+	return nil
 }
 
-func (r *Registry) RegisterPlayItemOutcomeRecordingPanics(value func() float64) error {
-	r.PlayItemOutcomeRecordingPanics = prometheus.NewCounterFunc(prometheus.CounterOpts{
-		Name: "matrix_proxy_play_item_outcome_recording_panics_total",
-		Help: "Total panics recovered while recording terminal matrix play item outcomes through the reliable scheduler sink, distinct from best-effort observer delivery drops.",
+func (r *Registry) RegisterPlayItemOutcomeRecordingPanics(deviceID string, value func() float64) error {
+	counter := prometheus.NewCounterFunc(prometheus.CounterOpts{
+		Name:        "matrix_proxy_play_item_outcome_recording_panics_total",
+		Help:        "Total panics recovered while recording terminal matrix play item outcomes through the reliable scheduler sink.",
+		ConstLabels: prometheus.Labels{"device": deviceID},
 	}, value)
-	return r.registry.Register(r.PlayItemOutcomeRecordingPanics)
+	if err := r.registry.Register(counter); err != nil {
+		return err
+	}
+	r.perDeviceCounterFuncs = append(r.perDeviceCounterFuncs, counter)
+	return nil
 }
 
-func (r *Registry) RegisterTCPReconnectLogEventsDropped(value func() float64) error {
-	r.TCPReconnectLogEventsDropped = prometheus.NewCounterFunc(prometheus.CounterOpts{
-		Name: "matrix_proxy_tcp_reconnect_log_events_dropped_total",
-		Help: "Total best-effort TCP reconnect log events dropped before slog handling because the dispatcher queue was full or closed.",
+func (r *Registry) RegisterTCPReconnectLogEventsDropped(deviceID string, value func() float64) error {
+	counter := prometheus.NewCounterFunc(prometheus.CounterOpts{
+		Name:        "matrix_proxy_tcp_reconnect_log_events_dropped_total",
+		Help:        "Total best-effort TCP reconnect log events dropped before slog handling because the dispatcher queue was full or closed.",
+		ConstLabels: prometheus.Labels{"device": deviceID},
 	}, value)
-	return r.registry.Register(r.TCPReconnectLogEventsDropped)
+	if err := r.registry.Register(counter); err != nil {
+		return err
+	}
+	r.perDeviceCounterFuncs = append(r.perDeviceCounterFuncs, counter)
+	return nil
 }
 
-func (r *Registry) RegisterMatrixObservabilityCallbackPanics(source, callback string, value func() float64) error {
+func (r *Registry) RegisterMatrixObservabilityCallbackPanics(deviceID, source, callback string, value func() float64) error {
 	counter := prometheus.NewCounterFunc(prometheus.CounterOpts{
 		Name:        "matrix_proxy_matrix_observability_callback_panics_total",
-		Help:        "Total panics recovered from matrix observability callbacks by bounded source and callback name.",
-		ConstLabels: prometheus.Labels{"source": source, "callback": callback},
+		Help:        "Total panics recovered from matrix observability callbacks by device, bounded source, and callback name.",
+		ConstLabels: prometheus.Labels{"device": deviceID, "source": source, "callback": callback},
 	}, value)
 	if err := r.registry.Register(counter); err != nil {
 		return err

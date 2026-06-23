@@ -2,6 +2,14 @@
 
 Go proxy service for an ESP8266 LED matrix controller. The app accepts normalized events through HTTP and integrations, maps them through rules, schedules matrix work serially, and owns the single TCP connection to the controller.
 
+## API Contract
+
+The v1 API contract is now defined in [`docs/openapi.yaml`](docs/openapi.yaml).
+It includes device-scoped endpoints under `/api/v1/devices/{device_id}/...` and documents
+the legacy single-device compatibility routes (`/api/v1/play`, `/api/v1/notify`,
+`/api/v1/events`, `/api/v1/queue`, and `/api/v1/matrix/*`) that continue to map to
+implicit device `a`.
+
 ## Event Bus Observability
 
 The event bus currently supports only `queue.overflow_policy: block`. Publish uses sequential blocking fan-out: if a subscriber channel is full, the publisher waits until that subscriber receives from its channel or the publish context expires. In the current app, HTTP and event publishers can wait behind a full app-worker subscriber before the event worker receives from its channel. A publish error is not atomic non-delivery: earlier subscribers may already have received the event before a later subscriber blocks long enough for the publish context to expire.

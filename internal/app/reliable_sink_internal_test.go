@@ -46,7 +46,7 @@ func TestReadyAndMetricsExposeNonzeroOutcomeRecordingPanics(t *testing.T) {
 	defer httpServer.Close()
 	waitForInternalStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
-	postInternalJSON(t, httpServer.URL+"/api/v1/matrix/fill", `{"r":9,"g":10,"b":11}`, http.StatusOK)
+	postInternalJSON(t, httpServer.URL+"/api/v1/devices/default/matrix/fill", `{"r":9,"g":10,"b":11}`, http.StatusOK)
 
 	waitForInternalReadyOutcomeRecordingPanics(t, httpServer.URL, 1)
 	waitForInternalMetricLine(t, httpServer.URL, "matrix_proxy_play_item_outcome_recording_panics_total", " 1")
@@ -81,7 +81,7 @@ func TestAppShutdownTimeoutDefersResourceCloseUntilWorkersStopWithBlockedReliabl
 	waitForInternalStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 	waitForActiveMatrixConnections(t, matrixServer, 1)
 
-	postInternalJSON(t, httpServer.URL+"/api/v1/play", `{"animation":"notification","duration":"2s","restore":"leave"}`, http.StatusAccepted)
+	postInternalJSON(t, httpServer.URL+"/api/v1/devices/default/play", `{"animation":"notification","duration":"2s","restore":"leave"}`, http.StatusAccepted)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -127,7 +127,7 @@ func TestAppShutdownTimeoutDefersResourceCloseUntilWorkersStopWithBlockedReliabl
 	if got := matrixServer.ClosedConnections(); got != 0 {
 		t.Fatalf("matrix connections closed after workers stopped before cleanup = %d, want 0", got)
 	}
-	postInternalJSON(t, httpServer.URL+"/api/v1/events", `{"type":"shutdown-timeout-before-cleanup-test"}`, http.StatusAccepted)
+	postInternalJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"shutdown-timeout-before-cleanup-test"}`, http.StatusAccepted)
 
 	if err := application.Shutdown(context.Background()); err != nil {
 		t.Fatalf("follow-up Shutdown() error = %v, want nil", err)
@@ -142,7 +142,7 @@ func TestAppShutdownTimeoutDefersResourceCloseUntilWorkersStopWithBlockedReliabl
 	if got := matrixServer.ClosedConnections(); got != 1 {
 		t.Fatalf("matrix connections closed after idempotent cleanup = %d, want 1", got)
 	}
-	postInternalJSON(t, httpServer.URL+"/api/v1/events", `{"type":"shutdown-timeout-test"}`, http.StatusServiceUnavailable)
+	postInternalJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"shutdown-timeout-test"}`, http.StatusServiceUnavailable)
 	if err := application.RunWorkers(context.Background()); !errors.Is(err, ErrAppClosed) {
 		t.Fatalf("RunWorkers() after shutdown timeout cleanup error = %v, want ErrAppClosed", err)
 	}

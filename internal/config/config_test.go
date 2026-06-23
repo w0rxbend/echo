@@ -18,11 +18,11 @@ func TestDefaultConfigValid(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Default().Validate() error = %v", err)
 	}
-	if cfg.Matrix.HeartbeatInterval <= 0 {
-		t.Fatalf("default matrix.heartbeat_interval = %s, want positive", cfg.Matrix.HeartbeatInterval)
+	if cfg.Devices["default"].HeartbeatInterval <= 0 {
+		t.Fatalf("default matrix.heartbeat_interval = %s, want positive", cfg.Devices["default"].HeartbeatInterval)
 	}
-	if cfg.Matrix.ProbeTimeout <= 0 {
-		t.Fatalf("default matrix.probe_timeout = %s, want positive", cfg.Matrix.ProbeTimeout)
+	if cfg.Devices["default"].ProbeTimeout <= 0 {
+		t.Fatalf("default matrix.probe_timeout = %s, want positive", cfg.Devices["default"].ProbeTimeout)
 	}
 	if cfg.Queue.OverflowPolicy != "block" {
 		t.Fatalf("default queue.overflow_policy = %q, want block", cfg.Queue.OverflowPolicy)
@@ -33,8 +33,8 @@ func TestDefaultConfigValid(t *testing.T) {
 	if cfg.AnimationsFile != "" {
 		t.Fatalf("default animations_file = %q, want empty", cfg.AnimationsFile)
 	}
-	if cfg.Background.Animation != "" || cfg.Background.RestoreOnIdle {
-		t.Fatalf("default background = %+v, want disabled until configured", cfg.Background)
+	if cfg.Devices["default"].Background.Animation != "" || cfg.Devices["default"].Background.RestoreOnIdle {
+		t.Fatalf("default background = %+v, want disabled until configured", cfg.Devices["default"].Background)
 	}
 }
 
@@ -55,11 +55,11 @@ queue:
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if cfg.Matrix.HeartbeatInterval != 750*time.Millisecond {
-		t.Fatalf("matrix.heartbeat_interval = %s, want 750ms", cfg.Matrix.HeartbeatInterval)
+	if cfg.Devices["default"].HeartbeatInterval != 750*time.Millisecond {
+		t.Fatalf("matrix.heartbeat_interval = %s, want 750ms", cfg.Devices["default"].HeartbeatInterval)
 	}
-	if cfg.Matrix.ProbeTimeout != 1500*time.Millisecond {
-		t.Fatalf("matrix.probe_timeout = %s, want 1500ms", cfg.Matrix.ProbeTimeout)
+	if cfg.Devices["default"].ProbeTimeout != 1500*time.Millisecond {
+		t.Fatalf("matrix.probe_timeout = %s, want 1500ms", cfg.Devices["default"].ProbeTimeout)
 	}
 }
 
@@ -72,30 +72,30 @@ func TestValidateRejectsInvalidHeartbeatAndProbeDurations(t *testing.T) {
 		{
 			name: "zero heartbeat",
 			mutate: func(cfg *Config) {
-				cfg.Matrix.HeartbeatInterval = 0
+				cfg.Devices["default"].HeartbeatInterval = 0
 			},
-			wantErr: "matrix.heartbeat_interval must be positive",
+			wantErr: "heartbeat_interval must be positive",
 		},
 		{
 			name: "negative heartbeat",
 			mutate: func(cfg *Config) {
-				cfg.Matrix.HeartbeatInterval = -time.Second
+				cfg.Devices["default"].HeartbeatInterval = -time.Second
 			},
-			wantErr: "matrix.heartbeat_interval must be positive",
+			wantErr: "heartbeat_interval must be positive",
 		},
 		{
 			name: "zero probe",
 			mutate: func(cfg *Config) {
-				cfg.Matrix.ProbeTimeout = 0
+				cfg.Devices["default"].ProbeTimeout = 0
 			},
-			wantErr: "matrix.probe_timeout must be positive",
+			wantErr: "probe_timeout must be positive",
 		},
 		{
 			name: "negative probe",
 			mutate: func(cfg *Config) {
-				cfg.Matrix.ProbeTimeout = -time.Second
+				cfg.Devices["default"].ProbeTimeout = -time.Second
 			},
-			wantErr: "matrix.probe_timeout must be positive",
+			wantErr: "probe_timeout must be positive",
 		},
 	}
 
@@ -121,17 +121,17 @@ func TestValidateRejectsInvalidReconnectBounds(t *testing.T) {
 		{
 			name: "nonpositive min",
 			mutate: func(cfg *Config) {
-				cfg.Matrix.ReconnectMinDelay = 0
+				cfg.Devices["default"].ReconnectMinDelay = 0
 			},
-			wantErr: "matrix.reconnect_min_delay must be positive",
+			wantErr: "reconnect_min_delay must be positive",
 		},
 		{
 			name: "max less than min",
 			mutate: func(cfg *Config) {
-				cfg.Matrix.ReconnectMinDelay = time.Second
-				cfg.Matrix.ReconnectMaxDelay = time.Second - time.Nanosecond
+				cfg.Devices["default"].ReconnectMinDelay = time.Second
+				cfg.Devices["default"].ReconnectMaxDelay = time.Second - time.Nanosecond
 			},
-			wantErr: "matrix.reconnect_max_delay must be greater than or equal to reconnect_min_delay",
+			wantErr: "reconnect_max_delay must be >=",
 		},
 	}
 
@@ -975,7 +975,7 @@ queue:
 
 	_, err := Load(path)
 	if err == nil || !strings.Contains(err.Error(), `background references unknown animation "missing_background"`) {
-		t.Fatalf("Load() error = %v, want unknown background animation reference", err)
+		t.Fatalf("Load() error = %v, want unknown background animation reference (containing \"background references unknown animation\")", err)
 	}
 }
 
@@ -1004,8 +1004,8 @@ queue:
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.Background.Animation != "matrix_rain_background" || !cfg.Background.RestoreOnIdle {
-		t.Fatalf("background = %+v, want firmware preset restore enabled", cfg.Background)
+	if cfg.Devices["default"].Background.Animation != "matrix_rain_background" || !cfg.Devices["default"].Background.RestoreOnIdle {
+		t.Fatalf("background = %+v, want firmware preset restore enabled", cfg.Devices["default"].Background)
 	}
 	if _, ok := cfg.AnimationRegistry.FirmwarePreset("matrix_rain_background"); !ok {
 		t.Fatal("loaded registry missing firmware preset background")

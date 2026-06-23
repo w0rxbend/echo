@@ -1,0 +1,1369 @@
+openapi: 3.0.3
+info:
+  title: LED Matrix Proxy API
+  version: 1.0.0
+  description: >
+    v1 API contract for the LED Matrix Proxy with both legacy single-device endpoints and
+    explicit per-device operations.
+
+servers:
+  - url: /
+
+tags:
+  - name: Matrix Playback
+  - name: Matrix Controls
+  - name: Queue
+  - name: Device Discovery
+  - name: System
+
+paths:
+  /healthz:
+    get:
+      tags:
+        - System
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Service is running
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                properties:
+                  status:
+                    type: string
+                    enum:
+                      - ok
+
+  /readyz:
+    get:
+      tags:
+        - System
+      summary: Global readiness
+      description: >
+        Compatibility endpoint kept from existing behavior. Reflects global process readiness.
+      responses:
+        '200':
+          description: Service and default device path are ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/v1/devices:
+    get:
+      tags:
+        - Device Discovery
+      summary: List configured devices
+      description: >
+        Returns the set of discoverable devices for explicit routing.
+      responses:
+        '200':
+          description: Device discovery payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceListResponse'
+
+  /api/v1/devices/{device_id}/ready:
+    get:
+      tags:
+        - Device Discovery
+      summary: Device-specific readiness and health
+      description: >
+        Returns readiness for exactly one explicit device session.
+        All scheduling, queueing, control and background state is scoped to that device.
+      parameters:
+        - $ref: '#/components/parameters/DeviceID'
+      responses:
+        '200':
+          description: Device readiness snapshot for selected device
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyResponse'
+        '400':
+          $ref: '#/components/responses/DeviceLookupInvalid'
+        '404':
+          $ref: '#/components/responses/DeviceLookupUnknown'
+
+  /api/v1/devices/{device_id}/play:
+    post:
+      tags:
+        - Matrix Playback
+      summary: Device-scoped playback queue submission
+      description: >
+        Explicitly targets one device by `device_id`.
+        All semantics below are per-device:
+        - queue limits,
+        - `interrupt_mode` conflict/eviction,
+        - control outcomes,
+        - outcomes and clear operations.
+      parameters:
+        - $ref: '#/components/parameters/DeviceID'
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlayRequest'
+      responses:
+        '202':
+          description: Playback request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayResponse'
+        '400':
+          $ref: '#/components/responses/DeviceLookupInvalidOrValidationOrQueueFull'
+        '404':
+          $ref: '#/components/responses/DeviceLookupUnknown'
+        '503':
+          $ref: '#/components/responses/InternalDependencyFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/play:
+    post:
+      tags:
+        - Matrix Playback
+      summary: Playback queue submission (compatibility)
+      description: >
+        Compatibility route that maps to the implicit default device `a`.
+        Behavior and validation are otherwise identical to `/api/v1/devices/{device_id}/play`.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlayRequest'
+      responses:
+        '202':
+          description: Playback request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayResponse'
+        '400':
+          $ref: '#/components/responses/ValidationErrorOrQueueFull'
+        '503':
+          $ref: '#/components/responses/InternalDependencyFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/devices/{device_id}/notify:
+    post:
+      tags:
+        - Matrix Playback
+      summary: Device-scoped notification playback request
+      description: >
+        Explicitly targets one device.
+        This endpoint is asynchronous and uses the same validation vocabulary as `/play`.
+      parameters:
+        - $ref: '#/components/parameters/DeviceID'
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotifyRequest'
+      responses:
+        '202':
+          description: Notification accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventResponse'
+        '400':
+          $ref: '#/components/responses/DeviceLookupInvalidOrValidation'
+        '404':
+          $ref: '#/components/responses/DeviceLookupUnknown'
+        '503':
+          $ref: '#/components/responses/InternalDependencyFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/notify:
+    post:
+      tags:
+        - Matrix Playback
+      summary: Notification playback request (compatibility)
+      description: >
+        Compatibility route that maps to the implicit default device `a`.
+        Behavior and validation are otherwise identical to `/api/v1/devices/{device_id}/notify`.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotifyRequest'
+      responses:
+        '202':
+          description: Notification accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '503':
+          $ref: '#/components/responses/InternalDependencyFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/devices/{device_id}/events:
+    post:
+      tags:
+        - Matrix Playback
+      summary: Device-scoped generic event ingestion
+      description: >
+        Generic normalized events are published after known playback override validation.
+        Known override fields are enforced synchronously; unknown custom attributes pass through.
+      parameters:
+        - $ref: '#/components/parameters/DeviceID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventRequest'
+      responses:
+        '202':
+          description: Event accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/DeviceLookupUnknown'
+        '503':
+          $ref: '#/components/responses/InternalDependencyFailure'
+
+  /api/v1/events:
+    post:
+      tags:
+        - Matrix Playback
+      summary: Generic event ingestion (compatibility)
+      description: >
+        Compatibility route that maps to implicit default device `a`.
+        Behavior and validation are otherwise identical to
+        `/api/v1/devices/{device_id}/events`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventRequest'
+      responses:
+        '202':
+          description: Event accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventResponse'
+        '400':
+          $ref: '#/components/responses/DeviceLookupInvalidOrValidation'
+        '503':
+          $ref: '#/components/responses/InternalDependencyFailure'
+        '404':
+          $ref: '#/components/responses/DeviceLookupUnknown'
+
+  /api/v1/devices/{device_id}/queue:
+    get:
+      tags:
+        - Queue
+      summary: Device-specific queue inspection
+      description: >
+        Returns queue snapshot for the selected device only.
+        The queue includes both control and animation items; only this device's queue is returned.
+      parameters:
+        - $ref: '#/components/parameters/DeviceID'
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Queue state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueResponse'
+        '400':
+          $ref: '#/components/responses/DeviceLookupInvalid'
+        '404':
+          $ref: '#/components/responses/DeviceLookupUnknown'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      tags:
+        - Queue
+      summary: Device-specific queue clear
+      description: >
+        Clears the selected device queue only.
+        Queue clear removes queued items only, not the in-flight item currently executing.
+        `cleared` is the number of entries removed from queue depth.
+      parameters:
+        - $ref: '#/components/parameters/DeviceID'
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Number of queued items removed for this device
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueClearResponse'
+        '400':
+          $ref: '#/components/responses/DeviceLookupInvalid'
+        '404':
+          $ref: '#/components/responses/DeviceLookupUnknown'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/queue:
+    get:
+      tags:
+        - Queue
+      summary: Default-device queue inspection (compatibility)
+      description: Compatibility route for implicit device `a`.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Queue state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      tags:
+        - Queue
+      summary: Default-device queue clear (compatibility)
+      description: Compatibility route for implicit device `a`.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Number of queued items removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueClearResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/devices/{device_id}/matrix/clear:
+    post:
+      tags:
+        - Matrix Controls
+      summary: Device-specific matrix clear
+      description: >
+        Enqueues a direct clear control operation for the selected device.
+        Control execution remains per-device.
+      parameters:
+        - $ref: '#/components/parameters/DeviceID'
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Control accepted and completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControlResponse'
+        '400':
+          $ref: '#/components/responses/DeviceLookupInvalidOrInvalidControl'
+        '404':
+          $ref: '#/components/responses/DeviceLookupUnknown'
+        '503':
+          $ref: '#/components/responses/InternalDependencyFailure'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/matrix/clear:
+    post:
+      tags:
+        - Matrix Controls
+      summary: Matrix clear (compatibility)
+      description: Compatibility route for implicit device `a`.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Control accepted and completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControlResponse'
+        '400':
+          $ref: '#/components/responses/InvalidControl'
+        '503':
+          $ref: '#/components/responses/InternalDependencyFailure'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/devices/{device_id}/matrix/brightness:
+    post:
+      tags:
+        - Matrix Controls
+      summary: Device-specific matrix brightness
+      description: >
+        Enqueues a direct brightness control for the selected device.
+      parameters:
+        - $ref: '#/components/parameters/DeviceID'
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BrightnessRequest'
+      responses:
+        '200':
+          description: Control accepted and completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControlResponse'
+        '400':
+          $ref: '#/components/responses/DeviceLookupInvalidOrInvalidControl'
+        '404':
+          $ref: '#/components/responses/DeviceLookupUnknown'
+        '503':
+          $ref: '#/components/responses/InternalDependencyFailure'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/matrix/brightness:
+    post:
+      tags:
+        - Matrix Controls
+      summary: Matrix brightness (compatibility)
+      description: Compatibility route for implicit device `a`.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BrightnessRequest'
+      responses:
+        '200':
+          description: Control accepted and completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControlResponse'
+        '400':
+          $ref: '#/components/responses/InvalidControl'
+        '503':
+          $ref: '#/components/responses/InternalDependencyFailure'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/devices/{device_id}/matrix/preset:
+    post:
+      tags:
+        - Matrix Controls
+      summary: Device-specific matrix preset control
+      description: >
+        Enqueues firmware preset control for the selected device.
+        `interval` is validated for non-negative duration and firmware command bound.
+      parameters:
+        - $ref: '#/components/parameters/DeviceID'
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresetRequest'
+      responses:
+        '200':
+          description: Control accepted and completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControlResponse'
+        '400':
+          $ref: '#/components/responses/DeviceLookupInvalidOrInvalidControl'
+        '404':
+          $ref: '#/components/responses/DeviceLookupUnknown'
+        '503':
+          $ref: '#/components/responses/InternalDependencyFailure'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/matrix/preset:
+    post:
+      tags:
+        - Matrix Controls
+      summary: Matrix preset control (compatibility)
+      description: Compatibility route for implicit device `a`.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresetRequest'
+      responses:
+        '200':
+          description: Control accepted and completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControlResponse'
+        '400':
+          $ref: '#/components/responses/InvalidControl'
+        '503':
+          $ref: '#/components/responses/InternalDependencyFailure'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/devices/{device_id}/matrix/fill:
+    post:
+      tags:
+        - Matrix Controls
+      summary: Device-specific matrix fill
+      description: >
+        Enqueues direct RGB fill control for the selected device.
+      parameters:
+        - $ref: '#/components/parameters/DeviceID'
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FillRequest'
+      responses:
+        '200':
+          description: Control accepted and completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControlResponse'
+        '400':
+          $ref: '#/components/responses/DeviceLookupInvalidOrInvalidControl'
+        '404':
+          $ref: '#/components/responses/DeviceLookupUnknown'
+        '503':
+          $ref: '#/components/responses/InternalDependencyFailure'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/matrix/fill:
+    post:
+      tags:
+        - Matrix Controls
+      summary: Matrix fill (compatibility)
+      description: Compatibility route for implicit device `a`.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FillRequest'
+      responses:
+        '200':
+          description: Control accepted and completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControlResponse'
+        '400':
+          $ref: '#/components/responses/InvalidControl'
+        '503':
+          $ref: '#/components/responses/InternalDependencyFailure'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '504':
+          $ref: '#/components/responses/GatewayTimeout'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/animations:
+    get:
+      tags:
+        - System
+      summary: Discover playable animation IDs
+      responses:
+        '200':
+          description: Playable animations only
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayableAnimationsResponse'
+
+  /api/v1/animations/catalog:
+    get:
+      tags:
+        - System
+      summary: Catalog of animation metadata
+      responses:
+        '200':
+          description: Full catalog entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnimationCatalogResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: token
+      description: >
+        Required for admin-only routes when `server_addr` is non-local in the running deployment.
+        Local binds may omit this header.
+
+  parameters:
+    DeviceID:
+      name: device_id
+      in: path
+      required: true
+      description: >
+        Device identifier. Valid values are explicit device IDs advertised by `/api/v1/devices`.
+        In this contract version supported IDs are `a` and `b`.
+      schema:
+        type: string
+        pattern: '^[a-z][a-z0-9_-]{0,9}$'
+        enum: [a, b]
+
+  responses:
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationErrorOrQueueFull:
+      description: Validation error (including playback queue full or malformed request)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InvalidControl:
+      description: Invalid control request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    DeviceLookupInvalid:
+      description: Invalid `device_id` format
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    DeviceLookupInvalidOrValidation:
+      description: Invalid device id or request validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    DeviceLookupInvalidOrValidationOrQueueFull:
+      description: Invalid device id, request validation error, or playback queue full
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    DeviceLookupUnknown:
+      description: Unknown `device_id`
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    DeviceLookupInvalidOrInvalidControl:
+      description: Device id validation or invalid control request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalDependencyFailure:
+      description: Internal dependency unavailable or scheduler is rejecting request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    BadGateway:
+      description: Matrix protocol/reply-level failure
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    GatewayTimeout:
+      description: Control control/context timeout while waiting for completion
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing bearer token on admin route
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Invalid bearer token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ServiceUnavailable:
+      description: Service is not ready
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ReadyResponse'
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+
+    DeviceListResponse:
+      type: object
+      required:
+        - devices
+      properties:
+        devices:
+          type: array
+          items:
+            type: string
+            enum: [a, b]
+          description: Discoverable device identifiers
+          example: [a, b]
+
+    PlayResponse:
+      type: object
+      required:
+        - request_id
+      properties:
+        request_id:
+          type: string
+
+    EventResponse:
+      type: object
+      required:
+        - event_id
+      properties:
+        event_id:
+          type: string
+
+    PlayRequest:
+      type: object
+      required:
+        - animation
+      additionalProperties: false
+      properties:
+        animation:
+          type: string
+          description: Playable animation ID (required)
+        duration:
+          type: string
+          description: >
+            Optional non-negative Go duration string (e.g. `250ms`, `2s`, `1m30s`).
+            Parsed via `time.ParseDuration`.
+        priority:
+          type: integer
+          format: int32
+          default: 0
+        restore:
+          $ref: '#/components/schemas/RestorePolicy'
+        interrupt_mode:
+          $ref: '#/components/schemas/InterruptMode'
+        params:
+          type: object
+          description: Optional animation parameters
+          additionalProperties:
+            type: string
+      description: >
+        Queue limit is per-device and enforced by device scheduler queue capacity.
+        Defaulting: `restore` defaults to `background`; `interrupt_mode` defaults to `none`.
+
+    NotifyRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+        message:
+          type: string
+        level:
+          type: string
+        animation:
+          type: string
+          description: Optional playable animation override
+        duration:
+          type: string
+          description: Optional non-negative Go duration string.
+        priority:
+          type: integer
+          format: int32
+          default: 0
+        restore:
+          $ref: '#/components/schemas/RestorePolicy'
+        params:
+          type: object
+          additionalProperties:
+            type: string
+      description: >
+        Payload is validated with the same override vocabulary as `/play` for `animation`,
+        `duration`, `restore`, and `params`.
+
+    EventRequest:
+      type: object
+      required:
+        - type
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+          description: Optional event identifier; if omitted, server generates one.
+        source:
+          type: string
+          enum:
+            - http
+            - external
+            - twitch
+            - youtube
+            - telegram
+            - discord
+          description: Optional source override; omitted defaults to `external`.
+        type:
+          type: string
+          description: Event type (required)
+        target:
+          type: string
+          description: >
+            Optional target device hint in payload. Ignored when routing through a device-scoped
+            path, where path `device_id` is authoritative.
+        actor:
+          type: string
+        text:
+          type: string
+        channel:
+          type: string
+        received_at:
+          type: string
+          format: date-time
+          description: >
+            Optional event receive timestamp; if omitted, server uses current UTC time.
+        priority:
+          type: integer
+          format: int32
+          default: 0
+          description: Priority forwarded into playback scheduling.
+        dedup_key:
+          type: string
+          description: Optional deduplication key.
+        attributes:
+          type: object
+          additionalProperties:
+            type: string
+          description: >
+            Arbitrary string attributes are preserved for unknown keys. Known keys are
+            validated before publish (`animation`, `restore`, `duration`, `interrupt_mode`).
+      description: >
+        Unknown attributes are retained and treated as opaque metadata.
+
+    RestorePolicy:
+      type: string
+      enum:
+        - clear
+        - blank
+        - previous_frame
+        - background
+        - leave
+      description: |
+        Restore policy values:
+        - `clear`: clear the display after playback duration.
+        - `blank`: clear to all-black after playback duration.
+        - `previous_frame`: restore to immediately prior frame.
+        - `background`: restore configured background.
+        - `leave`: leave displayed content from playback.
+
+    InterruptMode:
+      type: string
+      enum:
+        - none
+        - higher_priority
+        - critical
+      description: |
+        Conflict behavior per-device:
+        - `none`: no queue conflict intervention.
+        - `higher_priority`: evict queued lower-priority playback items.
+        - `critical`: evict queued lower-priority playback items and preempt current lower-priority item.
+
+    QueueResponse:
+      type: object
+      required:
+        - depth
+        - state
+        - items
+      properties:
+        depth:
+          type: integer
+          minimum: 0
+          description: Number of entries currently queued
+        state:
+          $ref: '#/components/schemas/SchedulerState'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/QueueItem'
+      description: >
+        Queue inspection is per-device for explicit routes.
+
+    QueueItem:
+      type: object
+      required:
+        - kind
+        - priority
+      properties:
+        kind:
+          type: string
+          enum:
+            - animation
+            - control
+        id:
+          type: string
+        event_id:
+          type: string
+        animation_id:
+          type: string
+        priority:
+          type: integer
+          format: int32
+        restore_policy:
+          $ref: '#/components/schemas/RestorePolicy'
+        created_at:
+          type: string
+          format: date-time
+        deadline:
+          type: string
+          format: date-time
+        control:
+          $ref: '#/components/schemas/QueueControl'
+
+    QueueControl:
+      type: object
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum:
+            - clear
+            - brightness
+            - preset
+            - fill
+        priority:
+          type: integer
+          format: int32
+        brightness:
+          type: integer
+          minimum: 0
+          maximum: 255
+        effect_id:
+          type: integer
+          minimum: 0
+          maximum: 255
+        interval:
+          type: integer
+          format: int64
+          description: Preset interval in milliseconds.
+        color:
+          $ref: '#/components/schemas/Color'
+        created_at:
+          type: string
+          format: date-time
+        deadline:
+          type: string
+          format: date-time
+
+    QueueClearResponse:
+      type: object
+      required:
+        - cleared
+      properties:
+        cleared:
+          type: integer
+          minimum: 0
+          description: >
+            Count of queued items removed by clear.
+            Does not include the currently running item.
+
+    ControlResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [ok]
+
+    BrightnessRequest:
+      type: object
+      required:
+        - value
+      additionalProperties: false
+      properties:
+        value:
+          type: integer
+          minimum: 0
+          maximum: 255
+
+    FillRequest:
+      type: object
+      required:
+        - r
+        - g
+        - b
+      additionalProperties: false
+      properties:
+        r:
+          type: integer
+          minimum: 0
+          maximum: 255
+        g:
+          type: integer
+          minimum: 0
+          maximum: 255
+        b:
+          type: integer
+          minimum: 0
+          maximum: 255
+
+    PresetRequest:
+      type: object
+      required:
+        - effect_id
+      additionalProperties: false
+      properties:
+        effect_id:
+          type: integer
+          minimum: 0
+          maximum: 255
+          description: Preset effect id for firmware preset control
+        interval:
+          type: string
+          description: >
+            Optional interval duration for preset timing.
+            Must parse as non-negative duration and must not exceed firmware bound.
+        color:
+          $ref: '#/components/schemas/Color'
+        r:
+          type: integer
+          minimum: 0
+          maximum: 255
+          deprecated: true
+          description: >
+            Deprecated top-level color compatibility field. Use `color` object instead.
+        g:
+          type: integer
+          minimum: 0
+          maximum: 255
+          deprecated: true
+          description: Deprecated top-level color compatibility field.
+        b:
+          type: integer
+          minimum: 0
+          maximum: 255
+          deprecated: true
+          description: Deprecated top-level color compatibility field.
+
+    Color:
+      type: object
+      required:
+        - r
+        - g
+        - b
+      properties:
+        r:
+          type: integer
+          minimum: 0
+          maximum: 255
+        g:
+          type: integer
+          minimum: 0
+          maximum: 255
+        b:
+          type: integer
+          minimum: 0
+          maximum: 255
+
+    AnimationCatalogResponse:
+      type: object
+      required:
+        - animations
+      properties:
+        animations:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnimationCatalogEntry'
+
+    AnimationCatalogEntry:
+      type: object
+      required:
+        - id
+        - kind
+        - playable
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum:
+            - generated
+            - firmware_preset
+        playable:
+          type: boolean
+        effect_id:
+          type: integer
+          minimum: 0
+          maximum: 255
+        interval:
+          type: string
+        color:
+          $ref: '#/components/schemas/Color'
+
+    PlayableAnimationsResponse:
+      type: object
+      required:
+        - animations
+      properties:
+        animations:
+          type: array
+          items:
+            type: string
+
+    ReadyResponse:
+      type: object
+      required:
+        - status
+        - workers_running
+        - draining
+        - scheduler_state
+        - matrix_connected
+        - background
+        - event_worker
+        - outcome_reports_dropped
+        - outcome_recording_panics
+        - tcp_reconnect_log_events_dropped
+        - observability_callback_panics
+      properties:
+        status:
+          type: string
+          enum:
+            - ready
+            - not_ready
+        workers_running:
+          type: boolean
+        draining:
+          type: boolean
+        scheduler_state:
+          $ref: '#/components/schemas/SchedulerState'
+        matrix_connected:
+          type: boolean
+        background:
+          $ref: '#/components/schemas/ReadyBackground'
+        event_worker:
+          $ref: '#/components/schemas/EventWorker'
+        outcome_reports_dropped:
+          type: integer
+          minimum: 0
+        outcome_recording_panics:
+          type: integer
+          minimum: 0
+        tcp_reconnect_log_events_dropped:
+          type: integer
+          minimum: 0
+        observability_callback_panics:
+          type: integer
+          minimum: 0
+        observability_callback_panic_counts:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Optional map of callback names to panic counts
+        last_success:
+          type: string
+          format: date-time
+          nullable: true
+        last_failure:
+          type: string
+          format: date-time
+          nullable: true
+
+    ReadyBackground:
+      type: object
+      required:
+        - state
+        - dirty
+        - converged
+      properties:
+        configured_id:
+          type: string
+        kind:
+          type: string
+          enum:
+            - generated
+            - firmware_preset
+        state:
+          $ref: '#/components/schemas/BackgroundState'
+        dirty:
+          type: boolean
+        converged:
+          type: boolean
+        last_attempt:
+          type: string
+          format: date-time
+          nullable: true
+        last_success:
+          type: string
+          format: date-time
+          nullable: true
+        next_retry:
+          type: string
+          format: date-time
+          nullable: true
+        failure_count:
+          type: integer
+        last_error:
+          type: string
+        last_error_class:
+          type: string
+          enum:
+            - none
+            - retryable
+            - permanent
+
+    EventWorker:
+      type: object
+      required:
+        - state
+      properties:
+        state:
+          type: string
+          enum:
+            - idle
+            - processing
+        stage:
+          type: string
+          enum:
+            - receive
+            - map
+            - enqueue
+            - log_drop
+        active_duration_seconds:
+          type: number
+          format: double
+
+    SchedulerState:
+      type: string
+      enum:
+        - disconnected
+        - connecting
+        - ready
+        - playing_transient
+        - restoring_background
+        - draining
+
+    BackgroundState:
+      type: string
+      enum:
+        - unknown
+        - dirty
+        - attempting
+        - converged
+        - failed
+        - retrying

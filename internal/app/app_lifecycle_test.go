@@ -152,7 +152,7 @@ func TestAppRunWorkerFailureJoinsMatrixCloseFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	cleanupErr := errors.New("matrix close failure for test")
-	application.matrix = failingCloseMatrixClient{matrixClientCloser: application.matrix, err: cleanupErr}
+	application.devices[0].client = failingCloseMatrixClient{matrixClientCloser: application.devices[0].client, err: cleanupErr}
 
 	err = application.Run(context.Background())
 	if !errors.Is(err, matrix.ErrStatusUnknownCommand) {
@@ -181,7 +181,7 @@ func TestAppRunListenFailureJoinsMatrixCloseFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	cleanupErr := errors.New("matrix close failure for test")
-	application.matrix = failingCloseMatrixClient{matrixClientCloser: application.matrix, err: cleanupErr}
+	application.devices[0].client = failingCloseMatrixClient{matrixClientCloser: application.devices[0].client, err: cleanupErr}
 
 	err = application.Run(context.Background())
 	if !errors.Is(err, syscall.EADDRINUSE) {
@@ -371,14 +371,14 @@ func newHTTPMatrixTestConfig(t *testing.T, matrixAddr string) config.Config {
 	}
 
 	cfg := newNeverRunAppTestConfig(t)
-	cfg.Matrix.Host = host
-	cfg.Matrix.Port = port
-	cfg.Matrix.ConnectTimeout = 20 * time.Millisecond
-	cfg.Matrix.ResponseTimeout = time.Second
-	cfg.Matrix.HeartbeatInterval = 20 * time.Millisecond
-	cfg.Matrix.ProbeTimeout = 50 * time.Millisecond
-	cfg.Matrix.ReconnectMinDelay = 10 * time.Millisecond
-	cfg.Matrix.ReconnectMaxDelay = 50 * time.Millisecond
+	cfg.Devices["default"].Host = host
+	cfg.Devices["default"].Port = port
+	cfg.Devices["default"].ConnectTimeout = 20 * time.Millisecond
+	cfg.Devices["default"].ResponseTimeout = time.Second
+	cfg.Devices["default"].HeartbeatInterval = 20 * time.Millisecond
+	cfg.Devices["default"].ProbeTimeout = 50 * time.Millisecond
+	cfg.Devices["default"].ReconnectMinDelay = 10 * time.Millisecond
+	cfg.Devices["default"].ReconnectMaxDelay = 50 * time.Millisecond
 	return cfg
 }
 
@@ -387,8 +387,8 @@ func newNeverRunAppTestConfig(t *testing.T) config.Config {
 	cfg := config.Default()
 	cfg.Server.Addr = "127.0.0.1:0"
 	cfg.Server.AdminTokenEnv = ""
-	cfg.Matrix.Host = "127.0.0.1"
-	cfg.Matrix.Port = 1
+	cfg.Devices["default"].Host = "127.0.0.1"
+	cfg.Devices["default"].Port = 1
 	cfg.Queue.EventsBuffer = 16
 	cfg.Queue.PlayBuffer = 16
 	cfg.RulesFile = writeRulesFile(t)

@@ -1,0 +1,22 @@
+# Build output
+/bin/
+/matrix-proxy
+*.exe
+
+# Local environment — contains secrets; use .env.example as template
+.env
+
+# Local config — contains host IPs and tokens; use configs/config.example.yaml as template
+configs/config.yaml
+configs/animations.yaml
+configs/rules.yaml
+
+# Docker volumes (if ever bind-mounted locally)
+data/
+
+# Editor and OS artefacts
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo

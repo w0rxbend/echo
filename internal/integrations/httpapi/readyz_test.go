@@ -20,8 +20,8 @@ func TestReadyzAndMetricsProjectGeneratedBackgroundKind(t *testing.T) {
 
 	const backgroundID = "generated_background"
 	cfg := newHTTPMatrixTestConfig(t, matrixServer.Addr())
-	cfg.Background.Animation = backgroundID
-	cfg.Background.RestoreOnIdle = true
+	cfg.Devices["default"].Background.Animation = backgroundID
+	cfg.Devices["default"].Background.RestoreOnIdle = true
 
 	registry, err := animations.NewDefaultRegistry()
 	if err != nil {
@@ -77,14 +77,13 @@ func waitForReadyzBackground(t *testing.T, baseURL, wantID, wantKind, wantState 
 	var last readyDetails
 	for time.Now().Before(deadline) {
 		last = waitForReadyDetails(t, baseURL+"/readyz", http.StatusOK)
-		if last.Background.ConfiguredID == wantID &&
-			last.Background.Kind == wantKind &&
-			last.Background.State == wantState {
+		bg := last.DefaultDevice().Background
+		if bg.ConfiguredID == wantID && bg.Kind == wantKind && bg.State == wantState {
 			return last
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("/readyz background = %#v, want configured_id=%q kind=%q state=%q", last.Background, wantID, wantKind, wantState)
+	t.Fatalf("/readyz background = %#v, want configured_id=%q kind=%q state=%q", last.DefaultDevice().Background, wantID, wantKind, wantState)
 	return readyDetails{}
 }
 

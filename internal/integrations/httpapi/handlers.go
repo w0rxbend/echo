@@ -53,6 +53,8 @@ type presetRequest struct {
 }
 
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
+	_, deviceID := s.deviceFromRequest(r)
+
 	var event events.Event
 	if err := decodeJSON(r, &event); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -75,6 +77,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	if event.ReceivedAt.IsZero() {
 		event.ReceivedAt = time.Now().UTC()
 	}
+	event.Target = deviceID
 	if err := s.bus.Publish(r.Context(), event); err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
@@ -84,6 +87,8 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleNotify(w http.ResponseWriter, r *http.Request) {
+	_, deviceID := s.deviceFromRequest(r)
+
 	var req notifyRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -118,6 +123,7 @@ func (s *Server) handleNotify(w http.ResponseWriter, r *http.Request) {
 		ID:         s.nextID("notify"),
 		Source:     events.SourceHTTP,
 		Type:       "notify",
+		Target:     deviceID,
 		Text:       req.Message,
 		Priority:   req.Priority,
 		ReceivedAt: time.Now().UTC(),
@@ -132,6 +138,8 @@ func (s *Server) handleNotify(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
+	scheduler, _ := s.deviceFromRequest(r)
+
 	var req playRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -159,14 +167,11 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid restore policy")
 		return
 	}
-
 	interruptMode := animations.InterruptMode(req.InterruptMode)
 	if interruptMode == "" {
 		interruptMode = animations.InterruptNone
 	}
-	switch interruptMode {
-	case animations.InterruptNone, animations.InterruptHigherPriority, animations.InterruptCritical:
-	default:
+	if !validInterruptMode(interruptMode) {
 		writeError(w, http.StatusBadRequest, "invalid interrupt_mode")
 		return
 	}
@@ -181,7 +186,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		RestorePolicy: restore,
 		CreatedAt:     time.Now().UTC(),
 	}
-	if err := s.scheduler.EnqueueRequest(r.Context(), request); err != nil {
+	if err := scheduler.EnqueueRequest(r.Context(), request); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -190,22 +195,24 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
+	scheduler, _ := s.deviceFromRequest(r)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"depth": s.scheduler.QueueLen(),
-		"state": s.scheduler.State(),
-		"items": s.scheduler.QueueSnapshot(),
+		"depth": scheduler.QueueLen(),
+		"state": scheduler.State(),
+		"items": scheduler.QueueSnapshot(),
 	})
 }
 
 func (s *Server) handleQueueClear(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"cleared": s.scheduler.ClearQueue()})
+	scheduler, _ := s.deviceFromRequest(r)
+	writeJSON(w, http.StatusOK, map[string]any{"cleared": scheduler.ClearQueue()})
 }
 
-func (s *Server) handleAnimations(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAnimations(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"animations": s.registry.RenderableIDs()})
 }
 
-func (s *Server) handleAnimationCatalog(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAnimationCatalog(w http.ResponseWriter, _ *http.Request) {
 	catalog := s.registry.Catalog()
 	entries := make([]animationCatalogEntry, 0, len(catalog))
 	for _, entry := range catalog {
@@ -262,18 +269,15 @@ func (s *Server) validateEventOverrides(attrs map[string]string) error {
 	if _, err := parseOptionalDuration(attrs["duration"]); err != nil {
 		return err
 	}
-	if mode := attrs["interrupt_mode"]; mode != "" {
-		switch animations.InterruptMode(mode) {
-		case animations.InterruptNone, animations.InterruptHigherPriority, animations.InterruptCritical:
-		default:
-			return errors.New("invalid interrupt_mode")
-		}
+	if interruptMode := attrs["interrupt_mode"]; interruptMode != "" && !validInterruptMode(animations.InterruptMode(interruptMode)) {
+		return errors.New("invalid interrupt_mode")
 	}
 	return nil
 }
 
 func (s *Server) handleMatrixClear(w http.ResponseWriter, r *http.Request) {
-	if err := s.scheduler.Clear(r.Context()); err != nil {
+	scheduler, _ := s.deviceFromRequest(r)
+	if err := scheduler.Clear(r.Context()); err != nil {
 		writeMatrixControlError(w, r, err)
 		return
 	}
@@ -281,12 +285,13 @@ func (s *Server) handleMatrixClear(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMatrixBrightness(w http.ResponseWriter, r *http.Request) {
+	scheduler, _ := s.deviceFromRequest(r)
 	var req brightnessRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.scheduler.SetBrightness(r.Context(), req.Value); err != nil {
+	if err := scheduler.SetBrightness(r.Context(), req.Value); err != nil {
 		writeMatrixControlError(w, r, err)
 		return
 	}
@@ -294,6 +299,7 @@ func (s *Server) handleMatrixBrightness(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleMatrixPreset(w http.ResponseWriter, r *http.Request) {
+	scheduler, _ := s.deviceFromRequest(r)
 	var req presetRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -308,7 +314,7 @@ func (s *Server) handleMatrixPreset(w http.ResponseWriter, r *http.Request) {
 	if req.Color != nil {
 		color = matrix.RGB{R: req.Color.R, G: req.Color.G, B: req.Color.B}
 	}
-	if err := s.scheduler.SetPreset(r.Context(), req.EffectID, interval, color); err != nil {
+	if err := scheduler.SetPreset(r.Context(), req.EffectID, interval, color); err != nil {
 		writeMatrixControlError(w, r, err)
 		return
 	}
@@ -316,16 +322,60 @@ func (s *Server) handleMatrixPreset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMatrixFill(w http.ResponseWriter, r *http.Request) {
+	scheduler, _ := s.deviceFromRequest(r)
 	var req colorRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.scheduler.Fill(r.Context(), matrix.RGB{R: req.R, G: req.G, B: req.B}); err != nil {
+	if err := scheduler.Fill(r.Context(), matrix.RGB{R: req.R, G: req.G, B: req.B}); err != nil {
 		writeMatrixControlError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+type backgroundConfigRequest struct {
+	Animation     string `json:"animation"`
+	RestoreOnIdle bool   `json:"restore_on_idle"`
+}
+
+func (s *Server) handleGetBackground(w http.ResponseWriter, r *http.Request) {
+	scheduler, _ := s.deviceFromRequest(r)
+	bg := scheduler.Background()
+	writeJSON(w, http.StatusOK, backgroundConfigRequest{
+		Animation:     bg.AnimationID,
+		RestoreOnIdle: bg.AnimationID != "",
+	})
+}
+
+func (s *Server) handleSetBackground(w http.ResponseWriter, r *http.Request) {
+	scheduler, _ := s.deviceFromRequest(r)
+
+	var req backgroundConfigRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.Animation != "" {
+		entry, ok := s.registry.Entry(req.Animation)
+		if !ok {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown animation %q", req.Animation))
+			return
+		}
+		// Both renderable animations and firmware presets are valid backgrounds.
+		_ = entry
+	}
+
+	cfg := matrix.BackgroundConfig{}
+	if req.Animation != "" && req.RestoreOnIdle {
+		cfg.AnimationID = req.Animation
+	}
+	if err := scheduler.SetBackground(cfg); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "animation": cfg.AnimationID})
 }
 
 func writeMatrixControlError(w http.ResponseWriter, r *http.Request, err error) {
@@ -392,6 +442,15 @@ func parseOptionalDuration(value string) (time.Duration, error) {
 func validRestorePolicy(policy animations.RestorePolicy) bool {
 	switch policy {
 	case animations.RestoreClear, animations.RestoreBlank, animations.RestorePreviousFrame, animations.RestoreBackground, animations.RestoreLeave:
+		return true
+	default:
+		return false
+	}
+}
+
+func validInterruptMode(mode animations.InterruptMode) bool {
+	switch mode {
+	case animations.InterruptNone, animations.InterruptHigherPriority, animations.InterruptCritical:
 		return true
 	default:
 		return false

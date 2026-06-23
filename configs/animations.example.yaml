@@ -1,21 +1,49 @@
 animations:
   # This file is strict: unknown or misspelled keys are rejected during config
   # load at every level, including animation entries, frame objects, palette
-  # entries, and color objects. Generic event attributes remain schema-agnostic;
-  # operator-authored animation config does not.
+  # entries, and color objects.
 
-  # Generated aliases are renderable/playable and may be used by rules, /play,
-  # /notify animation overrides, generic event attributes.animation, or
-  # background restore. The generator names a built-in app renderer.
+  # ── Generated aliases ────────────────────────────────────────────────────
+  # These reference built-in app renderers and are fully playable via rules,
+  # /api/v1/devices/{device}/play, /api/v1/devices/{device}/notify, and as
+  # backgrounds.
+
   alert_pulse:
     type: generated
     generator: notification
 
-  # Declarative frame animations are also generated/playable entries. Rows are
-  # authored in display-space as exactly eight 8-symbol strings per frame; the
-  # layout mapper is the only display-to-physical packing boundary. Palette keys
-  # are one-character symbols and every row symbol must exist in the palette.
-  # Each frame delay must be positive.
+  # ── Firmware presets ──────────────────────────────────────────────────────
+  # Metadata-only entries for effects implemented in the ESP firmware.
+  # They are valid background animations but cannot be used in rules or
+  # direct play requests. Set background.animation to one of these IDs for a
+  # hardware-accelerated idle effect.
+
+  matrix_rain_background:
+    type: firmware_preset
+    effect_id: 12
+    interval: 90ms
+    color: "#00FF55"
+
+  # A slower, warmer rain effect — try this as an alternative idle background.
+  amber_rain_background:
+    type: firmware_preset
+    effect_id: 12
+    interval: 120ms
+    color: "#FF8800"
+
+  # Static green fill — useful for hardware validation.
+  static_green_background:
+    type: firmware_preset
+    effect_id: 0
+    interval: 0ms
+    color: "#004400"
+
+  # ── Frame animations ──────────────────────────────────────────────────────
+  # Config-authored 8×8 animations. Rows are in display-space (top to bottom,
+  # left to right). Each symbol must exist in the palette. Frame delays must
+  # be positive. These are playable via rules and /play.
+
+  # A single green check-mark frame — good as a "success" animation.
   status_check:
     type: frames
     palette:
@@ -34,13 +62,195 @@ animations:
           - "...W...."
           - "........"
 
-  # Firmware presets are metadata-only background entries. They describe an
-  # effect already implemented by the matrix firmware. They are applied only by
-  # the scheduler background path and are not directly playable animation IDs for
-  # rules, /play, /notify overrides, generic event attributes.animation, or
-  # /api/v1/animations.
-  matrix_rain_background:
-    type: firmware_preset
-    effect_id: 12
-    interval: 90ms
-    color: "#00FF55"
+  # Alternating red/green checkerboard — high-contrast test pattern.
+  checkerboard:
+    type: frames
+    palette:
+      R: "#FF0000"
+      G: "#00FF00"
+    frames:
+      - delay: 500ms
+        rows:
+          - "RGRGRGRG"
+          - "GRGRGRGR"
+          - "RGRGRGRG"
+          - "GRGRGRGR"
+          - "RGRGRGRG"
+          - "GRGRGRGR"
+          - "RGRGRGRG"
+          - "GRGRGRGR"
+      - delay: 500ms
+        rows:
+          - "GRGRGRGR"
+          - "RGRGRGRG"
+          - "GRGRGRGR"
+          - "RGRGRGRG"
+          - "GRGRGRGR"
+          - "RGRGRGRG"
+          - "GRGRGRGR"
+          - "RGRGRGRG"
+
+  # Spinning green dot — indicates activity/loading.
+  spinner:
+    type: frames
+    palette:
+      ".": "#000000"
+      G: "#00FF55"
+    frames:
+      - delay: 80ms
+        rows:
+          - "...GGG.."
+          - "..G...G."
+          - ".G.....G"
+          - "G......G"
+          - "G......G"
+          - ".G.....G"
+          - "..G...G."
+          - "...GGG.."
+      - delay: 80ms
+        rows:
+          - "........"
+          - "..GGGG.."
+          - ".G....G."
+          - "G......G"
+          - "G......G"
+          - ".G....G."
+          - "..GGGG.."
+          - "........"
+      - delay: 80ms
+        rows:
+          - "........"
+          - "........"
+          - "..GGGG.."
+          - ".GGGGGG."
+          - ".GGGGGG."
+          - "..GGGG.."
+          - "........"
+          - "........"
+      - delay: 80ms
+        rows:
+          - "........"
+          - "........"
+          - "...GG..."
+          - "..GGGG.."
+          - "..GGGG.."
+          - "...GG..."
+          - "........"
+          - "........"
+
+  # Top-to-bottom green wipe (2 frames) — good as a "deploy" indicator.
+  wipe_down:
+    type: frames
+    palette:
+      ".": "#000000"
+      G: "#003300"
+      B: "#00FF55"
+    frames:
+      - delay: 80ms
+        rows:
+          - "BBBBBBBB"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+      - delay: 80ms
+        rows:
+          - "GGGGGGGG"
+          - "BBBBBBBB"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+      - delay: 80ms
+        rows:
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "BBBBBBBB"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+      - delay: 80ms
+        rows:
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "BBBBBBBB"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+      - delay: 80ms
+        rows:
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "BBBBBBBB"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+      - delay: 80ms
+        rows:
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "BBBBBBBB"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+      - delay: 80ms
+        rows:
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "BBBBBBBB"
+          - "GGGGGGGG"
+      - delay: 80ms
+        rows:
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "GGGGGGGG"
+          - "BBBBBBBB"
+
+  # Red alert — two-frame blink. Use as a high-priority warning animation.
+  alert_blink:
+    type: frames
+    palette:
+      ".": "#000000"
+      R: "#FF0000"
+    frames:
+      - delay: 150ms
+        rows:
+          - "RRRRRRRR"
+          - "RRRRRRRR"
+          - "RRRRRRRR"
+          - "RRRRRRRR"
+          - "RRRRRRRR"
+          - "RRRRRRRR"
+          - "RRRRRRRR"
+          - "RRRRRRRR"
+      - delay: 150ms
+        rows:
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"

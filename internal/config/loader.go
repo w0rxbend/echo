@@ -572,11 +572,13 @@ func validateRuleAnimationReferences(path string, registry *animations.Registry)
 }
 
 func validateBackgroundAnimationReference(cfg Config, registry *animations.Registry) error {
-	if cfg.Background.Animation == "" || !cfg.Background.RestoreOnIdle {
-		return nil
-	}
-	if !registry.Has(cfg.Background.Animation) {
-		return fmt.Errorf("background references unknown animation %q", cfg.Background.Animation)
+	for id, device := range cfg.Devices {
+		if device == nil || device.Background.Animation == "" || !device.Background.RestoreOnIdle {
+			continue
+		}
+		if !registry.Has(device.Background.Animation) {
+			return fmt.Errorf("device %q: background references unknown animation %q", id, device.Background.Animation)
+		}
 	}
 	return nil
 }

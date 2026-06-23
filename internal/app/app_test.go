@@ -65,7 +65,7 @@ func TestMetricsReportQueueClearedControlAndAnimationByItemLabel(t *testing.T) {
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
 	pausedFrameResponse := matrixServer.PauseNextFrameResponse()
-	postJSON(t, httpServer.URL+"/api/v1/play", `{"animation":"notification","duration":"750ms","restore":"leave"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/play", `{"animation":"notification","duration":"750ms","restore":"leave"}`, http.StatusAccepted)
 	waitForMatrixCommand(t, matrixServer, testCommandSetFrame)
 	select {
 	case <-pausedFrameResponse:
@@ -75,10 +75,10 @@ func TestMetricsReportQueueClearedControlAndAnimationByItemLabel(t *testing.T) {
 
 	fillStatus := make(chan int, 1)
 	go func() {
-		fillStatus <- postJSONStatus(httpServer.URL+"/api/v1/matrix/fill", `{"r":1,"g":2,"b":3}`)
+		fillStatus <- postJSONStatus(httpServer.URL+"/api/v1/devices/default/matrix/fill", `{"r":1,"g":2,"b":3}`)
 	}()
 	waitForQueueDepth(t, httpServer.URL, 1)
-	postJSON(t, httpServer.URL+"/api/v1/play", `{"animation":"notification","duration":"500ms","restore":"leave"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/play", `{"animation":"notification","duration":"500ms","restore":"leave"}`, http.StatusAccepted)
 	waitForQueueDepth(t, httpServer.URL, 2)
 
 	if cleared := deleteQueue(t, httpServer.URL); cleared != 2 {
@@ -120,7 +120,7 @@ func TestMetricsReportExecutedAndPermanentErrorOutcomes(t *testing.T) {
 	defer httpServer.Close()
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
-	postJSON(t, httpServer.URL+"/api/v1/matrix/fill", `{"r":4,"g":5,"b":6}`, http.StatusOK)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/matrix/fill", `{"r":4,"g":5,"b":6}`, http.StatusOK)
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_play_items_total",
 		`item_kind="control"`, `item="fill"`, `outcome="executed"`, " 1")
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_matrix_commands_total",
@@ -129,7 +129,7 @@ func TestMetricsReportExecutedAndPermanentErrorOutcomes(t *testing.T) {
 		`command="fill"`)
 	waitForGaugeValue(t, httpServer.URL, "matrix_proxy_play_queue_depth", "0")
 
-	postJSON(t, httpServer.URL+"/api/v1/play", `{"animation":"notification","duration":"1ms","restore":"leave"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/play", `{"animation":"notification","duration":"1ms","restore":"leave"}`, http.StatusAccepted)
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_play_items_total",
 		`item_kind="animation"`, `item="notification"`, `outcome="executed"`, " 1")
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_animation_render_duration_seconds_count",
@@ -137,7 +137,7 @@ func TestMetricsReportExecutedAndPermanentErrorOutcomes(t *testing.T) {
 	waitForGaugeValue(t, httpServer.URL, "matrix_proxy_play_queue_depth", "0")
 
 	matrixServer.FailNextStatus(testCommandFill, testStatusUnknownCommand)
-	postJSON(t, httpServer.URL+"/api/v1/matrix/fill", `{"r":7,"g":8,"b":9}`, http.StatusBadGateway)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/matrix/fill", `{"r":7,"g":8,"b":9}`, http.StatusBadGateway)
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_play_items_total",
 		`item_kind="control"`, `item="fill"`, `outcome="permanent_error"`, " 1")
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_matrix_commands_total",
@@ -176,8 +176,8 @@ func TestAppRestoresConfiguredFirmwarePresetBackgroundThroughScheduler(t *testin
 	defer matrixServer.Close()
 
 	cfg := newHTTPMatrixTestConfig(t, matrixServer.Addr())
-	cfg.Background.Animation = "matrix_rain_background"
-	cfg.Background.RestoreOnIdle = true
+	cfg.Devices["default"].Background.Animation = "matrix_rain_background"
+	cfg.Devices["default"].Background.RestoreOnIdle = true
 	cfg.AnimationRegistry = registryWithFirmwarePreset(t, "matrix_rain_background", animations.FirmwarePreset{
 		EffectID: 44,
 		Interval: 123 * time.Millisecond,
@@ -200,7 +200,7 @@ func TestAppRestoresConfiguredFirmwarePresetBackgroundThroughScheduler(t *testin
 	defer httpServer.Close()
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
-	postJSON(t, httpServer.URL+"/api/v1/play", `{"animation":"notification","duration":"1ms","restore":"background"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/play", `{"animation":"notification","duration":"1ms","restore":"background"}`, http.StatusAccepted)
 	waitForMatrixCommand(t, matrixServer, testCommandSetFrame)
 	preset := waitForMatrixCommand(t, matrixServer, testCommandSetPreset)
 	want := []byte{44, 123, 0, 1, 2, 3}
@@ -215,8 +215,8 @@ func TestReadyAndMetricsExposePreviousFrameBackgroundDedupeAsPlaybackRestoreConv
 
 	const backgroundID = "matrix_rain_background"
 	cfg := newHTTPMatrixTestConfig(t, matrixServer.Addr())
-	cfg.Background.Animation = backgroundID
-	cfg.Background.RestoreOnIdle = true
+	cfg.Devices["default"].Background.Animation = backgroundID
+	cfg.Devices["default"].Background.RestoreOnIdle = true
 	cfg.AnimationRegistry = registryWithFirmwarePreset(t, backgroundID, animations.FirmwarePreset{
 		EffectID: 44,
 		Interval: 123 * time.Millisecond,
@@ -242,10 +242,10 @@ func TestReadyAndMetricsExposePreviousFrameBackgroundDedupeAsPlaybackRestoreConv
 	if status != http.StatusOK {
 		t.Fatalf("GET /readyz status = %d, body = %#v, want %d", status, ready, http.StatusOK)
 	}
-	if ready.Background.LastSuccess == nil {
-		t.Fatalf("/readyz background last_success is nil after startup background restore: %#v", ready.Background)
+	if ready.DefaultDevice().Background.LastSuccess == nil {
+		t.Fatalf("/readyz background last_success is nil after startup background restore: %#v", ready.DefaultDevice().Background)
 	}
-	initialLastSuccess := *ready.Background.LastSuccess
+	initialLastSuccess := *ready.DefaultDevice().Background.LastSuccess
 	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
 		1, `kind="firmware_preset"`)
 	initialAttempts := currentMetricLineValue(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
@@ -259,7 +259,7 @@ func TestReadyAndMetricsExposePreviousFrameBackgroundDedupeAsPlaybackRestoreConv
 		t.Fatalf("startup background preset payload = %v, want %v", initialPreset.Payload, wantPresetPayload)
 	}
 
-	postJSON(t, httpServer.URL+"/api/v1/play", `{"animation":"notification","duration":"1ms","restore":"previous_frame"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/play", `{"animation":"notification","duration":"1ms","restore":"previous_frame"}`, http.StatusAccepted)
 	waitForMatrixCommand(t, matrixServer, testCommandSetFrame)
 	restoredPreset := waitForMatrixCommand(t, matrixServer, testCommandSetPreset)
 	if !bytes.Equal(restoredPreset.Payload, wantPresetPayload) {
@@ -271,13 +271,13 @@ func TestReadyAndMetricsExposePreviousFrameBackgroundDedupeAsPlaybackRestoreConv
 	if status != http.StatusOK {
 		t.Fatalf("GET /readyz status = %d, body = %#v, want %d", status, ready, http.StatusOK)
 	}
-	if ready.Background.Dirty || !ready.Background.Converged {
+	if ready.DefaultDevice().Background.Dirty || !ready.DefaultDevice().Background.Converged {
 		t.Fatalf("/readyz background dirty/converged = %v/%v, want false/true after previous-frame restore: %#v",
-			ready.Background.Dirty, ready.Background.Converged, ready.Background)
+			ready.DefaultDevice().Background.Dirty, ready.DefaultDevice().Background.Converged, ready.DefaultDevice().Background)
 	}
-	if ready.Background.LastSuccess == nil || !ready.Background.LastSuccess.Equal(initialLastSuccess) {
+	if ready.DefaultDevice().Background.LastSuccess == nil || !ready.DefaultDevice().Background.LastSuccess.Equal(initialLastSuccess) {
 		t.Fatalf("/readyz background last_success = %v, want unchanged %v after playback restore convergence: %#v",
-			ready.Background.LastSuccess, initialLastSuccess, ready.Background)
+			ready.DefaultDevice().Background.LastSuccess, initialLastSuccess, ready.DefaultDevice().Background)
 	}
 	if got := currentMetricLineValue(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
 		`kind="firmware_preset"`); got != initialAttempts {
@@ -296,8 +296,8 @@ func TestReadyAndMetricsExposeFirmwarePresetBackgroundFailureAndRecoveryWithoutP
 
 	const backgroundID = "matrix_rain_background"
 	cfg := newHTTPMatrixTestConfig(t, matrixServer.Addr())
-	cfg.Background.Animation = backgroundID
-	cfg.Background.RestoreOnIdle = true
+	cfg.Devices["default"].Background.Animation = backgroundID
+	cfg.Devices["default"].Background.RestoreOnIdle = true
 	cfg.AnimationRegistry = registryWithFirmwarePreset(t, backgroundID, animations.FirmwarePreset{
 		EffectID: 44,
 		Interval: 123 * time.Millisecond,
@@ -323,32 +323,32 @@ func TestReadyAndMetricsExposeFirmwarePresetBackgroundFailureAndRecoveryWithoutP
 	if status != http.StatusOK {
 		t.Fatalf("GET /readyz status = %d, body = %#v, want %d", status, ready, http.StatusOK)
 	}
-	if !ready.MatrixConnected {
+	if !ready.DefaultDevice().MatrixConnected {
 		t.Fatalf("/readyz matrix_connected = false, want true while background is retrying: %#v", ready)
 	}
-	if !ready.Background.Dirty || ready.Background.Converged {
+	if !ready.DefaultDevice().Background.Dirty || ready.DefaultDevice().Background.Converged {
 		t.Fatalf("/readyz background dirty/converged = %v/%v, want true/false: %#v",
-			ready.Background.Dirty, ready.Background.Converged, ready.Background)
+			ready.DefaultDevice().Background.Dirty, ready.DefaultDevice().Background.Converged, ready.DefaultDevice().Background)
 	}
-	if ready.Background.LastAttempt == nil {
-		t.Fatalf("/readyz background last_attempt is nil: %#v", ready.Background)
+	if ready.DefaultDevice().Background.LastAttempt == nil {
+		t.Fatalf("/readyz background last_attempt is nil: %#v", ready.DefaultDevice().Background)
 	}
-	if ready.Background.LastSuccess != nil {
-		t.Fatalf("/readyz background last_success = %v, want nil after failed restore", ready.Background.LastSuccess)
+	if ready.DefaultDevice().Background.LastSuccess != nil {
+		t.Fatalf("/readyz background last_success = %v, want nil after failed restore", ready.DefaultDevice().Background.LastSuccess)
 	}
-	if ready.Background.NextRetry == nil || !ready.Background.NextRetry.After(time.Now()) {
+	if ready.DefaultDevice().Background.NextRetry == nil || !ready.DefaultDevice().Background.NextRetry.After(time.Now()) {
 		t.Fatalf("/readyz background next_retry = %v, want future retry after failed restore: %#v",
-			ready.Background.NextRetry, ready.Background)
+			ready.DefaultDevice().Background.NextRetry, ready.DefaultDevice().Background)
 	}
-	if ready.Background.FailureCount == 0 {
-		t.Fatalf("/readyz background failure_count = 0, want nonzero after failed restore: %#v", ready.Background)
+	if ready.DefaultDevice().Background.FailureCount == 0 {
+		t.Fatalf("/readyz background failure_count = 0, want nonzero after failed restore: %#v", ready.DefaultDevice().Background)
 	}
-	if ready.Background.LastError == "" {
-		t.Fatalf("/readyz background last_error is empty: %#v", ready.Background)
+	if ready.DefaultDevice().Background.LastError == "" {
+		t.Fatalf("/readyz background last_error is empty: %#v", ready.DefaultDevice().Background)
 	}
-	if ready.Background.LastErrorClass != "permanent" {
+	if ready.DefaultDevice().Background.LastErrorClass != "permanent" {
 		t.Fatalf("/readyz background last_error_class = %q, want permanent: %#v",
-			ready.Background.LastErrorClass, ready.Background)
+			ready.DefaultDevice().Background.LastErrorClass, ready.DefaultDevice().Background)
 	}
 
 	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
@@ -356,9 +356,9 @@ func TestReadyAndMetricsExposeFirmwarePresetBackgroundFailureAndRecoveryWithoutP
 	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_restore_failures_total",
 		1, `kind="firmware_preset"`, `error_class="permanent"`)
 	assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
-		[]string{"kind"}, `kind="firmware_preset"`)
+		[]string{"device", "kind"}, `kind="firmware_preset"`)
 	assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_background_restore_failures_total",
-		[]string{"error_class", "kind"}, `kind="firmware_preset"`, `error_class="permanent"`)
+		[]string{"device", "error_class", "kind"}, `kind="firmware_preset"`, `error_class="permanent"`)
 	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_next_retry_seconds",
 		1, `kind="firmware_preset"`)
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_state",
@@ -368,9 +368,9 @@ func TestReadyAndMetricsExposeFirmwarePresetBackgroundFailureAndRecoveryWithoutP
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_state",
 		`kind="firmware_preset"`, `state="converged"`, " 0")
 	assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_background_next_retry_seconds",
-		[]string{"kind"}, `kind="firmware_preset"`)
+		[]string{"device", "kind"}, `kind="firmware_preset"`)
 	assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_background_state",
-		[]string{"kind", "state"}, `kind="firmware_preset"`, `state="retrying"`)
+		[]string{"device", "kind", "state"}, `kind="firmware_preset"`, `state="retrying"`)
 	assertNoMetricLine(t, httpServer.URL, "matrix_proxy_background_next_retry_seconds", backgroundID)
 	assertNoMetricLine(t, httpServer.URL, "matrix_proxy_background_state", backgroundID)
 	assertNoMetricLine(t, httpServer.URL, "matrix_proxy_background_failure_count")
@@ -382,27 +382,27 @@ func TestReadyAndMetricsExposeFirmwarePresetBackgroundFailureAndRecoveryWithoutP
 	if status != http.StatusOK {
 		t.Fatalf("GET /readyz status = %d, body = %#v, want %d", status, ready, http.StatusOK)
 	}
-	if !ready.MatrixConnected {
+	if !ready.DefaultDevice().MatrixConnected {
 		t.Fatalf("/readyz matrix_connected = false after background recovery: %#v", ready)
 	}
-	if ready.Background.Dirty || !ready.Background.Converged {
+	if ready.DefaultDevice().Background.Dirty || !ready.DefaultDevice().Background.Converged {
 		t.Fatalf("/readyz background dirty/converged = %v/%v, want false/true after recovery: %#v",
-			ready.Background.Dirty, ready.Background.Converged, ready.Background)
+			ready.DefaultDevice().Background.Dirty, ready.DefaultDevice().Background.Converged, ready.DefaultDevice().Background)
 	}
-	if ready.Background.LastSuccess == nil {
-		t.Fatalf("/readyz background last_success is nil after recovery: %#v", ready.Background)
+	if ready.DefaultDevice().Background.LastSuccess == nil {
+		t.Fatalf("/readyz background last_success is nil after recovery: %#v", ready.DefaultDevice().Background)
 	}
-	if ready.Background.NextRetry != nil {
+	if ready.DefaultDevice().Background.NextRetry != nil {
 		t.Fatalf("/readyz background next_retry = %v, want nil after recovery: %#v",
-			ready.Background.NextRetry, ready.Background)
+			ready.DefaultDevice().Background.NextRetry, ready.DefaultDevice().Background)
 	}
-	if ready.Background.FailureCount != 0 {
+	if ready.DefaultDevice().Background.FailureCount != 0 {
 		t.Fatalf("/readyz background failure_count = %d, want 0 after recovery: %#v",
-			ready.Background.FailureCount, ready.Background)
+			ready.DefaultDevice().Background.FailureCount, ready.DefaultDevice().Background)
 	}
-	if ready.Background.LastError != "" || ready.Background.LastErrorClass != "none" {
+	if ready.DefaultDevice().Background.LastError != "" || ready.DefaultDevice().Background.LastErrorClass != "none" {
 		t.Fatalf("/readyz background last error after recovery = %q/%q, want empty/none: %#v",
-			ready.Background.LastError, ready.Background.LastErrorClass, ready.Background)
+			ready.DefaultDevice().Background.LastError, ready.DefaultDevice().Background.LastErrorClass, ready.DefaultDevice().Background)
 	}
 	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
 		2, `kind="firmware_preset"`)
@@ -423,9 +423,9 @@ func TestReadyAndMetricsExposeDueBackgroundRetryAsFailedWhilePlaybackActive(t *t
 
 	const backgroundID = "matrix_rain_background"
 	cfg := newHTTPMatrixTestConfig(t, matrixServer.Addr())
-	cfg.Matrix.ResponseTimeout = 20 * time.Millisecond
-	cfg.Background.Animation = backgroundID
-	cfg.Background.RestoreOnIdle = true
+	cfg.Devices["default"].ResponseTimeout = 20 * time.Millisecond
+	cfg.Devices["default"].Background.Animation = backgroundID
+	cfg.Devices["default"].Background.RestoreOnIdle = true
 	cfg.AnimationRegistry = registryWithFirmwarePreset(t, backgroundID, animations.FirmwarePreset{
 		EffectID: 44,
 		Interval: 123 * time.Millisecond,
@@ -458,17 +458,17 @@ func TestReadyAndMetricsExposeDueBackgroundRetryAsFailedWhilePlaybackActive(t *t
 	if status != http.StatusOK {
 		t.Fatalf("GET /readyz status = %d, body = %#v, want %d", status, ready, http.StatusOK)
 	}
-	if ready.Background.NextRetry == nil {
-		t.Fatalf("/readyz background next_retry is nil while retrying: %#v", ready.Background)
+	if ready.DefaultDevice().Background.NextRetry == nil {
+		t.Fatalf("/readyz background next_retry is nil while retrying: %#v", ready.DefaultDevice().Background)
 	}
-	nextRetry := *ready.Background.NextRetry
-	failureCount := ready.Background.FailureCount
+	nextRetry := *ready.DefaultDevice().Background.NextRetry
+	failureCount := ready.DefaultDevice().Background.FailureCount
 	if failureCount == 0 {
-		t.Fatalf("/readyz background failure_count = 0, want retained failed retry state: %#v", ready.Background)
+		t.Fatalf("/readyz background failure_count = 0, want retained failed retry state: %#v", ready.DefaultDevice().Background)
 	}
 	matrixServer.ResumePausedResponse()
 
-	postJSON(t, httpServer.URL+"/api/v1/play", `{"animation":"notification","duration":"5s","restore":"leave"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/play", `{"animation":"notification","duration":"5s","restore":"leave"}`, http.StatusAccepted)
 	waitForSchedulerState(t, httpServer.URL, "playing_transient")
 	if sleep := time.Until(nextRetry.Add(50 * time.Millisecond)); sleep > 0 {
 		time.Sleep(sleep)
@@ -479,17 +479,17 @@ func TestReadyAndMetricsExposeDueBackgroundRetryAsFailedWhilePlaybackActive(t *t
 		t.Fatalf("GET /readyz status = %d, body = %#v, want %d; background non-convergence must not fail readiness",
 			status, ready, http.StatusOK)
 	}
-	if !ready.Background.Dirty || ready.Background.Converged {
+	if !ready.DefaultDevice().Background.Dirty || ready.DefaultDevice().Background.Converged {
 		t.Fatalf("/readyz background dirty/converged = %v/%v, want true/false after due retry: %#v",
-			ready.Background.Dirty, ready.Background.Converged, ready.Background)
+			ready.DefaultDevice().Background.Dirty, ready.DefaultDevice().Background.Converged, ready.DefaultDevice().Background)
 	}
-	if ready.Background.NextRetry == nil || !ready.Background.NextRetry.Equal(nextRetry) {
+	if ready.DefaultDevice().Background.NextRetry == nil || !ready.DefaultDevice().Background.NextRetry.Equal(nextRetry) {
 		t.Fatalf("/readyz background next_retry = %v, want retained due timestamp %v: %#v",
-			ready.Background.NextRetry, nextRetry, ready.Background)
+			ready.DefaultDevice().Background.NextRetry, nextRetry, ready.DefaultDevice().Background)
 	}
-	if ready.Background.FailureCount != failureCount {
+	if ready.DefaultDevice().Background.FailureCount != failureCount {
 		t.Fatalf("/readyz background failure_count = %d, want retained %d: %#v",
-			ready.Background.FailureCount, failureCount, ready.Background)
+			ready.DefaultDevice().Background.FailureCount, failureCount, ready.DefaultDevice().Background)
 	}
 
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_next_retry_seconds",
@@ -515,9 +515,9 @@ func TestReadyAndMetricsExposeGeneratedBackgroundFrameFailureAndRecoveryWithoutP
 
 	const backgroundID = "generated_background"
 	cfg := newHTTPMatrixTestConfig(t, matrixServer.Addr())
-	cfg.Matrix.Layout.OddRowDisplayFlip = false
-	cfg.Background.Animation = backgroundID
-	cfg.Background.RestoreOnIdle = true
+	cfg.Devices["default"].Layout.OddRowDisplayFlip = false
+	cfg.Devices["default"].Background.Animation = backgroundID
+	cfg.Devices["default"].Background.RestoreOnIdle = true
 
 	registry, err := animations.NewDefaultRegistry()
 	if err != nil {
@@ -552,25 +552,25 @@ func TestReadyAndMetricsExposeGeneratedBackgroundFrameFailureAndRecoveryWithoutP
 	if status != http.StatusOK {
 		t.Fatalf("GET /readyz status = %d, body = %#v, want %d", status, ready, http.StatusOK)
 	}
-	if !ready.MatrixConnected {
+	if !ready.DefaultDevice().MatrixConnected {
 		t.Fatalf("/readyz matrix_connected = false, want true while generated background is retrying: %#v", ready)
 	}
-	if !ready.Background.Dirty || ready.Background.Converged {
+	if !ready.DefaultDevice().Background.Dirty || ready.DefaultDevice().Background.Converged {
 		t.Fatalf("/readyz background dirty/converged = %v/%v, want true/false: %#v",
-			ready.Background.Dirty, ready.Background.Converged, ready.Background)
+			ready.DefaultDevice().Background.Dirty, ready.DefaultDevice().Background.Converged, ready.DefaultDevice().Background)
 	}
-	if ready.Background.LastAttempt == nil {
-		t.Fatalf("/readyz background last_attempt is nil: %#v", ready.Background)
+	if ready.DefaultDevice().Background.LastAttempt == nil {
+		t.Fatalf("/readyz background last_attempt is nil: %#v", ready.DefaultDevice().Background)
 	}
-	if ready.Background.LastSuccess != nil {
-		t.Fatalf("/readyz background last_success = %v, want nil after failed restore", ready.Background.LastSuccess)
+	if ready.DefaultDevice().Background.LastSuccess != nil {
+		t.Fatalf("/readyz background last_success = %v, want nil after failed restore", ready.DefaultDevice().Background.LastSuccess)
 	}
-	if ready.Background.LastError == "" {
-		t.Fatalf("/readyz background last_error is empty: %#v", ready.Background)
+	if ready.DefaultDevice().Background.LastError == "" {
+		t.Fatalf("/readyz background last_error is empty: %#v", ready.DefaultDevice().Background)
 	}
-	if ready.Background.LastErrorClass != "permanent" {
+	if ready.DefaultDevice().Background.LastErrorClass != "permanent" {
 		t.Fatalf("/readyz background last_error_class = %q, want permanent: %#v",
-			ready.Background.LastErrorClass, ready.Background)
+			ready.DefaultDevice().Background.LastErrorClass, ready.DefaultDevice().Background)
 	}
 
 	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
@@ -578,9 +578,9 @@ func TestReadyAndMetricsExposeGeneratedBackgroundFrameFailureAndRecoveryWithoutP
 	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_restore_failures_total",
 		1, `kind="generated"`, `error_class="permanent"`)
 	assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
-		[]string{"kind"}, `kind="generated"`)
+		[]string{"device", "kind"}, `kind="generated"`)
 	assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_background_restore_failures_total",
-		[]string{"error_class", "kind"}, `kind="generated"`, `error_class="permanent"`)
+		[]string{"device", "error_class", "kind"}, `kind="generated"`, `error_class="permanent"`)
 	assertNoMetricLine(t, httpServer.URL, "matrix_proxy_play_items_total")
 
 	matrixServer.RecoverCommandStatus(testCommandSetFrame)
@@ -589,19 +589,19 @@ func TestReadyAndMetricsExposeGeneratedBackgroundFrameFailureAndRecoveryWithoutP
 	if status != http.StatusOK {
 		t.Fatalf("GET /readyz status = %d, body = %#v, want %d", status, ready, http.StatusOK)
 	}
-	if !ready.MatrixConnected {
+	if !ready.DefaultDevice().MatrixConnected {
 		t.Fatalf("/readyz matrix_connected = false after generated background recovery: %#v", ready)
 	}
-	if ready.Background.Dirty || !ready.Background.Converged {
+	if ready.DefaultDevice().Background.Dirty || !ready.DefaultDevice().Background.Converged {
 		t.Fatalf("/readyz background dirty/converged = %v/%v, want false/true after recovery: %#v",
-			ready.Background.Dirty, ready.Background.Converged, ready.Background)
+			ready.DefaultDevice().Background.Dirty, ready.DefaultDevice().Background.Converged, ready.DefaultDevice().Background)
 	}
-	if ready.Background.LastSuccess == nil {
-		t.Fatalf("/readyz background last_success is nil after recovery: %#v", ready.Background)
+	if ready.DefaultDevice().Background.LastSuccess == nil {
+		t.Fatalf("/readyz background last_success is nil after recovery: %#v", ready.DefaultDevice().Background)
 	}
-	if ready.Background.LastError != "" || ready.Background.LastErrorClass != "none" {
+	if ready.DefaultDevice().Background.LastError != "" || ready.DefaultDevice().Background.LastErrorClass != "none" {
 		t.Fatalf("/readyz background last error after recovery = %q/%q, want empty/none: %#v",
-			ready.Background.LastError, ready.Background.LastErrorClass, ready.Background)
+			ready.DefaultDevice().Background.LastError, ready.DefaultDevice().Background.LastErrorClass, ready.DefaultDevice().Background)
 	}
 	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
 		2, `kind="generated"`)
@@ -615,9 +615,9 @@ func TestReadyAndMetricsProjectRenderableBackgroundKindToGenerated(t *testing.T)
 
 	const backgroundID = "generated_background"
 	cfg := newHTTPMatrixTestConfig(t, matrixServer.Addr())
-	cfg.Matrix.Layout.OddRowDisplayFlip = false
-	cfg.Background.Animation = backgroundID
-	cfg.Background.RestoreOnIdle = true
+	cfg.Devices["default"].Layout.OddRowDisplayFlip = false
+	cfg.Devices["default"].Background.Animation = backgroundID
+	cfg.Devices["default"].Background.RestoreOnIdle = true
 
 	registry, err := animations.NewDefaultRegistry()
 	if err != nil {
@@ -652,8 +652,8 @@ func TestReadyAndMetricsProjectRenderableBackgroundKindToGenerated(t *testing.T)
 	if status != http.StatusOK {
 		t.Fatalf("GET /readyz status = %d, body = %#v, want %d", status, ready, http.StatusOK)
 	}
-	if ready.Background.Kind != "generated" {
-		t.Fatalf("/readyz background.kind = %q, want generated: %#v", ready.Background.Kind, ready.Background)
+	if ready.DefaultDevice().Background.Kind != "generated" {
+		t.Fatalf("/readyz background.kind = %q, want generated: %#v", ready.DefaultDevice().Background.Kind, ready.DefaultDevice().Background)
 	}
 
 	readyBody := getReadyBody(t, httpServer.URL)
@@ -688,9 +688,9 @@ func TestReadyAndMetricsExposePartialGeneratedBackgroundFrameFailureAndFullRepla
 
 	const backgroundID = "generated_background"
 	cfg := newHTTPMatrixTestConfig(t, matrixServer.Addr())
-	cfg.Matrix.Layout.OddRowDisplayFlip = false
-	cfg.Background.Animation = backgroundID
-	cfg.Background.RestoreOnIdle = true
+	cfg.Devices["default"].Layout.OddRowDisplayFlip = false
+	cfg.Devices["default"].Background.Animation = backgroundID
+	cfg.Devices["default"].Background.RestoreOnIdle = true
 
 	backgroundFrames := generatedBackgroundFrameFixture(t)
 	expectedBackgroundPayloads := expectedPackedPayloads(t, cfg, backgroundFrames)
@@ -729,25 +729,25 @@ func TestReadyAndMetricsExposePartialGeneratedBackgroundFrameFailureAndFullRepla
 	if status != http.StatusOK {
 		t.Fatalf("GET /readyz status = %d, body = %#v, want %d", status, ready, http.StatusOK)
 	}
-	if !ready.MatrixConnected {
+	if !ready.DefaultDevice().MatrixConnected {
 		t.Fatalf("/readyz matrix_connected = false, want true while partial background stream is retrying: %#v", ready)
 	}
-	if !ready.Background.Dirty || ready.Background.Converged {
+	if !ready.DefaultDevice().Background.Dirty || ready.DefaultDevice().Background.Converged {
 		t.Fatalf("/readyz background dirty/converged = %v/%v, want true/false: %#v",
-			ready.Background.Dirty, ready.Background.Converged, ready.Background)
+			ready.DefaultDevice().Background.Dirty, ready.DefaultDevice().Background.Converged, ready.DefaultDevice().Background)
 	}
-	if ready.Background.LastAttempt == nil {
-		t.Fatalf("/readyz background last_attempt is nil: %#v", ready.Background)
+	if ready.DefaultDevice().Background.LastAttempt == nil {
+		t.Fatalf("/readyz background last_attempt is nil: %#v", ready.DefaultDevice().Background)
 	}
-	if ready.Background.LastSuccess != nil {
-		t.Fatalf("/readyz background last_success = %v, want nil after partial stream failure", ready.Background.LastSuccess)
+	if ready.DefaultDevice().Background.LastSuccess != nil {
+		t.Fatalf("/readyz background last_success = %v, want nil after partial stream failure", ready.DefaultDevice().Background.LastSuccess)
 	}
-	if ready.Background.LastError == "" {
-		t.Fatalf("/readyz background last_error is empty: %#v", ready.Background)
+	if ready.DefaultDevice().Background.LastError == "" {
+		t.Fatalf("/readyz background last_error is empty: %#v", ready.DefaultDevice().Background)
 	}
-	if ready.Background.LastErrorClass != "permanent" {
+	if ready.DefaultDevice().Background.LastErrorClass != "permanent" {
 		t.Fatalf("/readyz background last_error_class = %q, want permanent: %#v",
-			ready.Background.LastErrorClass, ready.Background)
+			ready.DefaultDevice().Background.LastErrorClass, ready.DefaultDevice().Background)
 	}
 
 	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
@@ -759,9 +759,9 @@ func TestReadyAndMetricsExposePartialGeneratedBackgroundFrameFailureAndFullRepla
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_converged",
 		`kind="generated"`, " 0")
 	assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_background_dirty",
-		[]string{"kind"}, `kind="generated"`)
+		[]string{"device", "kind"}, `kind="generated"`)
 	assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_background_converged",
-		[]string{"kind"}, `kind="generated"`)
+		[]string{"device", "kind"}, `kind="generated"`)
 	assertNoMetricLine(t, httpServer.URL, "matrix_proxy_play_items_total")
 
 	matrixServer.CloseActiveConnections()
@@ -770,19 +770,19 @@ func TestReadyAndMetricsExposePartialGeneratedBackgroundFrameFailureAndFullRepla
 	if status != http.StatusOK {
 		t.Fatalf("GET /readyz status = %d, body = %#v, want %d", status, ready, http.StatusOK)
 	}
-	if !ready.MatrixConnected {
+	if !ready.DefaultDevice().MatrixConnected {
 		t.Fatalf("/readyz matrix_connected = false after partial background recovery: %#v", ready)
 	}
-	if ready.Background.Dirty || !ready.Background.Converged {
+	if ready.DefaultDevice().Background.Dirty || !ready.DefaultDevice().Background.Converged {
 		t.Fatalf("/readyz background dirty/converged = %v/%v, want false/true after recovery: %#v",
-			ready.Background.Dirty, ready.Background.Converged, ready.Background)
+			ready.DefaultDevice().Background.Dirty, ready.DefaultDevice().Background.Converged, ready.DefaultDevice().Background)
 	}
-	if ready.Background.LastSuccess == nil {
-		t.Fatalf("/readyz background last_success is nil after recovery: %#v", ready.Background)
+	if ready.DefaultDevice().Background.LastSuccess == nil {
+		t.Fatalf("/readyz background last_success is nil after recovery: %#v", ready.DefaultDevice().Background)
 	}
-	if ready.Background.LastError != "" || ready.Background.LastErrorClass != "none" {
+	if ready.DefaultDevice().Background.LastError != "" || ready.DefaultDevice().Background.LastErrorClass != "none" {
 		t.Fatalf("/readyz background last error after recovery = %q/%q, want empty/none: %#v",
-			ready.Background.LastError, ready.Background.LastErrorClass, ready.Background)
+			ready.DefaultDevice().Background.LastError, ready.DefaultDevice().Background.LastErrorClass, ready.DefaultDevice().Background)
 	}
 	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
 		2, `kind="generated"`)
@@ -849,7 +849,7 @@ func TestAppRestoresBackgroundAfterStreamedHTTPNotificationFrames(t *testing.T) 
 	assertMatrixRainPresetPayload(t, waitForMatrixCommand(t, matrixServer, testCommandSetPreset).Payload)
 	drainMatrixFrames(matrixServer)
 
-	postJSON(t, httpServer.URL+"/api/v1/notify", `{"title":"Test","message":"hello","duration":"550ms"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/notify", `{"title":"Test","message":"hello","duration":"550ms"}`, http.StatusAccepted)
 	frames := waitForMatrixCommandSequenceUntil(t, matrixServer, testCommandSetPreset)
 	var setFrameCount int
 	for i, frame := range frames {
@@ -883,9 +883,9 @@ func TestAppStreamsGeneratedBackgroundFramesThroughFakeESP(t *testing.T) {
 
 	const backgroundID = "generated_background"
 	cfg := newHTTPMatrixTestConfig(t, matrixServer.Addr())
-	cfg.Matrix.Layout.OddRowDisplayFlip = false
-	cfg.Background.Animation = backgroundID
-	cfg.Background.RestoreOnIdle = true
+	cfg.Devices["default"].Layout.OddRowDisplayFlip = false
+	cfg.Devices["default"].Background.Animation = backgroundID
+	cfg.Devices["default"].Background.RestoreOnIdle = true
 
 	backgroundFrames := generatedBackgroundFrameFixture(t)
 	expectedBackgroundPayloads := expectedPackedPayloads(t, cfg, backgroundFrames)
@@ -925,7 +925,7 @@ func TestAppStreamsGeneratedBackgroundFramesThroughFakeESP(t *testing.T) {
 	waitForGaugeValue(t, httpServer.URL, "matrix_proxy_play_queue_depth", "0")
 	assertNoBufferedSetFrame(t, matrixServer)
 
-	postJSON(t, httpServer.URL+"/api/v1/notify", `{"title":"Test","message":"hello","duration":"550ms"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/notify", `{"title":"Test","message":"hello","duration":"550ms"}`, http.StatusAccepted)
 	notificationFrames := waitForGeneratedBackgroundAfterNotification(t, matrixServer, expectedBackgroundPayloads)
 	if notificationFrames != 3 {
 		t.Fatalf("notification SetFullFrame command count before generated background restore = %d, want 3", notificationFrames)
@@ -968,7 +968,7 @@ func TestAppPlaysConfigAuthoredFrameAnimationThroughFakeESP(t *testing.T) {
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 	drainMatrixFrames(matrixServer)
 
-	postJSON(t, httpServer.URL+"/api/v1/play", `{"animation":"orientation_badge","duration":"250ms","restore":"leave"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/play", `{"animation":"orientation_badge","duration":"250ms","restore":"leave"}`, http.StatusAccepted)
 	waitForExactSetFramePayloads(t, matrixServer, expectedPayloads)
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_animation_render_duration_seconds_count",
 		`animation="orientation_badge"`)
@@ -1005,7 +1005,7 @@ func TestMetricsRemainReliableWhenOutcomeObserverDropsUnderBackpressure(t *testi
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
 	pausedFrameResponse := matrixServer.PauseNextFrameResponse()
-	postJSON(t, httpServer.URL+"/api/v1/play", `{"animation":"notification","duration":"750ms","restore":"leave"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/play", `{"animation":"notification","duration":"750ms","restore":"leave"}`, http.StatusAccepted)
 	waitForMatrixCommand(t, matrixServer, testCommandSetFrame)
 	select {
 	case <-pausedFrameResponse:
@@ -1015,7 +1015,7 @@ func TestMetricsRemainReliableWhenOutcomeObserverDropsUnderBackpressure(t *testi
 
 	const queuedOutcomes = 24
 	for i := 0; i < queuedOutcomes; i++ {
-		postJSON(t, httpServer.URL+"/api/v1/play", `{"animation":"notification","duration":"500ms","restore":"leave"}`, http.StatusAccepted)
+		postJSON(t, httpServer.URL+"/api/v1/devices/default/play", `{"animation":"notification","duration":"500ms","restore":"leave"}`, http.StatusAccepted)
 	}
 	waitForQueueDepth(t, httpServer.URL, queuedOutcomes)
 
@@ -1029,7 +1029,7 @@ func TestMetricsRemainReliableWhenOutcomeObserverDropsUnderBackpressure(t *testi
 	}
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_play_items_total",
 		`item_kind="animation"`, `item="notification"`, `outcome="queue_cleared"`, " "+strconv.Itoa(queuedOutcomes))
-	waitForMetricValueAtLeast(t, httpServer.URL, "matrix_proxy_play_item_outcomes_dropped_total", 1)
+	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_play_item_outcomes_dropped_total", 1, `device="default"`)
 	waitForGaugeValue(t, httpServer.URL, "matrix_proxy_play_queue_depth", "0")
 }
 
@@ -1069,7 +1069,7 @@ func TestEventWorkerMetricsTrackSubscriberBacklogAndInflightEvent(t *testing.T) 
 	default:
 	}
 
-	postJSON(t, httpServer.URL+"/api/v1/events", `{"type":"event-queue-depth-test"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"event-queue-depth-test"}`, http.StatusAccepted)
 	select {
 	case <-logHandler.entered:
 	case <-time.After(time.Second):
@@ -1084,8 +1084,8 @@ func TestEventWorkerMetricsTrackSubscriberBacklogAndInflightEvent(t *testing.T) 
 	waitForGaugeValue(t, httpServer.URL, "matrix_proxy_event_queue_depth", "0")
 	waitForGaugeValue(t, httpServer.URL, "matrix_proxy_event_worker_inflight", "1")
 
-	postJSON(t, httpServer.URL+"/api/v1/events", `{"type":"event-queue-depth-test"}`, http.StatusAccepted)
-	postJSON(t, httpServer.URL+"/api/v1/events", `{"type":"event-queue-depth-test"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"event-queue-depth-test"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"event-queue-depth-test"}`, http.StatusAccepted)
 	waitForGaugeValue(t, httpServer.URL, "matrix_proxy_event_queue_depth", "2")
 
 	logHandler.release()
@@ -1149,18 +1149,18 @@ func TestEventPublisherBackpressureMetricsIncreaseWhenPublishBlocks(t *testing.T
 	defer httpServer.Close()
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
-	postJSON(t, httpServer.URL+"/api/v1/events", `{"type":"event-publish-backpressure-test"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"event-publish-backpressure-test"}`, http.StatusAccepted)
 	select {
 	case <-logHandler.entered:
 	case <-time.After(time.Second):
 		t.Fatal("event worker did not reach blocking log handler")
 	}
-	postJSON(t, httpServer.URL+"/api/v1/events", `{"type":"event-publish-backpressure-test"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"event-publish-backpressure-test"}`, http.StatusAccepted)
 	waitForGaugeValue(t, httpServer.URL, "matrix_proxy_event_queue_depth", "1")
 
 	statuses := make(chan int, 1)
 	go func() {
-		statuses <- postJSONStatus(httpServer.URL+"/api/v1/events", `{"type":"event-publish-backpressure-test"}`)
+		statuses <- postJSONStatus(httpServer.URL+"/api/v1/devices/default/events", `{"type":"event-publish-backpressure-test"}`)
 	}()
 	assertHTTPPostStillBlocked(t, statuses)
 
@@ -1203,20 +1203,20 @@ func TestEventPublisherBackpressureTimeoutMetricIncreasesWhenPublishContextExpir
 	defer httpServer.Close()
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
-	postJSON(t, httpServer.URL+"/api/v1/events", `{"type":"event-publish-backpressure-timeout-test"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"event-publish-backpressure-timeout-test"}`, http.StatusAccepted)
 	select {
 	case <-logHandler.entered:
 	case <-time.After(time.Second):
 		t.Fatal("event worker did not reach blocking log handler")
 	}
-	postJSON(t, httpServer.URL+"/api/v1/events", `{"type":"event-publish-backpressure-timeout-test"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"event-publish-backpressure-timeout-test"}`, http.StatusAccepted)
 	waitForGaugeValue(t, httpServer.URL, "matrix_proxy_event_queue_depth", "1")
 
 	reqCtx, reqCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer reqCancel()
 	results := make(chan httpPostResult, 1)
 	go func() {
-		status, err := postJSONStatusWithContext(reqCtx, httpServer.URL+"/api/v1/events", `{"type":"event-publish-backpressure-timeout-test"}`)
+		status, err := postJSONStatusWithContext(reqCtx, httpServer.URL+"/api/v1/devices/default/events", `{"type":"event-publish-backpressure-timeout-test"}`)
 		results <- httpPostResult{status: status, err: err}
 	}()
 	assertHTTPPostStillPending(t, results)
@@ -1259,7 +1259,7 @@ func TestEventWorkerMetricsReturnToZeroAfterShutdownWithBlockedPublisher(t *test
 	defer httpServer.Close()
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
-	postJSON(t, httpServer.URL+"/api/v1/events", `{"type":"event-worker-shutdown-depth-race"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"event-worker-shutdown-depth-race"}`, http.StatusAccepted)
 	select {
 	case <-logHandler.entered:
 	case <-time.After(time.Second):
@@ -1269,7 +1269,7 @@ func TestEventWorkerMetricsReturnToZeroAfterShutdownWithBlockedPublisher(t *test
 	waitForGaugeValue(t, httpServer.URL, "matrix_proxy_event_queue_depth", "0")
 	waitForGaugeValue(t, httpServer.URL, "matrix_proxy_event_worker_inflight", "1")
 
-	postJSON(t, httpServer.URL+"/api/v1/events", `{"type":"event-worker-shutdown-depth-race"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"event-worker-shutdown-depth-race"}`, http.StatusAccepted)
 	waitForGaugeValue(t, httpServer.URL, "matrix_proxy_event_queue_depth", "1")
 	waitForGaugeValue(t, httpServer.URL, "matrix_proxy_event_worker_inflight", "1")
 
@@ -1277,7 +1277,7 @@ func TestEventWorkerMetricsReturnToZeroAfterShutdownWithBlockedPublisher(t *test
 	defer reqCancel()
 	results := make(chan httpPostResult, 1)
 	go func() {
-		status, err := postJSONStatusWithContext(reqCtx, httpServer.URL+"/api/v1/events", `{"type":"event-worker-shutdown-depth-race"}`)
+		status, err := postJSONStatusWithContext(reqCtx, httpServer.URL+"/api/v1/devices/default/events", `{"type":"event-worker-shutdown-depth-race"}`)
 		results <- httpPostResult{status: status, err: err}
 	}()
 	assertHTTPPostStillPending(t, results)
@@ -1406,8 +1406,8 @@ func TestMetricsExposeProbeTimeoutReason(t *testing.T) {
 	defer matrixServer.Close()
 
 	cfg := newHTTPMatrixTestConfig(t, matrixServer.Addr())
-	cfg.Matrix.HeartbeatInterval = 10 * time.Millisecond
-	cfg.Matrix.ProbeTimeout = 20 * time.Millisecond
+	cfg.Devices["default"].HeartbeatInterval = 10 * time.Millisecond
+	cfg.Devices["default"].ProbeTimeout = 20 * time.Millisecond
 	application, err := app.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
@@ -1487,7 +1487,7 @@ func TestReadyAndMetricsExposeTCPImmediateObservabilityCallbackPanics(t *testing
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
 	matrixServer.CloseActiveConnections()
-	postJSON(t, httpServer.URL+"/api/v1/matrix/fill", `{"r":1,"g":2,"b":3}`, http.StatusOK)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/matrix/fill", `{"r":1,"g":2,"b":3}`, http.StatusOK)
 
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_matrix_reconnects_total",
 		`source="tcp_immediate"`, `error_kind="retryable"`)
@@ -1528,7 +1528,7 @@ func TestReadyAndMetricsExposeTCPImmediateReconnectFailureCallbackPanics(t *test
 	matrixServer.Close()
 	reqCtx, reqCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer reqCancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, httpServer.URL+"/api/v1/matrix/fill", bytes.NewBufferString(`{"r":1,"g":2,"b":3}`))
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, httpServer.URL+"/api/v1/devices/default/matrix/fill", bytes.NewBufferString(`{"r":1,"g":2,"b":3}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1578,7 +1578,7 @@ func TestTCPImmediateReconnectLoggingDoesNotBlockMatrixCommand(t *testing.T) {
 	matrixServer.CloseActiveConnections()
 	statuses := make(chan int, 1)
 	go func() {
-		statuses <- postJSONStatus(httpServer.URL+"/api/v1/matrix/fill", `{"r":1,"g":2,"b":3}`)
+		statuses <- postJSONStatus(httpServer.URL+"/api/v1/devices/default/matrix/fill", `{"r":1,"g":2,"b":3}`)
 	}()
 
 	var status int
@@ -1646,7 +1646,7 @@ func TestReadyAndMetricsExposeTCPReconnectLogDrops(t *testing.T) {
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
 	matrixServer.CloseActiveConnections()
-	postJSON(t, httpServer.URL+"/api/v1/matrix/fill", `{"r":1,"g":2,"b":3}`, http.StatusOK)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/matrix/fill", `{"r":1,"g":2,"b":3}`, http.StatusOK)
 	select {
 	case <-logHandler.entered:
 	case <-time.After(time.Second):
@@ -1655,12 +1655,12 @@ func TestReadyAndMetricsExposeTCPReconnectLogDrops(t *testing.T) {
 
 	for i := 0; i < 40; i++ {
 		matrixServer.CloseActiveConnections()
-		postJSON(t, httpServer.URL+"/api/v1/matrix/fill", `{"r":1,"g":2,"b":3}`, http.StatusOK)
+		postJSON(t, httpServer.URL+"/api/v1/devices/default/matrix/fill", `{"r":1,"g":2,"b":3}`, http.StatusOK)
 	}
 
 	waitForMetricLine(t, httpServer.URL, "# HELP matrix_proxy_tcp_reconnect_log_events_dropped_total",
 		"best-effort TCP reconnect log events dropped before slog handling")
-	waitForMetricValueAtLeast(t, httpServer.URL, "matrix_proxy_tcp_reconnect_log_events_dropped_total", 1)
+	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_tcp_reconnect_log_events_dropped_total", 1, `device="default"`)
 	waitForReadyTCPReconnectLogDropsAtLeast(t, httpServer.URL, 1)
 }
 
@@ -1695,7 +1695,7 @@ func TestMetricsSourceLabelDistinguishesSharedObservabilityCallbackPanics(t *tes
 		`callback="reconnect_recovered"`)
 
 	matrixServer.CloseActiveConnections()
-	postJSON(t, httpServer.URL+"/api/v1/matrix/fill", `{"r":1,"g":2,"b":3}`, http.StatusOK)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/matrix/fill", `{"r":1,"g":2,"b":3}`, http.StatusOK)
 
 	waitForMetricLineValueAtLeast(t, httpServer.URL,
 		"matrix_proxy_matrix_observability_callback_panics_total", 1,
@@ -1726,16 +1726,16 @@ func TestMetricsDocumentReconnectRecoveryVersusRetriedCommandFailure(t *testing.
 
 	matrixServer.CloseActiveConnections()
 	matrixServer.FailNextStatus(testCommandFill, testStatusUnknownCommand)
-	postJSON(t, httpServer.URL+"/api/v1/matrix/fill", `{"r":1,"g":2,"b":3}`, http.StatusBadGateway)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/matrix/fill", `{"r":1,"g":2,"b":3}`, http.StatusBadGateway)
 
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_matrix_reconnects_total",
 		`source="tcp_immediate"`, `error_kind="retryable"`)
 	assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_matrix_reconnects_total",
-		[]string{"error_kind", "source"}, `source="tcp_immediate"`, `error_kind="retryable"`)
+		[]string{"device", "error_kind", "source"}, `source="tcp_immediate"`, `error_kind="retryable"`)
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_matrix_reconnect_recoveries_total",
 		`source="tcp_immediate"`, `state="ready"`)
 	assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_matrix_reconnect_recoveries_total",
-		[]string{"source", "state"}, `source="tcp_immediate"`, `state="ready"`)
+		[]string{"device", "source", "state"}, `source="tcp_immediate"`, `state="ready"`)
 	assertMetricHelpLine(t, httpServer.URL, "matrix_proxy_matrix_reconnect_recoveries_total",
 		"firmware-verified replacement connectivity",
 		"retried-command transport failure is command telemetry")
@@ -1744,7 +1744,7 @@ func TestMetricsDocumentReconnectRecoveryVersusRetriedCommandFailure(t *testing.
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_matrix_commands_total",
 		`command="fill"`, `status="unknown_command"`)
 	assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_matrix_commands_total",
-		[]string{"command", "status"}, `command="fill"`, `status="unknown_command"`)
+		[]string{"device", "command", "status"}, `command="fill"`, `status="unknown_command"`)
 	assertNoMetricLine(t, httpServer.URL, "matrix_proxy_matrix_reconnect_failures_total",
 		`source="tcp_immediate"`)
 }
@@ -1772,7 +1772,7 @@ func TestMetricsReportSchedulerStoppedForActiveAnimationShutdown(t *testing.T) {
 	defer httpServer.Close()
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
-	postJSON(t, httpServer.URL+"/api/v1/play", `{"animation":"notification","duration":"2s","restore":"leave"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/play", `{"animation":"notification","duration":"2s","restore":"leave"}`, http.StatusAccepted)
 	waitForMatrixResponse(t, matrixServer, testCommandSetFrame)
 
 	cancel()
@@ -1820,7 +1820,7 @@ func TestAppCloseIdempotentlyClosesNeverRunResources(t *testing.T) {
 		t.Fatal("/readyz draining = false, want true")
 	}
 
-	postJSON(t, httpServer.URL+"/api/v1/events", `{"type":"close-test"}`, http.StatusServiceUnavailable)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"close-test"}`, http.StatusServiceUnavailable)
 	if err := application.RunWorkers(context.Background()); !errors.Is(err, app.ErrAppClosed) {
 		t.Fatalf("RunWorkers() after Close() error = %v, want ErrAppClosed", err)
 	}
@@ -1869,8 +1869,8 @@ func TestAppCloseWhileWorkersActiveReturnsErrAndLeavesWorkersRunning(t *testing.
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	postJSON(t, httpServer.URL+"/api/v1/events", `{"type":"close-test"}`, http.StatusAccepted)
-	postJSON(t, httpServer.URL+"/api/v1/matrix/fill", `{"r":1,"g":2,"b":3}`, http.StatusOK)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"close-test"}`, http.StatusAccepted)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/matrix/fill", `{"r":1,"g":2,"b":3}`, http.StatusOK)
 
 	cancel()
 	waitAppWorkers(t, done)
@@ -1907,7 +1907,7 @@ func TestAppRunWorkersAfterExternalContextStopReturnsErrAppClosed(t *testing.T) 
 	defer httpServer.Close()
 	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
 
-	postJSON(t, httpServer.URL+"/api/v1/matrix/fill", `{"r":1,"g":2,"b":3}`, http.StatusOK)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/matrix/fill", `{"r":1,"g":2,"b":3}`, http.StatusOK)
 	waitForGaugeValue(t, httpServer.URL, "matrix_proxy_play_queue_depth", "0")
 
 	cancel()
@@ -1938,7 +1938,7 @@ func TestAppRunWorkersAfterExternalContextStopReturnsErrAppClosed(t *testing.T) 
 	if err := application.Close(); err != nil {
 		t.Fatalf("second Close() after external context stop error = %v, want nil", err)
 	}
-	postJSON(t, httpServer.URL+"/api/v1/events", `{"type":"post-stop-close-test"}`, http.StatusServiceUnavailable)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"post-stop-close-test"}`, http.StatusServiceUnavailable)
 	waitForGaugeValue(t, httpServer.URL, "matrix_proxy_play_queue_depth", "0")
 }
 
@@ -1972,7 +1972,7 @@ func TestAppCloseRacingRunWorkersStartupDoesNotCloseResourcesUnderWorkers(t *tes
 		switch {
 		case errors.Is(closeErr, app.ErrAppRunning):
 			waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
-			postJSON(t, httpServer.URL+"/api/v1/matrix/fill", `{"r":3,"g":4,"b":5}`, http.StatusOK)
+			postJSON(t, httpServer.URL+"/api/v1/devices/default/matrix/fill", `{"r":3,"g":4,"b":5}`, http.StatusOK)
 
 			cancel()
 			waitAppWorkers(t, runDone)
@@ -1984,7 +1984,7 @@ func TestAppCloseRacingRunWorkersStartupDoesNotCloseResourcesUnderWorkers(t *tes
 			if !errors.Is(err, app.ErrAppClosed) {
 				t.Fatalf("iteration %d: RunWorkers() error = %v, want ErrAppClosed after Close() won race", i, err)
 			}
-			postJSON(t, httpServer.URL+"/api/v1/events", `{"type":"close-race-test"}`, http.StatusServiceUnavailable)
+			postJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"close-race-test"}`, http.StatusServiceUnavailable)
 		default:
 			t.Fatalf("iteration %d: Close() error = %v, want nil or ErrAppRunning", i, closeErr)
 		}
@@ -2039,7 +2039,7 @@ func TestAppShutdownRunningCancelsWorkersClosesResourcesAndPreventsRestart(t *te
 		t.Fatal("/readyz draining = false, want true")
 	}
 
-	postJSON(t, httpServer.URL+"/api/v1/events", `{"type":"shutdown-test"}`, http.StatusServiceUnavailable)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"shutdown-test"}`, http.StatusServiceUnavailable)
 	if err := application.RunWorkers(context.Background()); !errors.Is(err, app.ErrAppClosed) {
 		t.Fatalf("RunWorkers() after Shutdown() error = %v, want ErrAppClosed", err)
 	}
@@ -2065,7 +2065,7 @@ func TestAppRunContextCancellationClosesResourcesAndPreventsRestart(t *testing.T
 	waitForStatus(t, baseURL+"/readyz", http.StatusOK)
 	waitForActiveMatrixConnections(t, matrixServer, 1)
 
-	postJSON(t, baseURL+"/api/v1/matrix/fill", `{"r":1,"g":2,"b":3}`, http.StatusOK)
+	postJSON(t, baseURL+"/api/v1/devices/default/matrix/fill", `{"r":1,"g":2,"b":3}`, http.StatusOK)
 	waitForGaugeValue(t, baseURL, "matrix_proxy_play_queue_depth", "0")
 
 	cancel()
@@ -2088,7 +2088,7 @@ func TestAppRunContextCancellationClosesResourcesAndPreventsRestart(t *testing.T
 		t.Fatal("/readyz draining = false, want true")
 	}
 
-	postJSON(t, httpServer.URL+"/api/v1/events", `{"type":"run-context-cancel-test"}`, http.StatusServiceUnavailable)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"run-context-cancel-test"}`, http.StatusServiceUnavailable)
 	if err := application.RunWorkers(context.Background()); !errors.Is(err, app.ErrAppClosed) {
 		t.Fatalf("RunWorkers() after Run context cancellation error = %v, want ErrAppClosed", err)
 	}
@@ -2136,7 +2136,7 @@ func TestAppRunListenFailureClosesResourcesAndPreventsRestart(t *testing.T) {
 		t.Fatal("/readyz draining = false, want true")
 	}
 
-	postJSON(t, httpServer.URL+"/api/v1/events", `{"type":"run-listen-failure-test"}`, http.StatusServiceUnavailable)
+	postJSON(t, httpServer.URL+"/api/v1/devices/default/events", `{"type":"run-listen-failure-test"}`, http.StatusServiceUnavailable)
 	if err := application.RunWorkers(context.Background()); !errors.Is(err, app.ErrAppClosed) {
 		t.Fatalf("RunWorkers() after Run listen failure error = %v, want ErrAppClosed", err)
 	}
@@ -2218,14 +2218,14 @@ func newHTTPMatrixTestConfig(t *testing.T, matrixAddr string) config.Config {
 	cfg := config.Default()
 	cfg.Server.Addr = "127.0.0.1:0"
 	cfg.Server.AdminTokenEnv = ""
-	cfg.Matrix.Host = host
-	cfg.Matrix.Port = port
-	cfg.Matrix.ConnectTimeout = 20 * time.Millisecond
-	cfg.Matrix.ResponseTimeout = time.Second
-	cfg.Matrix.HeartbeatInterval = 20 * time.Millisecond
-	cfg.Matrix.ProbeTimeout = 50 * time.Millisecond
-	cfg.Matrix.ReconnectMinDelay = 10 * time.Millisecond
-	cfg.Matrix.ReconnectMaxDelay = 50 * time.Millisecond
+	cfg.Devices["default"].Host = host
+	cfg.Devices["default"].Port = port
+	cfg.Devices["default"].ConnectTimeout = 20 * time.Millisecond
+	cfg.Devices["default"].ResponseTimeout = time.Second
+	cfg.Devices["default"].HeartbeatInterval = 20 * time.Millisecond
+	cfg.Devices["default"].ProbeTimeout = 50 * time.Millisecond
+	cfg.Devices["default"].ReconnectMinDelay = 10 * time.Millisecond
+	cfg.Devices["default"].ReconnectMaxDelay = 50 * time.Millisecond
 	cfg.Queue.EventsBuffer = 16
 	cfg.Queue.PlayBuffer = 16
 	cfg.RulesFile = writeRulesFile(t)
@@ -2402,8 +2402,8 @@ func newNeverRunAppTestConfig(t *testing.T) config.Config {
 	cfg := config.Default()
 	cfg.Server.Addr = "127.0.0.1:0"
 	cfg.Server.AdminTokenEnv = ""
-	cfg.Matrix.Host = "127.0.0.1"
-	cfg.Matrix.Port = 1
+	cfg.Devices["default"].Host = "127.0.0.1"
+	cfg.Devices["default"].Port = 1
 	cfg.Queue.EventsBuffer = 16
 	cfg.Queue.PlayBuffer = 16
 	cfg.RulesFile = writeRulesFile(t)
@@ -2667,7 +2667,7 @@ func waitForQueueDepth(t *testing.T, baseURL string, want int) {
 	deadline := time.Now().Add(time.Second)
 	var last queueResponse
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(baseURL + "/api/v1/queue")
+		resp, err := http.Get(baseURL + "/api/v1/devices/default/queue")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -2762,15 +2762,15 @@ func waitForReadyBackground(t *testing.T, baseURL, wantID, wantKind, wantState s
 	var lastStatus int
 	for time.Now().Before(deadline) {
 		last, lastStatus = getReadyDetails(t, baseURL)
-		if last.Background.ConfiguredID == wantID &&
-			last.Background.Kind == wantKind &&
-			last.Background.State == wantState {
+		if last.DefaultDevice().Background.ConfiguredID == wantID &&
+			last.DefaultDevice().Background.Kind == wantKind &&
+			last.DefaultDevice().Background.State == wantState {
 			return last, lastStatus
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("/readyz background = %#v, want id=%q kind=%q state=%q; status = %d; body = %#v",
-		last.Background, wantID, wantKind, wantState, lastStatus, last)
+		last.DefaultDevice().Background, wantID, wantKind, wantState, lastStatus, last)
 	return readyDetails{}, 0
 }
 
@@ -2781,19 +2781,19 @@ func waitForSchedulerState(t *testing.T, baseURL, want string) readyDetails {
 	var lastStatus int
 	for time.Now().Before(deadline) {
 		last, lastStatus = getReadyDetails(t, baseURL)
-		if last.SchedulerState == want {
+		if last.DefaultDevice().SchedulerState == want {
 			return last
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("/readyz scheduler_state = %q, want %q; status = %d; body = %#v",
-		last.SchedulerState, want, lastStatus, last)
+		last.DefaultDevice().SchedulerState, want, lastStatus, last)
 	return readyDetails{}
 }
 
 func deleteQueue(t *testing.T, baseURL string) int {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodDelete, baseURL+"/api/v1/queue", nil)
+	req, err := http.NewRequest(http.MethodDelete, baseURL+"/api/v1/devices/default/queue", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3277,10 +3277,10 @@ func generatedBackgroundFrameFixture(t *testing.T) []animations.Frame {
 func expectedPackedPayloads(t *testing.T, cfg config.Config, frames []animations.Frame) [][]byte {
 	t.Helper()
 	layout, err := animations.NewLayout(
-		cfg.Matrix.Layout.Width,
-		cfg.Matrix.Layout.Height,
-		cfg.Matrix.Layout.Wiring,
-		cfg.Matrix.Layout.OddRowDisplayFlip,
+		cfg.Devices["default"].Layout.Width,
+		cfg.Devices["default"].Layout.Height,
+		cfg.Devices["default"].Layout.Wiring,
+		cfg.Devices["default"].Layout.OddRowDisplayFlip,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -3474,16 +3474,27 @@ type queueClearResponse struct {
 }
 
 type readyDetails struct {
-	Status                       string            `json:"status"`
-	WorkersRunning               bool              `json:"workers_running"`
-	Draining                     bool              `json:"draining"`
-	SchedulerState               string            `json:"scheduler_state"`
-	MatrixConnected              bool              `json:"matrix_connected"`
-	Background                   readyBackground   `json:"background"`
-	EventWorker                  readyEventWorker  `json:"event_worker"`
+	Status         string                      `json:"status"`
+	WorkersRunning bool                        `json:"workers_running"`
+	Draining       bool                        `json:"draining"`
+	EventWorker    readyEventWorker            `json:"event_worker"`
+	Devices        map[string]deviceReadyEntry `json:"devices"`
+	// Aggregate diagnostic fields.
 	TCPReconnectLogEventsDropped uint64            `json:"tcp_reconnect_log_events_dropped"`
 	ObservabilityCallbackPanics  uint64            `json:"observability_callback_panics"`
 	ObservabilityCallbackCounts  map[string]uint64 `json:"observability_callback_panic_counts"`
+}
+
+func (r readyDetails) DefaultDevice() deviceReadyEntry {
+	return r.Devices["default"]
+}
+
+type deviceReadyEntry struct {
+	SchedulerState  string        `json:"scheduler_state"`
+	MatrixConnected bool          `json:"matrix_connected"`
+	Background      readyBackground `json:"background"`
+	LastSuccess     *time.Time    `json:"last_success"`
+	LastFailure     *time.Time    `json:"last_failure"`
 }
 
 type readyBackground struct {

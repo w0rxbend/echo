@@ -11,13 +11,16 @@ import (
 
 const DefaultPath = "configs/config.yaml"
 
+// DefaultDeviceID is the device key created by Default() and by the backward-compat
+// YAML loader when only the old "matrix:" + "background:" top-level keys are present.
+const DefaultDeviceID = "default"
+
 type Config struct {
-	Server         ServerConfig     `yaml:"server"`
-	Matrix         MatrixConfig     `yaml:"matrix"`
-	Queue          QueueConfig      `yaml:"queue"`
-	Background     BackgroundConfig `yaml:"background"`
-	AnimationsFile string           `yaml:"animations_file"`
-	RulesFile      string           `yaml:"rules_file"`
+	Server         ServerConfig
+	Devices        map[string]*DeviceConfig
+	Queue          QueueConfig
+	AnimationsFile string
+	RulesFile      string
 
 	AnimationRegistry *animations.Registry `yaml:"-"`
 }
@@ -27,7 +30,8 @@ type ServerConfig struct {
 	AdminTokenEnv string `yaml:"admin_token_env"`
 }
 
-type MatrixConfig struct {
+// DeviceConfig holds all per-device settings: TCP connection, layout, and background.
+type DeviceConfig struct {
 	Host              string        `yaml:"host"`
 	Port              int           `yaml:"port"`
 	ConnectTimeout    time.Duration `yaml:"connect_timeout"`
@@ -36,11 +40,12 @@ type MatrixConfig struct {
 	// ProbeTimeout bounds idle heartbeat probes. Probes run on the scheduler
 	// selection path, so newly queued matrix work can wait up to this duration
 	// behind an in-progress probe.
-	ProbeTimeout      time.Duration `yaml:"probe_timeout"`
-	ReconnectMinDelay time.Duration `yaml:"reconnect_min_delay"`
-	ReconnectMaxDelay time.Duration `yaml:"reconnect_max_delay"`
-	Brightness        uint8         `yaml:"brightness"`
-	Layout            LayoutConfig  `yaml:"layout"`
+	ProbeTimeout      time.Duration    `yaml:"probe_timeout"`
+	ReconnectMinDelay time.Duration    `yaml:"reconnect_min_delay"`
+	ReconnectMaxDelay time.Duration    `yaml:"reconnect_max_delay"`
+	Brightness        uint8            `yaml:"brightness"`
+	Layout            LayoutConfig     `yaml:"layout"`
+	Background        BackgroundConfig `yaml:"background"`
 }
 
 type LayoutConfig struct {
@@ -68,22 +73,8 @@ func Default() Config {
 			Addr:          ":8080",
 			AdminTokenEnv: "MATRIX_PROXY_ADMIN_TOKEN",
 		},
-		Matrix: MatrixConfig{
-			Host:              "192.168.1.127",
-			Port:              7777,
-			ConnectTimeout:    5 * time.Second,
-			ResponseTimeout:   2 * time.Second,
-			HeartbeatInterval: 5 * time.Second,
-			ProbeTimeout:      2 * time.Second,
-			ReconnectMinDelay: 500 * time.Millisecond,
-			ReconnectMaxDelay: 10 * time.Second,
-			Brightness:        30,
-			Layout: LayoutConfig{
-				Width:             8,
-				Height:            8,
-				Wiring:            "h-tl",
-				OddRowDisplayFlip: true,
-			},
+		Devices: map[string]*DeviceConfig{
+			DefaultDeviceID: DefaultDeviceConfig(),
 		},
 		Queue: QueueConfig{
 			EventsBuffer:   512,
@@ -91,48 +82,51 @@ func Default() Config {
 			OverflowPolicy: "block",
 			DedupWindow:    0,
 		},
-		Background:     BackgroundConfig{},
 		AnimationsFile: "",
 		RulesFile:      "configs/rules.example.yaml",
 	}
 }
 
-func (c Config) Validate() error {
-	if c.Server.Addr == "" {
-		return errors.New("server.addr is required")
+func DefaultDeviceConfig() *DeviceConfig {
+	return &DeviceConfig{
+		Host:              "192.168.1.127",
+		Port:              7777,
+		ConnectTimeout:    5 * time.Second,
+		ResponseTimeout:   2 * time.Second,
+		HeartbeatInterval: 5 * time.Second,
+		ProbeTimeout:      2 * time.Second,
+		ReconnectMinDelay: 500 * time.Millisecond,
+		ReconnectMaxDelay: 10 * time.Second,
+		Brightness:        30,
+		Layout: LayoutConfig{
+			Width:             8,
+			Height:            8,
+			Wiring:            "h-tl",
+			OddRowDisplayFlip: true,
+		},
 	}
+}
+
+func (c Config) Validate() error {
 	if _, _, err := net.SplitHostPort(c.Server.Addr); err != nil {
 		return fmt.Errorf("server.addr must be host:port or :port: %w", err)
 	}
-	if c.Matrix.Host == "" {
-		return errors.New("matrix.host is required")
+	if c.Server.Addr == "" {
+		return errors.New("server.addr is required")
 	}
-	if c.Matrix.Port <= 0 || c.Matrix.Port > 65535 {
-		return fmt.Errorf("matrix.port must be between 1 and 65535: %d", c.Matrix.Port)
+	if len(c.Devices) == 0 {
+		return errors.New("at least one device is required under devices:")
 	}
-	if c.Matrix.ConnectTimeout <= 0 {
-		return errors.New("matrix.connect_timeout must be positive")
-	}
-	if c.Matrix.ResponseTimeout <= 0 {
-		return errors.New("matrix.response_timeout must be positive")
-	}
-	if c.Matrix.HeartbeatInterval <= 0 {
-		return errors.New("matrix.heartbeat_interval must be positive")
-	}
-	if c.Matrix.ProbeTimeout <= 0 {
-		return errors.New("matrix.probe_timeout must be positive")
-	}
-	if c.Matrix.ReconnectMinDelay <= 0 {
-		return errors.New("matrix.reconnect_min_delay must be positive")
-	}
-	if c.Matrix.ReconnectMaxDelay < c.Matrix.ReconnectMinDelay {
-		return errors.New("matrix.reconnect_max_delay must be greater than or equal to reconnect_min_delay")
-	}
-	if c.Matrix.Layout.Width != 8 || c.Matrix.Layout.Height != 8 {
-		return errors.New("matrix.layout width and height must be 8 for the current firmware")
-	}
-	if c.Matrix.Layout.Wiring == "" {
-		return errors.New("matrix.layout.wiring is required")
+	for id, device := range c.Devices {
+		if err := validateDeviceID(id); err != nil {
+			return err
+		}
+		if device == nil {
+			return fmt.Errorf("device %q: nil config", id)
+		}
+		if err := device.Validate(id); err != nil {
+			return err
+		}
 	}
 	if c.Queue.EventsBuffer <= 0 {
 		return errors.New("queue.events_buffer must be positive")
@@ -149,6 +143,52 @@ func (c Config) Validate() error {
 	if c.RulesFile == "" {
 		return errors.New("rules_file is required")
 	}
+	return nil
+}
 
+func (d DeviceConfig) Validate(id string) error {
+	prefix := fmt.Sprintf("device %q", id)
+	if d.Host == "" {
+		return fmt.Errorf("%s: host is required", prefix)
+	}
+	if d.Port <= 0 || d.Port > 65535 {
+		return fmt.Errorf("%s: port must be between 1 and 65535: %d", prefix, d.Port)
+	}
+	if d.ConnectTimeout <= 0 {
+		return fmt.Errorf("%s: connect_timeout must be positive", prefix)
+	}
+	if d.ResponseTimeout <= 0 {
+		return fmt.Errorf("%s: response_timeout must be positive", prefix)
+	}
+	if d.HeartbeatInterval <= 0 {
+		return fmt.Errorf("%s: heartbeat_interval must be positive", prefix)
+	}
+	if d.ProbeTimeout <= 0 {
+		return fmt.Errorf("%s: probe_timeout must be positive", prefix)
+	}
+	if d.ReconnectMinDelay <= 0 {
+		return fmt.Errorf("%s: reconnect_min_delay must be positive", prefix)
+	}
+	if d.ReconnectMaxDelay < d.ReconnectMinDelay {
+		return fmt.Errorf("%s: reconnect_max_delay must be >= reconnect_min_delay", prefix)
+	}
+	if d.Layout.Width != 8 || d.Layout.Height != 8 {
+		return fmt.Errorf("%s: layout width and height must be 8 for the current firmware", prefix)
+	}
+	if d.Layout.Wiring == "" {
+		return fmt.Errorf("%s: layout.wiring is required", prefix)
+	}
+	return nil
+}
+
+func validateDeviceID(id string) error {
+	if id == "" {
+		return errors.New("device id cannot be empty")
+	}
+	for _, r := range id {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_') {
+			return fmt.Errorf("device id %q contains invalid character %q (only alphanumeric, hyphens, underscores allowed)", id, string(r))
+		}
+	}
 	return nil
 }

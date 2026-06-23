@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -19,10 +20,10 @@ import (
 )
 
 type Server struct {
-	logger    *slog.Logger
-	bus       *events.Bus
-	scheduler *matrix.Scheduler
-	registry  *animations.Registry
+	logger     *slog.Logger
+	bus        *events.Bus
+	schedulers map[string]*matrix.Scheduler
+	registry   *animations.Registry
 
 	adminToken  string
 	requireAuth bool
@@ -32,7 +33,7 @@ type Server struct {
 type Options struct {
 	Logger        *slog.Logger
 	Bus           *events.Bus
-	Scheduler     *matrix.Scheduler
+	Schedulers    map[string]*matrix.Scheduler
 	Registry      *animations.Registry
 	ServerAddr    string
 	AdminTokenEnv string
@@ -49,10 +50,15 @@ func New(options Options) (*Server, error) {
 		return nil, err
 	}
 
+	schedulers := options.Schedulers
+	if schedulers == nil {
+		schedulers = make(map[string]*matrix.Scheduler)
+	}
+
 	return &Server{
 		logger:      logger,
 		bus:         options.Bus,
-		scheduler:   options.Scheduler,
+		schedulers:  schedulers,
 		registry:    options.Registry,
 		adminToken:  auth.Token,
 		requireAuth: auth.Required,
@@ -80,26 +86,71 @@ func ResolveAdminAuth(serverAddr, tokenEnv string) (AdminAuth, error) {
 	return AdminAuth{Token: token, Required: true}, nil
 }
 
+// Router builds the /api/v1 sub-router mounted by the App.
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
 
-	r.Post("/events", s.handleEvents)
-	r.Post("/notify", s.handleNotify)
-	r.With(s.adminOnly).Post("/play", s.handlePlay)
-	r.With(s.adminOnly).Get("/queue", s.handleQueue)
-	r.With(s.adminOnly).Delete("/queue", s.handleQueueClear)
+	// Global animation discovery (no device required).
 	r.Get("/animations", s.handleAnimations)
 	r.Get("/animations/catalog", s.handleAnimationCatalog)
 
-	r.Route("/matrix", func(r chi.Router) {
-		r.Use(s.adminOnly)
-		r.Post("/clear", s.handleMatrixClear)
-		r.Post("/brightness", s.handleMatrixBrightness)
-		r.Post("/preset", s.handleMatrixPreset)
-		r.Post("/fill", s.handleMatrixFill)
+	// Device list.
+	r.With(s.adminOnly).Get("/devices", s.handleDeviceList)
+
+	// Per-device routes.
+	r.Route("/devices/{device}", func(r chi.Router) {
+		r.Use(s.requireKnownDevice)
+		r.Post("/events", s.handleEvents)
+		r.Post("/notify", s.handleNotify)
+		r.With(s.adminOnly).Post("/play", s.handlePlay)
+		r.With(s.adminOnly).Get("/queue", s.handleQueue)
+		r.With(s.adminOnly).Delete("/queue", s.handleQueueClear)
+
+		// Runtime idle background configuration.
+		r.With(s.adminOnly).Get("/background", s.handleGetBackground)
+		r.With(s.adminOnly).Put("/background", s.handleSetBackground)
+
+		r.Route("/matrix", func(r chi.Router) {
+			r.Use(s.adminOnly)
+			r.Post("/clear", s.handleMatrixClear)
+			r.Post("/brightness", s.handleMatrixBrightness)
+			r.Post("/preset", s.handleMatrixPreset)
+			r.Post("/fill", s.handleMatrixFill)
+		})
 	})
 
 	return r
+}
+
+// deviceFromRequest resolves the {device} URL parameter to the corresponding scheduler.
+// Returns nil, "" when the parameter is absent or the device is unknown.
+func (s *Server) deviceFromRequest(r *http.Request) (*matrix.Scheduler, string) {
+	id := chi.URLParam(r, "device")
+	if id == "" {
+		return nil, ""
+	}
+	return s.schedulers[id], id
+}
+
+// requireKnownDevice is middleware that rejects requests for unknown device IDs.
+func (s *Server) requireKnownDevice(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "device")
+		if _, ok := s.schedulers[id]; !ok {
+			writeError(w, http.StatusNotFound, fmt.Sprintf("unknown device %q", id))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) handleDeviceList(w http.ResponseWriter, _ *http.Request) {
+	ids := make([]string, 0, len(s.schedulers))
+	for id := range s.schedulers {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	writeJSON(w, http.StatusOK, map[string]any{"devices": ids})
 }
 
 func (s *Server) adminOnly(next http.Handler) http.Handler {

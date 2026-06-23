@@ -124,7 +124,7 @@ func TestTCPReconnectLogDispatcherDropMetricIsTotalOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := registry.RegisterTCPReconnectLogEventsDropped(func() float64 {
+	if err := registry.RegisterTCPReconnectLogEventsDropped("default", func() float64 {
 		return float64(dispatcher.EventsDropped())
 	}); err != nil {
 		t.Fatal(err)
@@ -153,8 +153,9 @@ func TestTCPReconnectLogDispatcherDropMetricIsTotalOnly(t *testing.T) {
 			t.Fatalf("dropped reconnect log metric series = %d, want 1", got)
 		}
 		metric := family.GetMetric()[0]
-		if labels := metric.GetLabel(); len(labels) != 0 {
-			t.Fatalf("dropped reconnect log metric labels = %v, want total-only counter with no labels", labels)
+		// The metric carries a per-device const label; verify it's exactly the one we registered.
+		if labels := metric.GetLabel(); len(labels) != 1 || labels[0].GetName() != "device" {
+			t.Fatalf("dropped reconnect log metric labels = %v, want single device label", labels)
 		}
 		if got := metric.GetCounter().GetValue(); got != 3 {
 			t.Fatalf("dropped reconnect log metric value = %g, want 3", got)

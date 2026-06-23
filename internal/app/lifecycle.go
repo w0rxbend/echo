@@ -159,19 +159,7 @@ func (a *App) admitRun(ctx context.Context) (context.Context, context.CancelFunc
 }
 
 // Run starts the app workers and HTTP server, then blocks until ctx is canceled
-// or one of those components fails. It uses the same lifecycle admission path as
-// RunWorkers before opening the HTTP listener, so closed apps, canceled
-// contexts, already-running apps, and apps whose one-shot worker lifecycle has
-// already stopped are rejected before binding a socket.
-//
-// App instances are one-shot after any worker run. Once Run or RunWorkers has
-// admitted workers and those workers stop, future Run or RunWorkers calls return
-// ErrAppClosed; construct a new App to restart.
-//
-// After the HTTP server and worker group exit, Run performs terminal cleanup by
-// calling Shutdown(context.Background()). If both the run path and cleanup path
-// return non-nil errors, Run returns errors.Join(runErr, cleanupErr). Ordinary
-// context cancellation with successful worker shutdown and cleanup returns nil.
+// or one of those components fails.
 func (a *App) Run(ctx context.Context) error {
 	runCtx, cancelRun, err := a.admitRun(ctx)
 	if err != nil {
@@ -230,9 +218,13 @@ func (a *App) RunWorkers(ctx context.Context) error {
 func (a *App) runWorkersAdmitted(workerCtx context.Context) error {
 	g, ctx := errgroup.WithContext(workerCtx)
 
-	g.Go(func() error {
-		return a.scheduler.Run(ctx)
-	})
+	// One scheduler goroutine per device.
+	for _, d := range a.devices {
+		d := d
+		g.Go(func() error {
+			return d.scheduler.Run(ctx)
+		})
+	}
 
 	g.Go(func() error {
 		return a.runEventWorker(ctx)
@@ -253,14 +245,7 @@ func (a *App) runWorkersAdmitted(workerCtx context.Context) error {
 	return err
 }
 
-// Close releases app-owned resources for apps that are constructed but not run,
-// or after one-shot workers have already stopped. It is safe to call multiple
-// times.
-//
-// Close does not stop active workers or close the event bus or matrix client
-// underneath them. Callers must cancel the RunWorkers context and wait for
-// RunWorkers to return before calling Close; otherwise Close returns
-// ErrAppRunning and leaves resources open.
+// Close releases app-owned resources. It is safe to call multiple times.
 func (a *App) Close() error {
 	if a == nil {
 		return nil
@@ -276,12 +261,7 @@ func (a *App) Close() error {
 	return errors.Join(err, a.closeResources())
 }
 
-// Shutdown coordinates worker cancellation, waits for workers to return, and
-// then releases app-owned resources through the same terminal close path as
-// Close. If ctx expires before workers return, Shutdown returns ctx.Err()
-// without closing app-owned resources; callers may retry Shutdown or call Close
-// after RunWorkers has stopped. It is safe to call multiple times and on a nil
-// app.
+// Shutdown coordinates worker cancellation and releases app-owned resources.
 func (a *App) Shutdown(ctx context.Context) error {
 	if a == nil {
 		return nil
@@ -318,19 +298,15 @@ func (a *App) Shutdown(ctx context.Context) error {
 func (a *App) closeResources() error {
 	var err error
 	a.clearEventWorkerEvent()
-	if a.scheduler != nil {
-		a.scheduler.Close()
-	}
-	if a.tcpReconnectLogs != nil {
-		a.tcpReconnectLogs.Close()
+	for _, d := range a.devices {
+		d.scheduler.Close()
+		d.tcpLogs.Close()
+		err = errors.Join(err, d.client.Close())
 	}
 	if a.bus != nil {
 		if closeErr := a.bus.Close(); closeErr != nil && !errors.Is(closeErr, events.ErrBusClosed) {
 			err = errors.Join(err, closeErr)
 		}
-	}
-	if a.matrix != nil {
-		err = errors.Join(err, a.matrix.Close())
 	}
 	return err
 }
@@ -338,9 +314,13 @@ func (a *App) closeResources() error {
 func (a *App) runHealthMetricsWorker(ctx context.Context) error {
 	a.syncHealthMetrics()
 
-	interval := a.cfg.Matrix.HeartbeatInterval
-	if interval <= 0 {
-		interval = time.Second
+	// Use the smallest heartbeat interval across all devices (or 1s default).
+	interval := time.Second
+	for _, d := range a.devices {
+		devCfg := a.cfg.Devices[d.id]
+		if devCfg != nil && devCfg.HeartbeatInterval > 0 && (interval == time.Second || devCfg.HeartbeatInterval < interval) {
+			interval = devCfg.HeartbeatInterval
+		}
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -357,7 +337,9 @@ func (a *App) runHealthMetricsWorker(ctx context.Context) error {
 }
 
 func (a *App) syncHealthMetrics() {
-	a.setMatrixConnectedMetric(a.scheduler.Health().MatrixConnected)
+	for _, d := range a.devices {
+		setMatrixConnectedMetric(a.metrics, d.id, d.scheduler.Health().MatrixConnected)
+	}
 }
 
 func (a *App) runEventWorker(ctx context.Context) error {
@@ -381,21 +363,12 @@ func (a *App) runEventWorker(ctx context.Context) error {
 			a.metrics.EventsTotal.WithLabelValues(string(event.Source), event.Type).Inc()
 
 			a.setEventWorkerStage(eventWorkerStageMap)
-			request, ok := a.rules.Map(event)
-			if !ok {
-				a.setEventWorkerStage(eventWorkerStageLogDrop)
-				logEnqueueError(a.logger, event, errNoRuleMatch)
-				a.metrics.EventsDroppedTotal.WithLabelValues("map_or_enqueue").Inc()
-				a.clearEventWorkerEvent()
-				continue
-			}
-			applyEventOverrides(&request, event)
-
-			a.setEventWorkerStage(eventWorkerStageEnqueue)
-			if err := a.scheduler.EnqueueRequest(ctx, request); err != nil {
+			if err := a.mapAndEnqueue(ctx, event); err != nil {
 				a.setEventWorkerStage(eventWorkerStageLogDrop)
 				logEnqueueError(a.logger, event, err)
 				a.metrics.EventsDroppedTotal.WithLabelValues("map_or_enqueue").Inc()
+				a.clearEventWorkerEvent()
+				continue
 			}
 			a.clearEventWorkerEvent()
 		}

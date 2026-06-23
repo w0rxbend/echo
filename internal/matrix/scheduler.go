@@ -325,6 +325,36 @@ func backgroundKindFor(background BackgroundConfig, registry AnimationRegistry) 
 	return BackgroundKindRenderable
 }
 
+// SetBackground atomically replaces the scheduler's desired idle background.
+// Pass an empty BackgroundConfig to disable idle convergence. The new animation
+// ID is validated against the registry; an error is returned and the background
+// is left unchanged if validation fails.
+func (s *Scheduler) SetBackground(background BackgroundConfig) error {
+	if err := validateBackgroundConfig(background, s.registry); err != nil {
+		return err
+	}
+	newKind := backgroundKindFor(background, s.registry)
+	s.mu.Lock()
+	s.background = background
+	s.backgroundKind = newKind
+	if background.AnimationID != "" {
+		s.markDesiredBackgroundDirtyLocked(true)
+	} else {
+		// Disabling the background: mark converged so the scheduler stops trying.
+		s.markDesiredBackgroundConvergedLocked()
+		s.backgroundConvergenceState = BackgroundConvergenceConverged
+	}
+	s.mu.Unlock()
+	return nil
+}
+
+// Background returns the current desired idle background configuration.
+func (s *Scheduler) Background() BackgroundConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.background
+}
+
 func (s *Scheduler) QueueLen() int {
 	return s.queue.len()
 }

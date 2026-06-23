@@ -5580,6 +5580,7 @@ func TestSchedulerBackoffReconnectFailureMetricLabelsForDeadlineAndCancel(t *tes
 			ReconnectMaxDelay: 20 * time.Millisecond,
 			OnReconnectFailure: func(failure ReconnectFailure) {
 				metricRegistry.MatrixReconnectFailuresTotal.WithLabelValues(
+					"test",
 					string(failure.Source),
 					string(failure.ErrorKind),
 					string(failure.Outcome),
@@ -5621,6 +5622,7 @@ func TestSchedulerBackoffReconnectFailureMetricLabelsForDeadlineAndCancel(t *tes
 			},
 			OnReconnectFailure: func(failure ReconnectFailure) {
 				metricRegistry.MatrixReconnectFailuresTotal.WithLabelValues(
+					"test",
 					string(failure.Source),
 					string(failure.ErrorKind),
 					string(failure.Outcome),
@@ -5723,6 +5725,7 @@ func TestSchedulerHeartbeatProbeTimeoutMetricAndBoundsQueuedStartLatency(t *test
 		ProbeTimeout:      20 * time.Millisecond,
 		OnProbeFailure: func(failure ProbeFailure) {
 			metricRegistry.MatrixProbeFailuresTotal.WithLabelValues(
+				"test",
 				string(failure.ErrorKind),
 				string(failure.Reason),
 			).Inc()

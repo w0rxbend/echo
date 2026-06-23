@@ -94,7 +94,7 @@ func TestBackgroundHealthMetricsAgreeWithReadyProjection(t *testing.T) {
 					readyBackground, tc.wantState, tc.wantDirty, tc.wantClean)
 			}
 
-			recordBackgroundHealthMetrics(registry, tc.health, now)
+			recordBackgroundHealthMetrics(registry, "default", tc.health, now)
 			byName := appMetricFamiliesByName(t, registry)
 
 			for _, state := range matrix.BackgroundConvergenceV1States() {
@@ -179,7 +179,7 @@ func TestBackgroundRestoreMetricIncrementsCountersOnly(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			recordBackgroundRestoreMetric(registry, tc.event)
+			recordBackgroundRestoreMetric(registry, "default", tc.event)
 			byName := appMetricFamiliesByName(t, registry)
 
 			assertAppMetricCounterValue(t, byName, "matrix_proxy_background_restore_attempts_total", tc.wantAttempts, map[string]string{
