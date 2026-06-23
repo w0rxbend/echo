@@ -382,6 +382,64 @@ func TestLoadRejectsUnknownAnimationConfigFields(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsDuplicateAnimationConfigKeys(t *testing.T) {
+	tests := []struct {
+		name    string
+		fixture string
+		want    []string
+	}{
+		{
+			name:    "top level animations",
+			fixture: "animation_duplicate_top_level.yaml",
+			want:    []string{`duplicate top-level field "animations"`, "animations"},
+		},
+		{
+			name:    "animation id",
+			fixture: "animation_duplicate_id.yaml",
+			want:    []string{`duplicate animation id "pixel_badge"`, "animations.pixel_badge"},
+		},
+		{
+			name:    "animation entry field",
+			fixture: "animation_duplicate_entry_field.yaml",
+			want:    []string{`animation "pixel_badge"`, `duplicate field "palette"`, "animation pixel_badge.palette"},
+		},
+		{
+			name:    "frame field",
+			fixture: "animation_duplicate_frame_field.yaml",
+			want:    []string{`animation "pixel_badge"`, `duplicate field "delay"`, "animation pixel_badge.frames[0].delay"},
+		},
+		{
+			name:    "palette symbol",
+			fixture: "animation_duplicate_palette_symbol.yaml",
+			want:    []string{`animation "pixel_badge"`, `duplicate palette symbol "R"`, "animation pixel_badge.palette.R"},
+		},
+		{
+			name:    "palette color channel",
+			fixture: "animation_duplicate_palette_color_channel.yaml",
+			want:    []string{`animation "pixel_badge"`, `duplicate field "r"`, "animation pixel_badge.palette.R.r"},
+		},
+		{
+			name:    "firmware color channel",
+			fixture: "animation_duplicate_firmware_color_channel.yaml",
+			want:    []string{`animation "pixel_badge"`, `duplicate field "r"`, "animation pixel_badge.color.r"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := loadWithAnimationFixture(t, tt.fixture)
+			if err == nil {
+				t.Fatal("Load() error = nil, want duplicate key rejection")
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("Load() error = %v, want containing %q", err, want)
+				}
+			}
+		})
+	}
+}
+
 func TestLoadRejectsStrayAnimationTypeFields(t *testing.T) {
 	tests := []struct {
 		name          string

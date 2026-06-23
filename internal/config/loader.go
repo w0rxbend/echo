@@ -214,6 +214,9 @@ func validateAnimationsFileSchema(root *yaml.Node) error {
 	if doc.Kind != yaml.MappingNode {
 		return errors.New("animations file must be a mapping")
 	}
+	if err := rejectDuplicateTopLevelFields(doc); err != nil {
+		return err
+	}
 
 	for i := 0; i < len(doc.Content); i += 2 {
 		key := doc.Content[i]
@@ -235,6 +238,9 @@ func validateAnimationsMapSchema(node *yaml.Node) error {
 	if node.Kind != yaml.MappingNode {
 		return errors.New("animations must be a mapping")
 	}
+	if err := rejectDuplicateAnimationIDs(node); err != nil {
+		return err
+	}
 	for i := 0; i < len(node.Content); i += 2 {
 		key := node.Content[i]
 		value := node.Content[i+1]
@@ -253,6 +259,9 @@ func validateAnimationsMapSchema(node *yaml.Node) error {
 }
 
 func validateAnimationEntrySchema(id string, node *yaml.Node) error {
+	if err := rejectDuplicateAnimationFields(id, node, "field", ""); err != nil {
+		return err
+	}
 	for i := 0; i < len(node.Content); i += 2 {
 		key := node.Content[i]
 		value := node.Content[i+1]
@@ -290,6 +299,9 @@ func validateAnimationFramesSchema(id string, node *yaml.Node, path string) erro
 		if frame.Kind != yaml.MappingNode {
 			return fmt.Errorf("animation %q: frame at %s must be a mapping", id, framePath)
 		}
+		if err := rejectDuplicateAnimationFields(id, frame, "field", framePath); err != nil {
+			return err
+		}
 		for j := 0; j < len(frame.Content); j += 2 {
 			key := frame.Content[j]
 			if key.Kind != yaml.ScalarNode {
@@ -309,6 +321,9 @@ func validateAnimationPaletteSchema(id string, node *yaml.Node, path string) err
 	if node.Kind != yaml.MappingNode {
 		return nil
 	}
+	if err := rejectDuplicatePaletteSymbols(id, node, path); err != nil {
+		return err
+	}
 	for i := 0; i < len(node.Content); i += 2 {
 		key := node.Content[i]
 		value := node.Content[i+1]
@@ -326,6 +341,9 @@ func validateAnimationColorSchema(id string, node *yaml.Node, path string) error
 	if node.Kind != yaml.MappingNode {
 		return nil
 	}
+	if err := rejectDuplicateAnimationFields(id, node, "field", path); err != nil {
+		return err
+	}
 	for i := 0; i < len(node.Content); i += 2 {
 		key := node.Content[i]
 		if key.Kind != yaml.ScalarNode {
@@ -336,6 +354,73 @@ func validateAnimationColorSchema(id string, node *yaml.Node, path string) error
 		default:
 			return fmt.Errorf("animation %q: unknown field %q at %s.%s", id, key.Value, path, key.Value)
 		}
+	}
+	return nil
+}
+
+func rejectDuplicateTopLevelFields(node *yaml.Node) error {
+	seen := make(map[string]struct{}, len(node.Content)/2)
+	for i := 0; i < len(node.Content); i += 2 {
+		key := node.Content[i]
+		if key.Kind != yaml.ScalarNode {
+			continue
+		}
+		if _, ok := seen[key.Value]; ok {
+			return fmt.Errorf("duplicate top-level field %q at %s", key.Value, key.Value)
+		}
+		seen[key.Value] = struct{}{}
+	}
+	return nil
+}
+
+func rejectDuplicateAnimationIDs(node *yaml.Node) error {
+	seen := make(map[string]struct{}, len(node.Content)/2)
+	for i := 0; i < len(node.Content); i += 2 {
+		key := node.Content[i]
+		if key.Kind != yaml.ScalarNode {
+			continue
+		}
+		if _, ok := seen[key.Value]; ok {
+			return fmt.Errorf("duplicate animation id %q at animations.%s", key.Value, key.Value)
+		}
+		seen[key.Value] = struct{}{}
+	}
+	return nil
+}
+
+func rejectDuplicateAnimationFields(id string, node *yaml.Node, duplicateKind, path string) error {
+	seen := make(map[string]struct{}, len(node.Content)/2)
+	for i := 0; i < len(node.Content); i += 2 {
+		key := node.Content[i]
+		if key.Kind != yaml.ScalarNode {
+			continue
+		}
+		fieldPath := path
+		if fieldPath == "" {
+			fieldPath = animationFieldPath(id, key.Value)
+		} else {
+			fieldPath += "." + key.Value
+		}
+		if _, ok := seen[key.Value]; ok {
+			return fmt.Errorf("animation %q: duplicate %s %q at %s", id, duplicateKind, key.Value, fieldPath)
+		}
+		seen[key.Value] = struct{}{}
+	}
+	return nil
+}
+
+func rejectDuplicatePaletteSymbols(id string, node *yaml.Node, path string) error {
+	seen := make(map[string]struct{}, len(node.Content)/2)
+	for i := 0; i < len(node.Content); i += 2 {
+		key := node.Content[i]
+		if key.Kind != yaml.ScalarNode {
+			continue
+		}
+		symbolPath := path + "." + key.Value
+		if _, ok := seen[key.Value]; ok {
+			return fmt.Errorf("animation %q: duplicate palette symbol %q at %s", id, key.Value, symbolPath)
+		}
+		seen[key.Value] = struct{}{}
 	}
 	return nil
 }

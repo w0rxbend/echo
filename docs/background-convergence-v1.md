@@ -147,12 +147,17 @@ not be submitted to `POST /api/v1/play`, `POST /api/v1/notify`, or generic
 
 The animation config file is strict and additive under a top-level `animations`
 map. The map key is the animation ID, and duplicate IDs across the merged
-registry are rejected during config load. Unknown or misspelled keys are also
-rejected, including keys at the document root, under `animations`, inside an
-animation entry, inside frame objects, inside palette entries, and inside color
-objects. This strict schema is limited to operator-authored animation config;
-generic event attributes stay schema-agnostic except for the known playback
-override fields documented below.
+registry are rejected during config load. Duplicate YAML keys in
+`animations.yaml` are rejected before normal decoding can collapse them; this
+covers duplicate fields at the document root, duplicate animation IDs under
+`animations`, duplicate fields inside an animation entry, duplicate fields
+inside frame objects, duplicate palette symbols, and duplicate color channels
+in palette colors or firmware preset `color` values. Unknown or misspelled keys
+are also rejected, including keys at the document root, under `animations`,
+inside an animation entry, inside frame objects, inside palette entries, and
+inside color objects. This strict schema is limited to operator-authored
+animation config; generic event attributes stay schema-agnostic except for the
+known playback override fields documented below.
 
 Supported entry forms:
 

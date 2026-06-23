@@ -4348,3 +4348,87 @@ A  internal/config/testdata/animation_unknown_frame_field.yaml
 A  internal/config/testdata/animation_unknown_palette_field.yaml
 A  internal/config/testdata/animation_unknown_top_level.yaml
 M  internal/integrations/httpapi/animations_test.go
+2026-06-23T12:43:37Z iteration 6 started remaining=14957s
+2026-06-23T12:43:37Z iteration 6 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T12:43:37Z iteration 6 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-xw27145f/repo copied_entries=78
+2026-06-23T12:43:37Z iteration 6 ideator phase started count=3
+2026-06-23T12:43:37Z iteration 6 ideator phase concurrency workers=3
+2026-06-23T12:43:37Z iteration 6 ideator 1 role="the pragmatist" started
+2026-06-23T12:43:37Z iteration 6 ideator 2 role="the architect" started
+2026-06-23T12:43:37Z iteration 6 ideator 3 role="the contrarian" started
+2026-06-23T12:43:47Z iteration 6 ideator 2 role="the architect" completed status=0
+2026-06-23T12:43:48Z iteration 6 ideator 1 role="the pragmatist" completed status=0
+2026-06-23T12:43:48Z iteration 6 ideator 3 role="the contrarian" completed status=0
+2026-06-23T12:43:48Z iteration 6 ideator phase completed approaches=3
+2026-06-23T12:43:48Z iteration 6 selector started approaches=3
+2026-06-23T12:43:58Z iteration 6 selector completed status=0
+2026-06-23T12:43:58Z iteration 6 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-xw27145f/repo
+2026-06-23T12:43:58Z iteration 6 selector rejected alternative role="the architect" approach="Contract-First YAML Ambiguity Firewall: treat duplicate-key rejection as a config contract hardening pass centered on preserving existing public behavior while making ambiguous..." reason="Strongest core framing, but not selected as-is because it underemphasizes the need to explicitly prove negative acceptance boundaries and avoid creating a competing schema system."
+2026-06-23T12:43:58Z iteration 6 selector rejected alternative role="the pragmatist" approach="Contract-First Schema Hardening: treat duplicate-key rejection as an extension of the existing public/operator contract, not as an isolated parser fix. The next planner should p..." reason="Useful emphasis on preserving behavior and using the narrowest raw-node layer, but not selected as-is because it is less explicit about duplicate rejection as an ambiguity contract rather than a parser patch."
+2026-06-23T12:43:58Z iteration 6 selector rejected alternative role="the contrarian" approach="Contract-First Negative Space Hardening: treat duplicate-key rejection as an operator contract problem before a decoder problem, and make the next iteration prove what configura..." reason="Valuable focus on operator intent and negative-space tests, but not selected as-is because its strategy is more abstract and needs the architect/pragmatist constraints around concrete validation locality and public-contract preservation."
+2026-06-23T12:43:58Z iteration 6 selector alternatives persisted count=3
+2026-06-23T12:43:58Z iteration 6 selector structured alternatives persisted count=3
+2026-06-23T12:43:58Z iteration 6 planner started
+2026-06-23T12:44:40Z iteration 6 plan: 4 task(s) in 3 phase(s). This decomposition keeps the selected Contract-First YAML Ambiguity Firewall narrow: first add the pre-decode duplicate-key barrier in the loader, then add independent tests and docs, then verify the config/discovery guardrails. It avoids unrelated backlog items and avoids touching scheduler, TCP, HTTP DTOs, background, or event bus code.
+2026-06-23T12:44:40Z iteration 6 phase 1 started parallel=False tasks=1
+2026-06-23T12:45:45Z iteration 6 task t1 ('Add duplicate-key validation for animation YAML') status=0
+2026-06-23T12:45:45Z iteration 6 phase 2 started parallel=True tasks=2
+2026-06-23T12:46:21Z iteration 6 task t3 ('Align animation schema docs with duplicate-key rejection') status=0
+2026-06-23T12:46:48Z iteration 6 task t2 ('Add duplicate animation config fixtures and tests') status=0
+2026-06-23T12:46:48Z iteration 6 phase 3 started parallel=False tasks=1
+2026-06-23T12:47:11Z iteration 6 task t4 ('Run focused config and discovery regression tests') status=0
+2026-06-23T12:47:11Z iteration 6 reviewer started
+
+## Reviewer Summary - Iteration 6
+
+### What Was Done
+
+- Inspected the exact git diff and every file created or modified in this iteration: `internal/config/loader.go`, `internal/config/config_test.go`, duplicate-key fixtures under `internal/config/testdata`, README, `docs/background-convergence-v1.md`, orchestration metadata, and the operating plan.
+- Confirmed `animations.yaml` now rejects duplicate YAML keys before decode-time map collapse at the document root, the `animations` map, animation entries, frame objects, palette symbol maps, palette color maps, and firmware preset color maps.
+- Confirmed duplicate-key errors include stable paths and animation IDs where applicable, such as `animations.pixel_badge`, `animation pixel_badge.frames[0].delay`, and `animation pixel_badge.palette.R.r`.
+- Confirmed fixtures cover duplicate top-level `animations`, duplicate animation IDs, duplicate entry fields, duplicate frame fields, duplicate palette symbols, duplicate palette color channels, and duplicate firmware color channels.
+- Confirmed README and `docs/background-convergence-v1.md` now document duplicate-key rejection as part of strict operator-authored animation config validation, while generic event attributes remain schema-agnostic beyond known override fields.
+- Updated `PLAN.md` to mark duplicate-key rejection complete and reprioritize preservation of the animation config schema firewall plus optional malformed-shape diagnostics.
+
+### What Was Found
+
+- No high-severity runtime regression was found.
+- The planned duplicate-key work was fully implemented and scoped correctly to the raw YAML-node validation pass, before normal decoding can collapse ambiguous keys.
+- The implementation intentionally leaves wrong-shape/type diagnostics to downstream decoders. That is correct for behavior, but support-facing wording can still differ between unknown/duplicate fields and malformed node shapes.
+- Duplicate-key validation is now another contract sentinel for operator-authored config; future config-schema changes must update the raw-node validation, typed decode path, fixtures, README, and contract docs together.
+- Existing accepted limitations remain: no background retry `failure_count` metric, synchronous heartbeat probe latency, TCP metric callbacks under the TCP mutex, blocking event-bus v1 delivery, ignored `InterruptMode`, and no admin reload endpoint.
+
+### Top Improvement Proposals
+
+1. Preserve duplicate-key fixtures as a high-priority contract suite for every `animations.yaml` mapping level; do not let future loader refactors bypass the raw YAML-node pass.
+2. Add malformed-shape diagnostics only if operator support needs consistent wording, starting with wrong node kinds for `animations`, animation entries, `frames`, `palette`, and color objects.
+3. Keep strict animation config validation separate from generic event attributes, which should remain schema-agnostic except for known playback override fields.
+4. Keep catalog DTO, public-kind projection, and fake-ESP frame playback sentinels running alongside config-schema changes so loader hardening cannot drift public discovery or firmware payload contracts.
+
+### Verification
+
+- `go test ./internal/config -run 'TestLoadRejectsDuplicateAnimationConfigKeys|TestLoadRejectsUnknownAnimationConfigFields|TestLoadRejectsStrayAnimationTypeFields|TestLoadFrameAnimation' -count=20` passed.
+- `go test ./...` passed.
+- `go vet ./...` passed.
+- `go test -race ./...` passed.
+- `go test -race ./internal/animations ./internal/config ./internal/app ./internal/integrations/httpapi -run 'TestFrameAnimation|TestLoadFrameAnimation|TestLoadRejectsInvalidFrameAnimation|TestLoadRejectsUnknownAnimationConfigFields|TestLoadRejectsDuplicateAnimationConfigKeys|TestLoadRejectsStrayAnimationTypeFields|TestLoadRejectsEmptyPresentStrayAnimationTypeFields|TestConfigAuthoredFrameAnimationPublicSurfaces|TestAnimationCatalog|TestAppPlaysConfigAuthoredFrameAnimationThroughFakeESP|TestReadyzAndMetricsProjectGeneratedBackgroundKind|TestRegistryCatalogProjectsInternalRenderableKindToGenerated' -count=10` passed.
+2026-06-23T12:49:05Z iteration 6 reviewer completed status=0
+2026-06-23T12:49:05Z iteration 6 memory updated
+2026-06-23T12:49:05Z iteration 6 completed validation_status=0
+2026-06-23T12:49:05Z iteration 6 checkpoint started
+2026-06-23T12:49:05Z iteration 6 checkpoint status before commit:
+M  AGENT_LOG.md
+M  ALTERNATIVES.jsonl
+M  PLAN.md
+M  README.md
+M  SCORES.jsonl
+M  docs/background-convergence-v1.md
+M  internal/config/config_test.go
+M  internal/config/loader.go
+A  internal/config/testdata/animation_duplicate_entry_field.yaml
+A  internal/config/testdata/animation_duplicate_firmware_color_channel.yaml
+A  internal/config/testdata/animation_duplicate_frame_field.yaml
+A  internal/config/testdata/animation_duplicate_id.yaml
+A  internal/config/testdata/animation_duplicate_palette_color_channel.yaml
+A  internal/config/testdata/animation_duplicate_palette_symbol.yaml
+A  internal/config/testdata/animation_duplicate_top_level.yaml

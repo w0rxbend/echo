@@ -59,7 +59,7 @@ Verified during this review:
 - `go test ./...` passes.
 - `go vet ./...` passes.
 - `go test -race ./...` passes.
-- `go test -race ./internal/animations ./internal/config ./internal/app ./internal/integrations/httpapi -run 'TestFrameAnimation|TestLoadFrameAnimation|TestLoadRejectsInvalidFrameAnimation|TestLoadRejectsUnknownAnimationConfigFields|TestLoadRejectsStrayAnimationTypeFields|TestLoadRejectsEmptyPresentStrayAnimationTypeFields|TestConfigAuthoredFrameAnimationPublicSurfaces|TestAnimationCatalog|TestAppPlaysConfigAuthoredFrameAnimationThroughFakeESP|TestReadyzAndMetricsProjectGeneratedBackgroundKind|TestRegistryCatalogProjectsInternalRenderableKindToGenerated' -count=10` passes.
+- `go test ./internal/config -run 'TestLoadRejectsDuplicateAnimationConfigKeys|TestLoadRejectsUnknownAnimationConfigFields|TestLoadRejectsStrayAnimationTypeFields|TestLoadFrameAnimation' -count=20` passes.
 
 Core implementation status:
 
@@ -86,9 +86,11 @@ Core implementation status:
   observations.
 - Runtime animation config loads generated aliases, metadata-only firmware
   presets, and declarative `type: frames` animations.
-- `animations.yaml` now has node-level strict unknown-key validation for the
-  document root, animation entries, frame objects, palette color objects, and
-  color objects. Errors include the animation ID and offending field path.
+- `animations.yaml` now has node-level strict unknown-key and duplicate-key
+  validation for the document root, `animations` map, animation entries, frame
+  objects, palette symbols, palette color objects, and firmware preset color
+  objects. Errors include the animation ID and offending field path where
+  applicable.
 - Frame animations are authored as 8x8 display-space rows, validate palette
   symbols/dimensions/delays at config load, render immutable frame copies,
   reject known type-specific stray fields including empty-but-present fields,
@@ -139,7 +141,8 @@ Core implementation status:
   parameters; generated backgrounds rely on recorded background identity.
 - `docs/background-convergence-v1.md` is the source-of-truth public contract
   for background state projection, retry semantics, animation discovery,
-  generic event override validation, and duplicate-suppression telemetry.
+  generic event override validation, strict animation config validation, and
+  duplicate-suppression telemetry.
 
 ## Current Findings
 
@@ -149,17 +152,15 @@ High severity:
 
 Medium severity:
 
-- `animations.yaml` now rejects unknown keys, but duplicate YAML keys are still
-  not explicitly rejected. Duplicate top-level `animations`, duplicate
-  animation fields such as two `palette` keys, or duplicate nested color keys
-  can remain ambiguous because YAML decoding may choose one value after the
-  schema pre-pass. Add duplicate-key validation at every mapping level with
-  clear animation ID and field-path errors.
 - The strict schema pre-pass validates allowed key names but intentionally
   leaves node kind/type validation to the existing decoders. This is mostly
   fine, but error vocabulary can still differ between unknown-field and
   wrong-shape cases. Keep targeted tests for malformed mappings/sequences if
   operator error messages become part of support workflows.
+- Duplicate-key validation is now implemented at the required `animations.yaml`
+  mapping levels. It is intentionally scoped to operator-authored animation
+  config; do not reuse it for generic event attributes, which remain
+  schema-agnostic beyond known override fields.
 - Catalog wire-shape compatibility is strong today, but the handler depends on
   a hand-written DTO conversion. Future metadata additions must update the DTO,
   README, contract doc, and compatibility tests together or risk accidental API
@@ -207,17 +208,17 @@ Low severity:
 
 ## Next Iteration Priorities
 
-### Phase 1: Finish Animation Config Schema Hardening
+### Phase 1: Preserve Animation Config Schema Firewall
 
-1. Reject duplicate YAML keys in `animations.yaml`. (high)
-   - Detect duplicate keys at the document root, inside the `animations` map,
-     inside each animation entry, inside each frame object, and inside color
-     objects used by firmware preset colors or palette entries.
-   - Include the animation ID and exact field path in errors, for example
+1. Preserve duplicate YAML-key rejection. (high)
+   - Keep pre-decode duplicate detection at the document root, inside the
+     `animations` map, inside each animation entry, inside frame objects,
+     inside palette symbols, and inside color mappings.
+   - Keep fixtures for duplicate top-level fields, animation IDs, entry fields,
+     frame fields, palette symbols, palette color channels, and firmware color
+     channels.
+   - Keep errors tied to stable field paths such as
      `animation pixel_badge.palette.R.r`.
-   - Add fixtures for duplicate top-level fields, duplicate animation IDs,
-     duplicate entry fields, duplicate frame fields, duplicate palette symbols,
-     and duplicate color channels.
 
 2. Preserve strict unknown-field validation. (high)
    - Keep rejection of misspelled root, animation-entry, frame-object,
@@ -235,6 +236,14 @@ Low severity:
      `color`.
    - Keep empty-but-present field cases in the suite so presence, not decoded
      value, drives rejection.
+
+4. Add targeted malformed-shape diagnostics only where support value justifies
+   it. (medium)
+   - Current downstream decoder errors are correct but vary in wording from the
+     schema pre-pass.
+   - If operator support workflows need consistent vocabulary, add focused
+     tests for wrong node kinds at `animations`, animation entries, `frames`,
+     `palette`, and color objects before changing implementation.
 
 ### Phase 2: Preserve Public Animation Discovery Contracts
 

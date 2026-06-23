@@ -1,0 +1,10 @@
+animations:
+  pixel_badge:
+    type: firmware_preset
+    effect_id: 12
+    interval: 90ms
+    color:
+      r: 0
+      r: 128
+      g: 255
+      b: 85

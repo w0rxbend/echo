@@ -34,12 +34,17 @@ as ordinary rule `play.animation` values or direct playback requests.
 
 Animation config is strict and additive under the top-level `animations` map.
 Each key is the registry ID and must be unique after all animation sources are
-merged. Unknown or misspelled keys are rejected during config load, including
-keys at the document root, under `animations`, inside an animation entry,
-inside frame objects, inside palette entries, and inside color objects. This
-strict schema applies only to operator-authored `animations.yaml`; generic
-event attributes remain schema-agnostic as described below. The supported entry
-forms are:
+merged. Duplicate YAML keys in `animations.yaml` are rejected before normal
+decoding can collapse them; this covers duplicate fields at the document root,
+duplicate animation IDs under `animations`, duplicate fields inside an
+animation entry, duplicate fields inside frame objects, duplicate palette
+symbols, and duplicate color channels in palette colors or firmware preset
+`color` values. Unknown or misspelled keys are also rejected during config
+load, including keys at the document root, under `animations`, inside an
+animation entry, inside frame objects, inside palette entries, and inside color
+objects. This strict schema applies only to operator-authored
+`animations.yaml`; generic event attributes remain schema-agnostic as described
+below. The supported entry forms are:
 
 - `type: generated`: a generated alias for a built-in app renderer. The
   `generator` field names the built-in generator, such as `notification`.
