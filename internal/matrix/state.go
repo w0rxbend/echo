@@ -199,6 +199,7 @@ const (
 	ItemOutcomeQueueCleared     ItemOutcome = "queue_cleared"
 	ItemOutcomeSchedulerStopped ItemOutcome = "scheduler_stopped"
 	ItemOutcomePermanentError   ItemOutcome = "permanent_error"
+	ItemOutcomeInterrupted      ItemOutcome = "interrupted"
 )
 
 // OutcomeReport is a terminal scheduler lifecycle report for one admitted or

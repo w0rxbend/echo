@@ -4869,3 +4869,45 @@ A  internal/config/testdata/animation_duplicate_top_level.yaml
 2026-06-23T12:51:29Z iteration final-telemetry checkpoint status before commit:
 M  AGENT_LOG.md
 M  SCORES.jsonl
+2026-06-23T12:51:31Z orchestrator finished iterations_run=30 iterations_attempted=30 iterations_completed_successfully=6 had_nonfatal_failures=true nonfatal_failure_count=24 last_nonfatal_exit_code=1 last_nonfatal_failure_reason=planner_failed loop_exit_code=0 process_exit_code=0 fatal=false terminal_reason=iterations_complete_with_failures final_checkpoint_behavior=telemetry_only
+2026-06-23T13:38:51Z orchestrator started provider=claude budget=18000s iterations=30 max_workers=4
+2026-06-23T13:38:51Z iteration 1 started remaining=18000s
+2026-06-23T13:38:51Z iteration 1 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T13:38:51Z iteration 1 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-jbekjc8c/repo copied_entries=85
+2026-06-23T13:38:51Z iteration 1 ideator phase started count=3
+2026-06-23T13:38:51Z iteration 1 ideator phase concurrency workers=3
+2026-06-23T13:38:51Z iteration 1 ideator 1 role="the pragmatist" started
+2026-06-23T13:38:51Z iteration 1 ideator 2 role="the architect" started
+2026-06-23T13:38:51Z iteration 1 ideator 3 role="the contrarian" started
+2026-06-23T13:39:08Z iteration 1 ideator 1 role="the pragmatist" completed status=0
+2026-06-23T13:39:08Z iteration 1 ideator 2 role="the architect" completed status=0
+2026-06-23T13:39:18Z iteration 1 ideator 3 role="the contrarian" completed status=0
+2026-06-23T13:39:18Z iteration 1 ideator phase completed approaches=3
+2026-06-23T13:39:18Z iteration 1 selector started approaches=3
+2026-06-23T13:39:53Z iteration 1 selector completed status=0
+2026-06-23T13:39:53Z iteration 1 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-jbekjc8c/repo
+2026-06-23T13:39:53Z iteration 1 selector rejected alternative role="the pragmatist" approach="Contract Stabilization Before Feature Expansion: Lock public surfaces before adding scheduler capabilities" reason="Deferring all new features until contract enforcement infrastructure is complete risks spending the entire iteration only hardening tests without moving the capability surface forward. The plan already documents that Phase 1-3 priorities..."
+2026-06-23T13:39:53Z iteration 1 selector rejected alternative role="the contrarian" approach="Interrupt-First Stability Gate: Implement interrupt semantics as the forcing function for scheduler contract completeness before expanding any surface area" reason="Using interrupt semantics as a deliberate disruption probe to surface hidden coupling is architecturally interesting but impractical given the open decisions that remain unresolved. Implementing interrupt semantics before deciding drop/p..."
+2026-06-23T13:39:53Z iteration 1 selector alternatives persisted count=2
+2026-06-23T13:39:53Z iteration 1 selector structured alternatives persisted count=2
+2026-06-23T13:39:53Z iteration 1 planner started
+2026-06-23T13:46:08Z iteration 1 plan: 2 task(s) in 2 phase(s). The strategic constraint (contract gates → interrupt semantics) is already partially satisfied: the catalog wire-shape test (TestAnimationCatalogFreezesFrameAndFirmwarePresetContract), kind projection negative check, and event override validation tests all exist and are comprehensive. Phase 1 closes the one remaining medium-severity metrics-authority finding (event-time callback constructing a partial projection) before adding new behavioral surface area. Phase 2 implements the interrupt semantics milestone that must be resolved before /reload can be designed, with outcome reporting wired as a first-class concern to avoid the MEMORY.md anti-pattern of silent item drops. The open interrupt decision (drop vs pause vs requeue) is resolved as drop in the task description. /reload and event bus redesign remain explicitly deferred.
+2026-06-23T13:46:08Z iteration 1 phase 1 started parallel=False tasks=1
+2026-06-23T13:48:23Z iteration 1 task t1 ('Eliminate partial-projection input from background-restore event callback') status=0
+2026-06-23T13:48:23Z iteration 1 phase 2 started parallel=False tasks=1
+2026-06-23T13:59:38Z iteration 1 task t2 ('Implement interrupt semantics with first-class ItemOutcomeInterrupted label') status=0
+2026-06-23T13:59:38Z iteration 1 reviewer started
+2026-06-23T13:59:56Z iteration 1 reviewer completed status=1
+2026-06-23T13:59:56Z iteration 1 memory updated
+2026-06-23T13:59:56Z iteration 1 completed validation_status=0
+2026-06-23T13:59:56Z iteration 1 checkpoint started
+2026-06-23T13:59:56Z iteration 1 checkpoint status before commit:
+M  AGENT_LOG.md
+M  ALTERNATIVES.jsonl
+M  SCORES.jsonl
+M  internal/app/app.go
+M  internal/app/background_metrics_test.go
+M  internal/matrix/queue.go
+M  internal/matrix/scheduler.go
+M  internal/matrix/scheduler_test.go
+M  internal/matrix/state.go

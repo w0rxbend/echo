@@ -17,6 +17,7 @@ type ScheduledItem struct {
 	PlayItem
 	AnimationID           string                   `json:"animation_id,omitempty"`
 	RestorePolicy         animations.RestorePolicy `json:"restore_policy,omitempty"`
+	InterruptMode         animations.InterruptMode `json:"interrupt_mode,omitempty"`
 	CreatedAt             time.Time                `json:"created_at,omitempty"`
 	QueueDepthAtAdmission int                      `json:"-"`
 	Control               *ControlItem             `json:"control,omitempty"`
@@ -160,6 +161,32 @@ func (q *playQueue) remove(handle queueHandle) (ScheduledItem, int, bool) {
 		}
 	}
 	return ScheduledItem{}, 0, false
+}
+
+// evictLowerPriority removes non-control items with Priority strictly less than
+// threshold from the queue. Returns the evicted items and the new queue depth.
+func (q *playQueue) evictLowerPriority(threshold int) ([]ScheduledItem, int) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	var evicted []ScheduledItem
+	var remaining priorityItems
+	for _, entry := range q.items {
+		if entry.item.Control == nil && entry.item.Priority < threshold {
+			evicted = append(evicted, entry.item)
+		} else {
+			remaining = append(remaining, entry)
+		}
+	}
+	if len(evicted) == 0 {
+		return nil, len(q.items)
+	}
+	for i := range remaining {
+		remaining[i].index = i
+	}
+	q.items = remaining
+	heap.Init(&q.items)
+	return evicted, len(q.items)
 }
 
 func (q *playQueue) signalLocked() {

@@ -6901,3 +6901,363 @@ func countCommandKinds(commands []string, kind string) int {
 func stringMarker(value byte) string {
 	return strconv.Itoa(int(value))
 }
+
+// Interrupt semantics tests.
+
+// TestInterruptNoneTwoEqualPriorityItemsFIFO verifies that InterruptNone (or
+// absent interrupt mode) leaves the queue untouched: two same-priority items
+// execute in FIFO order and both receive an "executed" outcome.
+func TestInterruptNoneTwoEqualPriorityItemsFIFO(t *testing.T) {
+	client := newFakeMatrixClient()
+	registry := animations.NewRegistry()
+	mustRegisterTestAnimation(t, registry, "first", testAnimation(1, time.Millisecond, 11))
+	mustRegisterTestAnimation(t, registry, "second", testAnimation(1, time.Millisecond, 22))
+
+	outcomes := newOutcomeRecorder()
+	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{
+		OnItemOutcome: outcomes.record,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runScheduler(t, ctx, scheduler)
+
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:            "first",
+		AnimationID:   "first",
+		Priority:      10,
+		InterruptMode: animations.InterruptNone,
+		RestorePolicy: animations.RestoreLeave,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:            "second",
+		AnimationID:   "second",
+		Priority:      10,
+		InterruptMode: animations.InterruptNone,
+		RestorePolicy: animations.RestoreLeave,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	reports := waitOutcomeReports(t, outcomes, 2)
+	if reports[0].ItemID != "first" || reports[0].Outcome != ItemOutcomeExecuted {
+		t.Fatalf("first outcome = %+v, want first/executed", reports[0])
+	}
+	if reports[1].ItemID != "second" || reports[1].Outcome != ItemOutcomeExecuted {
+		t.Fatalf("second outcome = %+v, want second/executed", reports[1])
+	}
+
+	got := commandKinds(client.commands())
+	if len(got) < 2 || got[0] != "frame:11" || got[1] != "frame:22" {
+		t.Fatalf("commands = %v, want frame:11 before frame:22 (FIFO)", got)
+	}
+}
+
+// TestInterruptHigherPriorityEvictsLowerPriorityQueuedItems verifies that a
+// higher_priority item evicts queued items with strictly lower priority and
+// those items receive an "interrupted" outcome. The higher-priority item then
+// executes.
+func TestInterruptHigherPriorityEvictsLowerPriorityQueuedItems(t *testing.T) {
+	client := newFakeMatrixClient()
+	registry := animations.NewRegistry()
+	// blocker keeps the scheduler busy so item1 and item2 stay queued.
+	mustRegisterTestAnimation(t, registry, "blocker", testAnimation(1, 200*time.Millisecond, 99))
+	mustRegisterTestAnimation(t, registry, "low1", testAnimation(1, time.Millisecond, 11))
+	mustRegisterTestAnimation(t, registry, "low2", testAnimation(1, time.Millisecond, 22))
+	mustRegisterTestAnimation(t, registry, "high", testAnimation(1, time.Millisecond, 55))
+
+	outcomes := newOutcomeRecorder()
+	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{
+		OnItemOutcome: outcomes.record,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runScheduler(t, ctx, scheduler)
+
+	// Enqueue blocker first at highest priority to keep scheduler busy.
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:          "blocker",
+		AnimationID: "blocker",
+		Priority:    100,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Wait for blocker to start so item1/item2 will queue behind it.
+	waitClientAttempts(t, client, "frame:99", 1)
+
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:          "low1",
+		AnimationID: "low1",
+		Priority:    5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:          "low2",
+		AnimationID: "low2",
+		Priority:    5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Enqueue high-priority item with higher_priority interrupt mode.
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:            "high",
+		AnimationID:   "high",
+		Priority:      50,
+		InterruptMode: animations.InterruptHigherPriority,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// low1 and low2 must be interrupted immediately by the enqueue call.
+	interruptedReports := waitOutcomeReportsMatching(t, outcomes, func(r OutcomeReport) bool {
+		return r.Outcome == ItemOutcomeInterrupted
+	}, 2)
+	ids := make([]string, len(interruptedReports))
+	for i, r := range interruptedReports {
+		ids[i] = r.ItemID
+	}
+	if !containsAll(ids, []string{"low1", "low2"}) {
+		t.Fatalf("interrupted item IDs = %v, want low1 and low2", ids)
+	}
+
+	// blocker and high must execute.
+	_ = waitOutcomeReportsMatching(t, outcomes, func(r OutcomeReport) bool {
+		return r.ItemID == "high" && r.Outcome == ItemOutcomeExecuted
+	}, 1)
+
+	// Queue must be empty after high completes.
+	waitSchedulerQueueLen(t, scheduler, 0)
+}
+
+// TestInterruptCriticalCancelsInFlightLowerPriorityItem verifies that a
+// critical-priority item cancels the currently in-flight animation when its
+// priority is strictly higher, and the in-flight item receives "interrupted".
+func TestInterruptCriticalCancelsInFlightLowerPriorityItem(t *testing.T) {
+	client := newFakeMatrixClient()
+	registry := animations.NewRegistry()
+	// low has a long frame delay so the scheduler is sleeping during it.
+	mustRegisterTestAnimation(t, registry, "low", testAnimation(1, 500*time.Millisecond, 10))
+	mustRegisterTestAnimation(t, registry, "high", testAnimation(1, time.Millisecond, 55))
+
+	outcomes := newOutcomeRecorder()
+	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{
+		OnItemOutcome: outcomes.record,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runScheduler(t, ctx, scheduler)
+
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:          "low",
+		AnimationID: "low",
+		Priority:    10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Wait for the low-priority item to start its frame command.
+	waitClientAttempts(t, client, "frame:10", 1)
+
+	// Enqueue high-priority critical item while low is in-flight sleeping.
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:            "high",
+		AnimationID:   "high",
+		Priority:      50,
+		InterruptMode: animations.InterruptCritical,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The low-priority item must receive interrupted outcome.
+	_ = waitOutcomeReportsMatching(t, outcomes, func(r OutcomeReport) bool {
+		return r.ItemID == "low" && r.Outcome == ItemOutcomeInterrupted
+	}, 1)
+
+	// The high-priority item must execute.
+	_ = waitOutcomeReportsMatching(t, outcomes, func(r OutcomeReport) bool {
+		return r.ItemID == "high" && r.Outcome == ItemOutcomeExecuted
+	}, 1)
+}
+
+// TestInterruptHigherPriorityDoesNotEvictEqualPriorityItems verifies that
+// higher_priority eviction is strictly less-than: items with the same priority
+// as the interrupting item are NOT evicted, and FIFO order is preserved among
+// equal-priority items.
+func TestInterruptHigherPriorityDoesNotEvictEqualPriorityItems(t *testing.T) {
+	client := newFakeMatrixClient()
+	registry := animations.NewRegistry()
+	mustRegisterTestAnimation(t, registry, "blocker", testAnimation(1, 200*time.Millisecond, 99))
+	mustRegisterTestAnimation(t, registry, "item1", testAnimation(1, time.Millisecond, 11))
+	mustRegisterTestAnimation(t, registry, "item2", testAnimation(1, time.Millisecond, 22))
+	mustRegisterTestAnimation(t, registry, "item3", testAnimation(1, time.Millisecond, 33))
+
+	outcomes := newOutcomeRecorder()
+	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{
+		OnItemOutcome: outcomes.record,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runScheduler(t, ctx, scheduler)
+
+	// Block the scheduler so item1/item2/item3 stay queued.
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:          "blocker",
+		AnimationID: "blocker",
+		Priority:    100,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	waitClientAttempts(t, client, "frame:99", 1)
+
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:          "item1",
+		AnimationID: "item1",
+		Priority:    10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:          "item2",
+		AnimationID: "item2",
+		Priority:    10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// item3 has the same priority as item1/item2 with higher_priority mode:
+	// nothing should be evicted (no strictly-lower-priority items).
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:            "item3",
+		AnimationID:   "item3",
+		Priority:      10,
+		InterruptMode: animations.InterruptHigherPriority,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// All four items must execute; none must be interrupted.
+	reports := waitOutcomeReports(t, outcomes, 4)
+	for _, r := range reports {
+		if r.Outcome != ItemOutcomeExecuted {
+			t.Fatalf("outcome for %q = %q, want executed; equal-priority items must not be evicted", r.ItemID, r.Outcome)
+		}
+	}
+
+	// item1, item2, item3 must appear in FIFO order after blocker.
+	got := commandKinds(client.commands())
+	if len(got) < 4 {
+		t.Fatalf("commands = %v, want at least 4", got)
+	}
+	// blocker first, then item1/item2/item3 in FIFO.
+	if got[0] != "frame:99" {
+		t.Fatalf("commands[0] = %q, want frame:99 (blocker)", got[0])
+	}
+	if got[1] != "frame:11" || got[2] != "frame:22" || got[3] != "frame:33" {
+		t.Fatalf("commands[1:4] = %v, want frame:11,frame:22,frame:33 (FIFO)", got[1:4])
+	}
+}
+
+// TestInterruptHigherPriorityDoesNotCancelInFlightItem verifies that
+// higher_priority only evicts queued items, NOT the currently in-flight item.
+// The in-flight item completes normally and the new item executes afterward.
+func TestInterruptHigherPriorityDoesNotCancelInFlightItem(t *testing.T) {
+	client := newFakeMatrixClient()
+	registry := animations.NewRegistry()
+	// inflight uses a long delay so it is sleeping when the interrupt arrives.
+	mustRegisterTestAnimation(t, registry, "inflight", testAnimation(1, 300*time.Millisecond, 10))
+	mustRegisterTestAnimation(t, registry, "low1", testAnimation(1, time.Millisecond, 11))
+	mustRegisterTestAnimation(t, registry, "low2", testAnimation(1, time.Millisecond, 22))
+	mustRegisterTestAnimation(t, registry, "interrupter", testAnimation(1, time.Millisecond, 55))
+
+	outcomes := newOutcomeRecorder()
+	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{
+		OnItemOutcome: outcomes.record,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runScheduler(t, ctx, scheduler)
+
+	// Start the in-flight item (priority 10).
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:          "inflight",
+		AnimationID: "inflight",
+		Priority:    10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Wait for inflight to start its frame (sleeping in frame delay).
+	waitClientAttempts(t, client, "frame:10", 1)
+
+	// Queue two low-priority items.
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:          "low1",
+		AnimationID: "low1",
+		Priority:    5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:          "low2",
+		AnimationID: "low2",
+		Priority:    5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Enqueue the interrupter at priority 20 with higher_priority mode:
+	// it should evict low1 and low2 from the queue but NOT cancel inflight.
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:            "interrupter",
+		AnimationID:   "interrupter",
+		Priority:      20,
+		InterruptMode: animations.InterruptHigherPriority,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// low1 and low2 must be interrupted.
+	_ = waitOutcomeReportsMatching(t, outcomes, func(r OutcomeReport) bool {
+		return r.Outcome == ItemOutcomeInterrupted
+	}, 2)
+
+	// inflight must complete normally (executed), not interrupted.
+	_ = waitOutcomeReportsMatching(t, outcomes, func(r OutcomeReport) bool {
+		return r.ItemID == "inflight" && r.Outcome == ItemOutcomeExecuted
+	}, 1)
+
+	// interrupter must also execute.
+	_ = waitOutcomeReportsMatching(t, outcomes, func(r OutcomeReport) bool {
+		return r.ItemID == "interrupter" && r.Outcome == ItemOutcomeExecuted
+	}, 1)
+
+	// inflight's frame must have appeared in commands before interrupter's frame.
+	got := commandKinds(client.commands())
+	inflightIdx, interrupterIdx := -1, -1
+	for i, kind := range got {
+		if kind == "frame:10" {
+			inflightIdx = i
+		}
+		if kind == "frame:55" {
+			interrupterIdx = i
+		}
+	}
+	if inflightIdx < 0 || interrupterIdx < 0 {
+		t.Fatalf("commands = %v, want both frame:10 and frame:55", got)
+	}
+	if inflightIdx >= interrupterIdx {
+		t.Fatalf("commands = %v, want inflight (frame:10) before interrupter (frame:55)", got)
+	}
+}
+
+func containsAll(haystack []string, needles []string) bool {
+	set := make(map[string]bool, len(haystack))
+	for _, s := range haystack {
+		set[s] = true
+	}
+	for _, n := range needles {
+		if !set[n] {
+			return false
+		}
+	}
+	return true
+}

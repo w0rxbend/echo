@@ -117,18 +117,20 @@ func TestBackgroundHealthMetricsAgreeWithReadyProjection(t *testing.T) {
 	}
 }
 
-func TestBackgroundRestoreMetricProjectsCurrentStateGauge(t *testing.T) {
+func TestBackgroundRestoreMetricIncrementsCountersOnly(t *testing.T) {
 	now := time.Now().UTC()
 	futureRetry := now.Add(time.Minute)
 	dueRetry := now.Add(-time.Second)
 
 	tests := []struct {
-		name      string
-		event     matrix.BackgroundRestoreEvent
-		wantState matrix.BackgroundConvergenceState
+		name             string
+		event            matrix.BackgroundRestoreEvent
+		wantAttempts     float64
+		wantFailures     float64
+		wantNoGaugeWrite bool
 	}{
 		{
-			name: "attempting",
+			name: "attempting increments attempts counter",
 			event: matrix.BackgroundRestoreEvent{
 				Kind:         matrix.BackgroundKindRenderable,
 				State:        matrix.BackgroundConvergenceAttempting,
@@ -136,10 +138,12 @@ func TestBackgroundRestoreMetricProjectsCurrentStateGauge(t *testing.T) {
 				NextRetry:    &futureRetry,
 				FailureCount: 1,
 			},
-			wantState: matrix.BackgroundConvergenceAttempting,
+			wantAttempts:     1,
+			wantFailures:     0,
+			wantNoGaugeWrite: true,
 		},
 		{
-			name: "retrying before retry deadline",
+			name: "retrying increments failures counter",
 			event: matrix.BackgroundRestoreEvent{
 				Kind:         matrix.BackgroundKindRenderable,
 				State:        matrix.BackgroundConvergenceRetrying,
@@ -148,10 +152,12 @@ func TestBackgroundRestoreMetricProjectsCurrentStateGauge(t *testing.T) {
 				NextRetry:    &futureRetry,
 				FailureCount: 1,
 			},
-			wantState: matrix.BackgroundConvergenceRetrying,
+			wantAttempts:     0,
+			wantFailures:     1,
+			wantNoGaugeWrite: true,
 		},
 		{
-			name: "failed when retry is due",
+			name: "failed when retry is due increments failures counter",
 			event: matrix.BackgroundRestoreEvent{
 				Kind:         matrix.BackgroundKindRenderable,
 				State:        matrix.BackgroundConvergenceRetrying,
@@ -160,7 +166,9 @@ func TestBackgroundRestoreMetricProjectsCurrentStateGauge(t *testing.T) {
 				NextRetry:    &dueRetry,
 				FailureCount: 1,
 			},
-			wantState: matrix.BackgroundConvergenceFailed,
+			wantAttempts:     0,
+			wantFailures:     1,
+			wantNoGaugeWrite: true,
 		},
 	}
 
@@ -174,15 +182,22 @@ func TestBackgroundRestoreMetricProjectsCurrentStateGauge(t *testing.T) {
 			recordBackgroundRestoreMetric(registry, tc.event)
 			byName := appMetricFamiliesByName(t, registry)
 
-			for _, state := range matrix.BackgroundConvergenceV1States() {
-				want := 0.0
-				if state == tc.wantState {
-					want = 1
+			assertAppMetricCounterValue(t, byName, "matrix_proxy_background_restore_attempts_total", tc.wantAttempts, map[string]string{
+				"kind": "generated",
+			})
+			assertAppMetricCounterValue(t, byName, "matrix_proxy_background_restore_failures_total", tc.wantFailures, map[string]string{
+				"kind":        "generated",
+				"error_class": string(tc.event.ErrorKind),
+			})
+
+			if tc.wantNoGaugeWrite {
+				if family, ok := byName["matrix_proxy_background_state"]; ok {
+					for _, m := range family.GetMetric() {
+						if v := m.GetGauge().GetValue(); v != 0 {
+							t.Fatalf("restore event callback must not write background_state gauge; got non-zero value %g", v)
+						}
+					}
 				}
-				assertAppMetricGaugeValue(t, byName, "matrix_proxy_background_state", want, map[string]string{
-					"kind":  "generated",
-					"state": string(state),
-				})
 			}
 		})
 	}
@@ -227,6 +242,37 @@ func assertAppMetricGaugeValue(
 		if got := metric.GetGauge().GetValue(); got != want {
 			t.Fatalf("metric family %q labels %v value = %g, want %g", name, labels, got, want)
 		}
+		return
+	}
+	t.Fatalf("metric family %q missing labels %v", name, labels)
+}
+
+func assertAppMetricCounterValue(
+	t *testing.T,
+	families map[string]*dto.MetricFamily,
+	name string,
+	want float64,
+	labels map[string]string,
+) {
+	t.Helper()
+	family, ok := families[name]
+	if !ok {
+		if want == 0 {
+			return
+		}
+		t.Fatalf("metric family %q is not registered, want %g", name, want)
+		return
+	}
+	for _, metric := range family.GetMetric() {
+		if !appMetricHasLabels(metric, labels) {
+			continue
+		}
+		if got := metric.GetCounter().GetValue(); got != want {
+			t.Fatalf("metric family %q labels %v value = %g, want %g", name, labels, got, want)
+		}
+		return
+	}
+	if want == 0 {
 		return
 	}
 	t.Fatalf("metric family %q missing labels %v", name, labels)

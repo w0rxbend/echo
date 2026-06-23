@@ -47,6 +47,7 @@ var (
 	ErrMissingAnimation       = animations.ErrAnimationNotFound
 	ErrNonRenderableAnimation = errors.New("animation is not renderable/playable")
 	ErrInvalidControl         = errors.New("invalid matrix control request")
+	ErrItemInterrupted        = errors.New("item interrupted")
 )
 
 type AnimationRegistry interface {
@@ -193,6 +194,12 @@ type Scheduler struct {
 	observabilityMu                   sync.Mutex
 	observabilityCallbackPanicCounts  map[string]uint64
 	observabilityCallbackPanicCounter atomic.Uint64
+
+	// currentItemCancel and currentItemPriority track the in-flight animation
+	// item's per-item cancel function and priority. Protected by mu.
+	// currentItemCancel is nil when no animation item is in flight.
+	currentItemCancel   context.CancelCauseFunc
+	currentItemPriority int
 }
 
 func NewScheduler(options SchedulerOptions) (*Scheduler, error) {
@@ -430,7 +437,33 @@ func (s *Scheduler) EnqueueRequest(ctx context.Context, request animations.Anima
 	}
 	item.QueueDepthAtAdmission = queueDepth
 	s.reportQueueDepth(queueDepth)
+	s.applyInterruptMode(item)
 	return nil
+}
+
+// applyInterruptMode evicts lower-priority queued items and optionally cancels
+// the in-flight item based on the newly enqueued item's InterruptMode.
+func (s *Scheduler) applyInterruptMode(item ScheduledItem) {
+	mode := item.InterruptMode
+	if mode != animations.InterruptHigherPriority && mode != animations.InterruptCritical {
+		return
+	}
+	evicted, newDepth := s.queue.evictLowerPriority(item.Priority)
+	if len(evicted) > 0 {
+		s.reportQueueDepth(newDepth)
+		for _, evictedItem := range evicted {
+			s.completeAnimationWithOutcome(evictedItem, ErrItemInterrupted, newDepth)
+		}
+	}
+	if mode == animations.InterruptCritical {
+		s.mu.RLock()
+		cancel := s.currentItemCancel
+		inflight := s.currentItemPriority
+		s.mu.RUnlock()
+		if cancel != nil && inflight < item.Priority {
+			cancel(ErrItemInterrupted)
+		}
+	}
 }
 
 func (s *Scheduler) Clear(ctx context.Context) error {
@@ -580,6 +613,10 @@ func (s *Scheduler) ResolveRequest(ctx context.Context, request animations.Anima
 	if id == "" {
 		id = fmt.Sprintf("%s:%d", request.AnimationID, createdAt.UnixNano())
 	}
+	interruptMode := request.InterruptMode
+	if interruptMode == "" {
+		interruptMode = animations.InterruptNone
+	}
 
 	return ScheduledItem{
 		PlayItem: PlayItem{
@@ -591,6 +628,7 @@ func (s *Scheduler) ResolveRequest(ctx context.Context, request animations.Anima
 		},
 		AnimationID:         request.AnimationID,
 		RestorePolicy:       restore,
+		InterruptMode:       interruptMode,
 		CreatedAt:           createdAt,
 		animationCompletion: &animationCompletion{},
 	}, nil
@@ -681,6 +719,11 @@ runLoop:
 		// display unless they explicitly force a background restore.
 		s.markDesiredBackgroundDirty()
 		var terminalErr error
+		itemCtx, itemCancel := context.WithCancelCause(ctx)
+		s.mu.Lock()
+		s.currentItemCancel = itemCancel
+		s.currentItemPriority = item.Priority
+		s.mu.Unlock()
 		for {
 			if s.expired(item.PlayItem) {
 				terminalErr = ErrPlayItemExpired
@@ -688,16 +731,20 @@ runLoop:
 			}
 
 			s.setState(StatePlayingTransient)
-			err = s.playItem(ctx, item.PlayItem)
+			err = s.playItem(itemCtx, item.PlayItem)
 			if err == nil {
 				if restoreErr := s.restore(ctx, item.RestorePolicy, preItemState); restoreErr != nil {
 					terminalErr = s.animationTerminalError(ctx, restoreErr)
 					if errors.Is(terminalErr, ErrSchedulerStopped) {
 						s.setState(StateDraining)
+						itemCancel(nil)
+						s.clearCurrentItemCancel()
 						s.completeAnimationWithOutcome(item, terminalErr, 0)
 						return nil
 					}
 					s.setState(StateReady)
+					itemCancel(nil)
+					s.clearCurrentItemCancel()
 					s.completeAnimationWithOutcome(item, terminalErr, 0)
 					if errors.Is(terminalErr, context.Canceled) || errors.Is(terminalErr, context.DeadlineExceeded) || errors.Is(terminalErr, ErrPlayItemExpired) {
 						continue runLoop
@@ -714,9 +761,15 @@ runLoop:
 				break
 			}
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				terminalErr = s.animationTerminalError(ctx, err)
+				if context.Cause(itemCtx) == ErrItemInterrupted {
+					terminalErr = ErrItemInterrupted
+				} else {
+					terminalErr = s.animationTerminalError(ctx, err)
+				}
 				if errors.Is(terminalErr, ErrSchedulerStopped) {
 					s.setState(StateDraining)
+					itemCancel(nil)
+					s.clearCurrentItemCancel()
 					s.completeAnimationWithOutcome(item, terminalErr, 0)
 					return nil
 				}
@@ -724,6 +777,8 @@ runLoop:
 				break
 			}
 			if IsPermanentError(ctx, err) {
+				itemCancel(nil)
+				s.clearCurrentItemCancel()
 				s.completeAnimationWithOutcome(item, err, 0)
 				return err
 			}
@@ -736,10 +791,14 @@ runLoop:
 					}
 					break
 				}
+				itemCancel(nil)
+				s.clearCurrentItemCancel()
 				s.completeAnimationWithOutcome(item, err, 0)
 				return err
 			}
 		}
+		itemCancel(nil)
+		s.clearCurrentItemCancel()
 		s.completeAnimationWithOutcome(item, terminalErr, 0)
 	}
 }
@@ -1078,6 +1137,13 @@ func (s *Scheduler) notifyIdle() {
 	}
 }
 
+func (s *Scheduler) clearCurrentItemCancel() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.currentItemCancel = nil
+	s.currentItemPriority = 0
+}
+
 type outcomeObserverDispatcher struct {
 	observer func(OutcomeReport)
 	reports  chan OutcomeReport
@@ -1233,6 +1299,9 @@ func animationOutcomeReport(item ScheduledItem, err error, queueDepthAtRemoval i
 func animationOutcomeFromError(err error) (ItemOutcome, string, ErrorKind) {
 	if err == nil {
 		return ItemOutcomeExecuted, string(ItemOutcomeExecuted), ErrorKindNone
+	}
+	if errors.Is(err, ErrItemInterrupted) {
+		return ItemOutcomeInterrupted, string(ItemOutcomeInterrupted), ErrorKindPermanent
 	}
 	if errors.Is(err, ErrPlayItemExpired) {
 		return ItemOutcomeExpired, string(ItemOutcomeExpired), ErrorKindPermanent
