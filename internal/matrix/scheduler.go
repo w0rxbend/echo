@@ -107,11 +107,13 @@ type AnimationRenderResult struct {
 }
 
 type BackgroundRestoreEvent struct {
-	AnimationID string
-	Kind        BackgroundKind
-	State       BackgroundConvergenceState
-	ErrorKind   ErrorKind
-	Error       string
+	AnimationID  string
+	Kind         BackgroundKind
+	State        BackgroundConvergenceState
+	ErrorKind    ErrorKind
+	Error        string
+	NextRetry    *time.Time
+	FailureCount int
 }
 
 type SchedulerOptions struct {
@@ -1927,11 +1929,19 @@ func (s *Scheduler) markBackgroundRestoreAttempt() {
 	s.desiredBackgroundDirty = true
 	s.backgroundConvergenceState = BackgroundConvergenceAttempting
 	s.backgroundLastRestoreAttempt = s.now().UTC()
+	failureCount := s.backgroundRetryFailureCount
+	var nextRetry *time.Time
+	if !s.backgroundNextRestoreAttempt.IsZero() {
+		nextRetryValue := s.backgroundNextRestoreAttempt
+		nextRetry = &nextRetryValue
+	}
 	event := BackgroundRestoreEvent{
-		AnimationID: s.background.AnimationID,
-		Kind:        s.backgroundKind,
-		State:       s.backgroundConvergenceState,
-		ErrorKind:   ErrorKindNone,
+		AnimationID:  s.background.AnimationID,
+		Kind:         s.backgroundKind,
+		State:        s.backgroundConvergenceState,
+		ErrorKind:    ErrorKindNone,
+		NextRetry:    nextRetry,
+		FailureCount: failureCount,
 	}
 	s.mu.Unlock()
 	s.reportBackgroundRestore(event)
@@ -1951,12 +1961,20 @@ func (s *Scheduler) markBackgroundRestoreFailure(ctx context.Context, err error)
 	s.backgroundLastRestoreErrorClass = errorClass
 	s.lastFailure = now
 	s.scheduleBackgroundRetryLocked(now, errorClass)
+	failureCount := s.backgroundRetryFailureCount
+	var nextRetry *time.Time
+	if !s.backgroundNextRestoreAttempt.IsZero() {
+		nextRetryValue := s.backgroundNextRestoreAttempt
+		nextRetry = &nextRetryValue
+	}
 	event := BackgroundRestoreEvent{
-		AnimationID: s.background.AnimationID,
-		Kind:        s.backgroundKind,
-		State:       s.backgroundConvergenceState,
-		ErrorKind:   errorClass,
-		Error:       errText,
+		AnimationID:  s.background.AnimationID,
+		Kind:         s.backgroundKind,
+		State:        s.backgroundConvergenceState,
+		ErrorKind:    errorClass,
+		Error:        errText,
+		NextRetry:    nextRetry,
+		FailureCount: failureCount,
 	}
 	s.mu.Unlock()
 	s.reportBackgroundRestore(event)

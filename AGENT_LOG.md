@@ -4001,3 +4001,86 @@ M  internal/integrations/httpapi/server_test.go
 M  internal/matrix/scheduler.go
 M  internal/matrix/scheduler_test.go
 M  internal/metrics/metrics_test.go
+2026-06-23T12:03:42Z iteration 2 started remaining=17352s
+2026-06-23T12:03:42Z iteration 2 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T12:03:42Z iteration 2 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-zkvuohks/repo copied_entries=55
+2026-06-23T12:03:42Z iteration 2 ideator phase started count=3
+2026-06-23T12:03:42Z iteration 2 ideator phase concurrency workers=3
+2026-06-23T12:03:42Z iteration 2 ideator 1 role="the pragmatist" started
+2026-06-23T12:03:42Z iteration 2 ideator 2 role="the architect" started
+2026-06-23T12:03:42Z iteration 2 ideator 3 role="the contrarian" started
+2026-06-23T12:03:51Z iteration 2 ideator 1 role="the pragmatist" completed status=0
+2026-06-23T12:03:51Z iteration 2 ideator 3 role="the contrarian" completed status=0
+2026-06-23T12:03:54Z iteration 2 ideator 2 role="the architect" completed status=0
+2026-06-23T12:03:54Z iteration 2 ideator phase completed approaches=3
+2026-06-23T12:03:54Z iteration 2 selector started approaches=3
+2026-06-23T12:04:03Z iteration 2 selector completed status=0
+2026-06-23T12:04:03Z iteration 2 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-zkvuohks/repo
+2026-06-23T12:04:03Z iteration 2 selector rejected alternative role="the pragmatist" approach="Contract-First Surface Freeze: treat the next iteration as a public API and observability stabilization pass, starting from the exact wire contracts and projected public vocabul..." reason="Not selected as-is because it correctly prioritizes public contract consistency but is slightly too broad in framing; the planner needs an even narrower checkpoint around catalog wire shape and projection surfaces to avoid drifting into..."
+2026-06-23T12:04:03Z iteration 2 selector rejected alternative role="the contrarian" approach="Contract Freeze Before Feature Motion: treat the next iteration as an API-shape stabilization pass, delaying new scheduler or animation behavior until every public surface has a..." reason="Not selected as-is because it usefully resists feature motion, but its framing risks becoming a blanket freeze on all behavior rather than a focused pass over the specific contract gaps already identified."
+2026-06-23T12:04:03Z iteration 2 selector rejected alternative role="the architect" approach="Contract-First Surface Freeze: treat the next iteration as an API/observability contract stabilization pass before adding behavior. The planner should start from the public surf..." reason="Not selected as-is because it is the closest fit, but it should be combined with the pragmatist's emphasis on executable DTO boundaries and the contrarian's warning against scheduler or animation expansion during this iteration."
+2026-06-23T12:04:03Z iteration 2 selector alternatives persisted count=3
+2026-06-23T12:04:03Z iteration 2 selector structured alternatives persisted count=3
+2026-06-23T12:04:03Z iteration 2 planner started
+2026-06-23T12:04:31Z iteration 2 plan: 4 task(s) in 3 phase(s). This iteration is deliberately limited to public API and observability contract stabilization. Phase 1 resolves the highest-risk catalog wire ambiguity first, because docs and clients need one intentional interval representation. Phase 2 can run in parallel because projection tests/code and docs touch separate files after the catalog decision is fixed. Phase 3 follows after the projection guardrails so metric state consistency can reuse the same public vocabulary and avoid conflicting readiness versus Prometheus behavior.
+2026-06-23T12:04:31Z iteration 2 phase 1 started parallel=False tasks=1
+2026-06-23T12:05:48Z iteration 2 task t1 ('Freeze catalog interval wire shape') status=0
+2026-06-23T12:05:48Z iteration 2 phase 2 started parallel=True tasks=2
+2026-06-23T12:06:45Z iteration 2 task t3 ('Align docs with frozen public contracts') status=0
+2026-06-23T12:07:05Z iteration 2 task t2 ('Add public kind projection guardrails') status=0
+2026-06-23T12:07:05Z iteration 2 phase 3 started parallel=False tasks=1
+2026-06-23T12:09:26Z iteration 2 task t4 ('Consolidate background state metric projection') status=0
+2026-06-23T12:09:26Z iteration 2 reviewer started
+
+## Reviewer Summary - Iteration 2
+
+### What Was Done
+
+- Inspected the exact git diff and every file modified or created in this iteration: README, `docs/background-convergence-v1.md`, HTTP catalog handler/tests, app readiness/metrics code, app background metric tests, scheduler background restore event fields, `PLAN.md`, and orchestration metadata.
+- Confirmed `/api/v1/animations/catalog` now freezes firmware preset `interval` as a JSON duration string such as `"90ms"` through an explicit HTTP DTO, with `effect_id` as a JSON number and `color` as a structured RGB object.
+- Confirmed catalog compatibility tests assert required stable fields, reject unsupported fields, keep firmware metadata absent from generated entries, and verify the bounded firmware metadata wire types.
+- Confirmed README and `docs/background-convergence-v1.md` now match the frozen catalog interval contract and public background kind vocabulary.
+- Confirmed generated/renderable background public kind projection is covered across `/readyz.background` and Prometheus background metric labels; public surfaces reject `kind="renderable"` leakage.
+- Confirmed background restore event metrics now carry retry context (`next_retry`, `failure_count`) and project current state through `ProjectBackgroundConvergence` before updating background state gauges.
+- Rewrote `PLAN.md` to mark catalog wire-shape and public projection work complete, remove stale findings, and reprioritize remaining catalog/projection guardrails plus longer-running animation, event, scheduler, and reload work.
+- Left `MEMORY.md` unchanged because the durable lessons from this iteration were already captured: explicit DTO wire encoding for Go-native types and synchronized public projection vocabulary.
+
+### What Was Found
+
+- No high-severity runtime regression was found. `go test ./...`, `go vet ./...`, `go test -race ./...`, and focused race checks for the touched matrix/app/httpapi/metrics surfaces all pass.
+- Medium severity: background restore event metrics now use the shared projection, but the event-time path still builds a partial projection input and uses callback-time wall clock. `/metrics` refreshes from scheduler health, so black-box behavior is correct, but event-time gauge updates should remain subordinate to scheduler health to avoid future drift.
+- Medium severity: catalog wire-shape compatibility is now tested, but the handler depends on a hand-written DTO conversion. Future catalog metadata additions must update DTO, docs, and wire-shape tests together or risk accidental API broadening.
+- Medium severity: the package-private scheduler idle hook remains a test synchronization seam. It is currently contained and useful for dedupe tests, but should not grow into general production state unless a real runtime use appears.
+- Existing accepted limitations remain: no background retry `failure_count` metric, synchronous heartbeat probe latency, TCP metric callbacks under the TCP mutex, blocking event-bus v1 delivery, no declarative frame/pixel-art animations, ignored `InterruptMode`, and no admin reload endpoint.
+
+### Top Improvement Proposals
+
+1. Keep catalog wire shape locked with compatibility tests for required fields, optional bounded firmware metadata, and generated-entry metadata absence.
+2. Treat `ProjectBackgroundConvergence` plus scheduler health as the authority for current background gauges; keep restore callbacks focused on attempt/failure event counters unless they carry complete state.
+3. Keep explicit HTTP DTOs for catalog responses and update README, contract docs, and tests in the same patch whenever catalog metadata changes.
+4. Preserve public kind projection guardrails on every new readiness, metrics, catalog, or background API surface so internal `renderable` never leaks.
+5. Continue next with declarative frame/pixel-art animations only after the public API/catalog/projection contracts remain stable.
+
+### Verification
+
+- `go test ./...` passed.
+- `go vet ./...` passed.
+- `go test -race ./...` passed.
+- `go test -race ./internal/matrix ./internal/app ./internal/integrations/httpapi ./internal/metrics -run 'TestSchedulerPreviousFrameRestore|TestProjectPublicKind|TestReadyAndMetricsExpose.*Background|TestBackgroundHealthMetricsAgreeWithReadyProjection|TestBackgroundRestoreMetricProjectsCurrentStateGauge|TestAnimationCatalog|TestAnimationsEndpoint|TestEventsOverrideValidation|TestOverrideValidationErrorVocabulary|TestBackgroundStateGauges|TestBackgroundRestoreMetrics' -count=5` passed.
+2026-06-23T12:12:08Z iteration 2 reviewer completed status=0
+2026-06-23T12:12:08Z iteration 2 memory updated
+2026-06-23T12:12:08Z iteration 2 completed validation_status=0
+2026-06-23T12:12:08Z iteration 2 checkpoint started
+2026-06-23T12:12:08Z iteration 2 checkpoint status before commit:
+M  AGENT_LOG.md
+M  ALTERNATIVES.jsonl
+M  PLAN.md
+M  README.md
+M  SCORES.jsonl
+M  docs/background-convergence-v1.md
+M  internal/app/app.go
+M  internal/app/app_test.go
+A  internal/app/background_metrics_test.go
+M  internal/integrations/httpapi/handlers.go
+M  internal/integrations/httpapi/server_test.go
+M  internal/matrix/scheduler.go

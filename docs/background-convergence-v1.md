@@ -29,6 +29,10 @@ All three delivery channels must use one projection function:
 - `matrix_proxy_background_state{kind,state}` metric one-hot
 
 If projection inputs differ between channels, operators receive contradictory signals.
+Public background kind and state surfaces must emit projected public vocabulary
+only. The internal background kind `renderable` is scheduler/app-internal and
+must not appear in `/readyz.background`, animation catalog entries, or
+Prometheus background metric labels.
 
 ## Projection rules
 
@@ -92,7 +96,8 @@ regardless of dirty/attempting/failed/retrying background state.
 The public background `kind` vocabulary is bounded to `generated` for
 generated backgrounds and `firmware_preset` for firmware preset backgrounds.
 The same vocabulary is used by `/readyz.background.kind`, animation catalog
-entries, and background metric `kind` labels.
+entries, and background metric `kind` labels. The internal kind `renderable` is
+not part of the public contract.
 
 ## Animation discovery
 
@@ -101,10 +106,13 @@ entries, and background metric `kind` labels.
 playback endpoints.
 
 `GET /api/v1/animations/catalog` is the structured catalog. It returns entries
-with the stable fields `id`, `kind`, and `playable`. For firmware presets, it may
-also include bounded additive metadata fields: `effect_id`, `interval`, and
-`color` (when configured). `kind` is bounded to `generated` and
-`firmware_preset`, and `playable` is true only for `generated`.
+with the stable required fields `id`, `kind`, and `playable`. Generated entries
+use public kind `generated`, have `playable: true`, and omit firmware metadata
+fields. Firmware preset entries use public kind `firmware_preset`, have
+`playable: false`, and may include only the bounded optional metadata fields
+`effect_id`, `interval`, and `color` when configured. `effect_id` is a JSON
+number, `interval` is a JSON string duration such as `"90ms"`, and `color` is a
+structured RGB object.
 
 ```json
 {

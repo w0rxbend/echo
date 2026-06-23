@@ -609,6 +609,77 @@ func TestReadyAndMetricsExposeGeneratedBackgroundFrameFailureAndRecoveryWithoutP
 	assertNoRenderableBackgroundMetrics(t, httpServer.URL)
 }
 
+func TestReadyAndMetricsProjectRenderableBackgroundKindToGenerated(t *testing.T) {
+	matrixServer := newFakeESPServer(t)
+	defer matrixServer.Close()
+
+	const backgroundID = "generated_background"
+	cfg := newHTTPMatrixTestConfig(t, matrixServer.Addr())
+	cfg.Matrix.Layout.OddRowDisplayFlip = false
+	cfg.Background.Animation = backgroundID
+	cfg.Background.RestoreOnIdle = true
+
+	registry, err := animations.NewDefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	backgroundFrames := generatedBackgroundFrameFixture(t)
+	if err := registry.RegisterGenerated(backgroundID, "test_generated_background", animations.AnimationFunc(
+		func(context.Context, animations.Params) ([]animations.Frame, error) {
+			return append([]animations.Frame(nil), backgroundFrames...), nil
+		},
+	)); err != nil {
+		t.Fatal(err)
+	}
+	cfg.AnimationRegistry = registry
+
+	application, err := app.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := runAppWorkers(t, application, ctx)
+	defer func() {
+		cancel()
+		waitAppWorkers(t, done)
+	}()
+
+	httpServer := httptest.NewServer(application.Handler())
+	defer httpServer.Close()
+
+	ready, status := waitForReadyBackground(t, httpServer.URL, backgroundID, "generated", "converged")
+	if status != http.StatusOK {
+		t.Fatalf("GET /readyz status = %d, body = %#v, want %d", status, ready, http.StatusOK)
+	}
+	if ready.Background.Kind != "generated" {
+		t.Fatalf("/readyz background.kind = %q, want generated: %#v", ready.Background.Kind, ready.Background)
+	}
+
+	readyBody := getReadyBody(t, httpServer.URL)
+	if !strings.Contains(readyBody, `"kind":"generated"`) {
+		t.Fatalf("/readyz response missing public generated kind:\n%s", readyBody)
+	}
+	if strings.Contains(readyBody, `"kind":"renderable"`) {
+		t.Fatalf("/readyz response leaked internal renderable kind:\n%s", readyBody)
+	}
+
+	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
+		1, `kind="generated"`)
+	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_dirty",
+		`kind="generated"`, " 0")
+	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_converged",
+		`kind="generated"`, " 1")
+	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_state",
+		`kind="generated"`, `state="converged"`, " 1")
+
+	metricsBody := getMetrics(t, httpServer.URL)
+	if strings.Contains(metricsBody, `kind="renderable"`) {
+		t.Fatalf("/metrics leaked internal renderable kind:\n%s", metricsBody)
+	}
+	assertNoRenderableBackgroundMetrics(t, httpServer.URL)
+}
+
 func TestReadyAndMetricsExposePartialGeneratedBackgroundFrameFailureAndFullReplayRecovery(t *testing.T) {
 	matrixServer := newFakeESPServer(t)
 	defer matrixServer.Close()
@@ -2398,6 +2469,22 @@ func waitForStatus(t *testing.T, url string, want int) {
 
 func getReadyDetails(t *testing.T, baseURL string) (readyDetails, int) {
 	t.Helper()
+	data, status := getReadyBodyBytes(t, baseURL)
+	var body readyDetails
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("decode /readyz response %q: %v", data, err)
+	}
+	return body, status
+}
+
+func getReadyBody(t *testing.T, baseURL string) string {
+	t.Helper()
+	data, _ := getReadyBodyBytes(t, baseURL)
+	return string(data)
+}
+
+func getReadyBodyBytes(t *testing.T, baseURL string) ([]byte, int) {
+	t.Helper()
 	resp, err := http.Get(baseURL + "/readyz")
 	if err != nil {
 		t.Fatal(err)
@@ -2407,11 +2494,7 @@ func getReadyDetails(t *testing.T, baseURL string) (readyDetails, int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var body readyDetails
-	if err := json.Unmarshal(data, &body); err != nil {
-		t.Fatalf("decode /readyz response %q: %v", data, err)
-	}
-	return body, resp.StatusCode
+	return data, resp.StatusCode
 }
 
 func waitCloseResult(t *testing.T, done <-chan error) error {

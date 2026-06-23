@@ -59,7 +59,7 @@ Verified during this review:
 - `go test ./...` passes.
 - `go vet ./...` passes.
 - `go test -race ./...` passes.
-- `go test -race ./internal/matrix ./internal/app ./internal/integrations/httpapi ./internal/metrics -run 'TestSchedulerPreviousFrameRestore|TestProjectPublicKind|TestReadyAndMetricsExpose.*Background|TestAnimationCatalog|TestAnimationsEndpoint|TestEventsOverrideValidation|TestOverrideValidationErrorVocabulary|TestBackgroundStateGauges|TestBackgroundRestoreMetrics' -count=5` passes.
+- `go test -race ./internal/matrix ./internal/app ./internal/integrations/httpapi ./internal/metrics -run 'TestSchedulerPreviousFrameRestore|TestProjectPublicKind|TestReadyAndMetricsExpose.*Background|TestBackgroundHealthMetricsAgreeWithReadyProjection|TestBackgroundRestoreMetricProjectsCurrentStateGauge|TestAnimationCatalog|TestAnimationsEndpoint|TestEventsOverrideValidation|TestOverrideValidationErrorVocabulary|TestBackgroundStateGauges|TestBackgroundRestoreMetrics' -count=5` passes.
 
 Core implementation status:
 
@@ -90,16 +90,20 @@ Core implementation status:
 - Animation registry distinguishes generated/playable animations from
   metadata-only firmware presets through `IsRenderable`, `Entry`,
   `RenderableIDs`, and `Catalog`.
-- Public animation kind vocabulary is now projected through
+- Public animation kind vocabulary is projected through
   `animations.ProjectPublicKind`: generated/playable entries expose
   `generated`, firmware presets expose `firmware_preset`, and internal
-  background `renderable` is translated before it reaches readiness or metrics.
+  background `renderable` is translated before it reaches public readiness,
+  catalog, or Prometheus surfaces.
 - `/api/v1/animations` remains backward-compatible and lists only playable
   generated IDs.
-- `/api/v1/animations/catalog` exposes all registry entries with stable
-  `{id, kind, playable}` fields. Firmware presets remain `playable=false` and
-  may include bounded additive metadata fields `effect_id`, `interval`, and
-  `color`.
+- `/api/v1/animations/catalog` exposes all registry entries through an explicit
+  HTTP DTO with stable required fields `{id, kind, playable}`. Firmware presets
+  remain `playable=false` and may include bounded optional metadata fields
+  `effect_id`, `interval`, and `color`.
+- Catalog firmware preset `interval` is intentionally frozen as a JSON duration
+  string such as `"90ms"`; `effect_id` is a JSON number and `color` is a
+  structured RGB object. Generated entries must omit firmware metadata.
 - Ordinary playback rejects non-renderable firmware preset IDs at config rules,
   `/play`, `/notify`, `/events attributes.animation`, and scheduler guardrail
   boundaries.
@@ -142,18 +146,18 @@ High severity:
 
 Medium severity:
 
-- Catalog documentation examples show firmware preset `interval` as `"90ms"`,
-  but the HTTP handler serializes `*time.Duration` directly, so the current JSON
-  wire value is numeric nanoseconds. This must be corrected before operators or
-  clients depend on the catalog metadata shape.
-- The new scheduler idle hook makes previous-frame dedupe tests much more
-  deterministic, but it is package-private production state used only by tests.
-  Keep it under review; prefer an explicit test-only seam or fake-client quiet
-  assertion if more idle synchronization tests accumulate.
-- Background restore event metrics briefly consume raw event state, while
-  readiness/health consume the shared projection. The current tests pass, but
-  future background metrics should continue to be projected through the same
-  public state function to prevent drift.
+- Background restore event metrics now use `ProjectBackgroundConvergence`, but
+  the event-time path still constructs a partial projection input and uses wall
+  clock time at callback execution. `/metrics` refreshes from scheduler health,
+  so black-box behavior is correct, but future event-time metric updates should
+  remain subordinate to scheduler health to avoid stale or contradictory gauges.
+- Catalog wire-shape compatibility is covered in HTTP tests, but the handler is
+  still a hand-written DTO conversion. If more catalog fields are added, update
+  the DTO, README, contract doc, and wire-shape tests in the same change.
+- The scheduler idle hook makes previous-frame dedupe tests deterministic, but
+  it is package-private production state used only by tests. Keep it contained;
+  prefer a fake-client quiet assertion or test-only helper if more idle
+  synchronization tests accumulate.
 - Prometheus still intentionally omits background retry `failure_count`;
   dashboards must poll `/readyz.background` to distinguish first retry from
   repeated retry.
@@ -185,65 +189,50 @@ Low severity:
 
 ## Next Iteration Priorities
 
-### Phase 1: Repair Catalog Metadata Wire Contract
+### Phase 1: Freeze Catalog And Projection Compatibility
 
-1. Decide the catalog `interval` wire type. (high)
-   - Current code emits numeric nanoseconds because `time.Duration` is encoded
-     directly.
-   - README and `docs/background-convergence-v1.md` currently show `"90ms"`.
-   - Either change the API DTO to emit a duration string intentionally, or update
-     docs and compatibility tests to freeze numeric nanoseconds.
-
-2. Add catalog metadata wire-shape tests. (high)
-   - Assert exact JSON types for `effect_id`, `interval`, and `color`.
-   - Keep stable required fields `id`, `kind`, `playable`.
-   - Keep bounded additive firmware metadata optional and absent from generated
+1. Keep catalog wire shape locked. (high)
+   - Add or preserve tests that assert exact JSON types for `effect_id`,
+     `interval`, and `color`.
+   - Keep stable required fields `id`, `kind`, and `playable`.
+   - Keep firmware metadata optional, bounded, and absent from generated
      entries.
 
-3. Keep registry structs out of HTTP wire contracts. (medium)
-   - Continue using explicit handler DTOs rather than returning registry structs
+2. Keep registry structs out of HTTP wire contracts. (medium)
+   - Continue using explicit handler DTOs instead of returning registry structs
      directly.
    - If more metadata is added, update DTO, docs, and compatibility tests in the
      same change.
 
-### Phase 2: Strengthen Public Projection Guardrails
+3. Add broader contract checks for public kind vocabulary. (medium)
+   - Preserve tests that generated backgrounds expose `kind: "generated"` in
+     `/readyz.background`, background metrics, and catalog output.
+   - Add negative checks to any new public background/animation surface so
+     internal `renderable` cannot leak.
 
-1. Add cross-surface background kind compatibility tests. (high)
-   - Verify generated backgrounds expose `kind: "generated"` in
-     `/readyz.background`, `matrix_proxy_background_*{kind="generated"}`, and
-     catalog entries.
-   - Verify no public readiness or metric surface emits `kind="renderable"`.
+### Phase 2: Harden Background Projection And Dedupe Semantics
 
-2. Keep `ProjectPublicKind` as the canonical boundary translator. (medium)
-   - Treat matrix-internal `BackgroundKindRenderable` as private.
-   - Avoid duplicating string mappings outside the projection helper.
+1. Keep one background projection authority. (high)
+   - Route readiness, scheduler health, and current-state gauges through
+     `ProjectBackgroundConvergence`.
+   - Treat restore attempt/failure callbacks as event telemetry; prefer
+     scheduler health refresh for current gauges when there is ambiguity.
 
-3. Route background metric state through shared projection consistently. (medium)
-   - Review `recordBackgroundRestoreMetric` event-time updates for any raw-state
-     drift.
-   - Prefer projection-derived state for current gauges and reserve restore
-     attempt/failure counters for event telemetry.
-
-### Phase 3: Finish Previous-Frame Dedupe Guardrails
-
-1. Keep deterministic display-state identity tests. (medium)
+2. Preserve previous-frame dedupe identity guardrails. (medium)
    - Preserve the negative case: pixel-equivalent non-background frames must not
      suppress idle convergence.
    - Preserve positive cases for exact configured firmware preset parameters and
      generated background ID identity.
+   - Keep dedupe telemetry separate from scheduler-owned background restore
+     attempts/failures.
 
-2. Revisit the scheduler idle test seam. (medium)
-   - If only these tests use it, keep it package-private and documented by tests.
-   - If more tests need it, consider a test-only helper or fake-client quiet
-     assertion that does not add production fields.
+3. Revisit the scheduler idle test seam if usage grows. (low)
+   - If only dedupe tests need it, keep it package-private and documented by
+     tests.
+   - If more tests need it, prefer an explicit test helper or fake-client quiet
+     assertion that does not add production behavior.
 
-3. Preserve dedupe telemetry separation. (medium)
-   - Keep scheduler-owned background restore attempts/failures separate from
-     playback restore commands.
-   - If operators need a dedupe counter, add a bounded reason label without
-     polluting restore-attempt counters.
-
-### Phase 4: Declarative Animation Expansion
+### Phase 3: Declarative Animation Expansion
 
 1. Add declarative frame/pixel-art animations. (medium)
    - Parse palette and 8-row pixel art in display-space.
@@ -259,7 +248,7 @@ Low severity:
    - Decide whether relative `animations_file` and `rules_file` should resolve
      strictly relative to the config file.
 
-### Phase 5: Event Delivery Boundary
+### Phase 4: Event Delivery Boundary
 
 1. Preserve the accepted v1 event bus contract until a redesign is planned.
    (medium)
@@ -276,7 +265,7 @@ Low severity:
      timeout/drop metrics, partial-delivery reporting, and subscriber
      attribution.
 
-### Phase 6: Scheduler, TCP, And Lifecycle Stability
+### Phase 5: Scheduler, TCP, And Lifecycle Stability
 
 1. Keep TCP callback critical paths bounded. (medium)
    - Keep mutex-held callbacks limited to in-memory metrics and nonblocking
@@ -360,12 +349,8 @@ Manual hardware validation remains required before unattended LAN deployment:
 
 - Should background non-convergence ever affect top-level readiness, or remain
   visible-only in `/readyz.background`?
-- Should catalog firmware preset `interval` be a duration string or numeric
-  nanoseconds on the HTTP wire?
 - Should background retry `failure_count` be exposed as a bounded Prometheus
   gauge, or remain `/readyz`-only?
-- Should structured animation catalog expose any additional firmware preset
-  parameters beyond `effect_id`, `interval`, and `color`?
 - Should generic `/api/v1/events` remain schema-agnostic beyond known override
   fields?
 - Should background retry remain fixed v1 policy, or become configurable after

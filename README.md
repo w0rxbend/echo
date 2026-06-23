@@ -54,11 +54,11 @@ control path becomes idle.
 
 The configured background ID is resolved from the merged animation registry and
 may reference either a generated animation or a `firmware_preset`. Firmware
-presets are applied with scheduler-owned `SetPreset` commands. Generated or
-generated backgrounds are rendered as finite frame sequences and
-packed through the layout mapper; they are not long-running queue items and do
-not block later transient events. HTTP handlers and app event processing do not
-call the TCP matrix client directly.
+presets are applied with scheduler-owned `SetPreset` commands. Generated
+backgrounds are rendered as finite frame sequences and packed through the
+layout mapper; they are not long-running queue items and do not block later
+transient events. HTTP handlers and app event processing do not call the TCP
+matrix client directly.
 
 ### Animation Discovery
 
@@ -69,11 +69,14 @@ endpoints can keep using this endpoint. Metadata-only firmware preset IDs such
 as `matrix_rain_background` are intentionally excluded.
 
 `GET /api/v1/animations/catalog` returns the structured discovery catalog for
-all registry entries. Each entry exposes the stable fields `id`, `kind`, and
-`playable`. `kind` is bounded to `generated` and `firmware_preset`, and
-`playable` is true only for `generated` entries. Firmware preset entries may
-additionally expose the bounded metadata fields `effect_id`, `interval`, and
-`color` when configured; no other catalog fields are part of this contract.
+all registry entries. Each entry exposes the stable required fields `id`,
+`kind`, and `playable`. Generated entries use public kind `generated`, have
+`playable: true`, and omit firmware metadata fields. Firmware preset entries
+use public kind `firmware_preset`, have `playable: false`, and may include only
+the bounded optional metadata fields `effect_id`, `interval`, and `color` when
+configured. `effect_id` is a JSON number, `interval` is a JSON string duration
+such as `"90ms"`, and `color` is a structured RGB object. No other catalog
+fields are part of this contract.
 
 ```json
 {
@@ -189,7 +192,8 @@ configured background is actually applied successfully.
 - `configured_id`: configured background animation ID, omitted when no
   background is configured.
 - `kind`: `firmware_preset` or `generated`, omitted when no background is
-  configured.
+  configured. This is projected public vocabulary; the internal background kind
+  `renderable` must not appear in readiness output.
 - `state`: one of `unknown`, `dirty`, `attempting`, `converged`, `failed`, or
   `retrying`. `retrying` means `dirty: true`, `next_retry` is pending in the
   future, and another restore attempt is intentionally suppressed until then.
@@ -241,12 +245,14 @@ The current-state gauges are:
   `next_retry` is pending in the future, and reports `failed` after a failed
   restore when the retry deadline is due or not pending.
 
-The `kind` label is bounded to `firmware_preset` and `generated`; background
-IDs are not metric labels. `failure_count` is available
-only in `/readyz.background`; there is intentionally no Prometheus
-failure-count metric in this v1 contract. Background restore attempts, failures,
-and state gauges are independent of ordinary playback outcome metrics, so
-scheduler-owned restore work remains separate from `matrix_proxy_play_items_total`.
+The `kind` label is projected public vocabulary bounded to `firmware_preset`
+and `generated`; background IDs are not metric labels, and the internal
+background kind `renderable` must not appear in Prometheus output.
+`failure_count` is available only in `/readyz.background`; there is
+intentionally no Prometheus failure-count metric in this v1 contract. Background
+restore attempts, failures, and state gauges are independent of ordinary
+playback outcome metrics, so scheduler-owned restore work remains separate from
+`matrix_proxy_play_items_total`.
 
 ## Manual Hardware Validation
 

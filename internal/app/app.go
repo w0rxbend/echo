@@ -570,13 +570,21 @@ func recordBackgroundRestoreMetric(registry *metrics.Registry, event matrix.Back
 	if !ok {
 		return
 	}
+	background := matrix.ProjectBackgroundConvergence(matrix.BackgroundConvergenceProjectionInput{
+		State:                 event.State,
+		Dirty:                 true,
+		LastRestoreError:      event.Error,
+		LastRestoreErrorClass: event.ErrorKind,
+		NextRetry:             event.NextRetry,
+		FailureCount:          event.FailureCount,
+	}, time.Now())
 	switch event.State {
 	case matrix.BackgroundConvergenceAttempting:
 		registry.BackgroundRestoreAttemptsTotal.WithLabelValues(kind).Inc()
-		setBackgroundGaugeMetrics(registry, event.Kind, matrix.BackgroundConvergenceAttempting, true, false)
+		setBackgroundGaugeMetrics(registry, event.Kind, background.State, background.Dirty, background.Converged)
 	case matrix.BackgroundConvergenceFailed, matrix.BackgroundConvergenceRetrying:
 		registry.BackgroundRestoreFailuresTotal.WithLabelValues(kind, string(event.ErrorKind)).Inc()
-		setBackgroundGaugeMetrics(registry, event.Kind, event.State, true, false)
+		setBackgroundGaugeMetrics(registry, event.Kind, background.State, background.Dirty, background.Converged)
 	}
 }
 

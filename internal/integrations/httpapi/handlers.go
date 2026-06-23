@@ -197,12 +197,17 @@ func (s *Server) handleAnimationCatalog(w http.ResponseWriter, r *http.Request) 
 	catalog := s.registry.Catalog()
 	entries := make([]animationCatalogEntry, 0, len(catalog))
 	for _, entry := range catalog {
+		var interval *string
+		if entry.Interval != nil {
+			formatted := entry.Interval.String()
+			interval = &formatted
+		}
 		entries = append(entries, animationCatalogEntry{
 			ID:       entry.ID,
 			Kind:     entry.Kind,
 			Playable: entry.Playable,
 			EffectID: entry.EffectID,
-			Interval: entry.Interval,
+			Interval: interval,
 			Color:    entry.Color,
 		})
 	}
@@ -229,7 +234,7 @@ type animationCatalogEntry struct {
 	Kind     animations.PublicKind `json:"kind"`
 	Playable bool                  `json:"playable"`
 	EffectID *byte                 `json:"effect_id,omitempty"`
-	Interval *time.Duration        `json:"interval,omitempty"`
+	Interval *string               `json:"interval,omitempty"`
 	Color    *animations.RGB       `json:"color,omitempty"`
 }
 

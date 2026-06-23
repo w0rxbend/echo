@@ -868,7 +868,9 @@ func TestAnimationCatalogEndpointIncludesNonPlayableMetadata(t *testing.T) {
 	var body struct {
 		Animations []map[string]any `json:"animations"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	decoder := json.NewDecoder(resp.Body)
+	decoder.UseNumber()
+	if err := decoder.Decode(&body); err != nil {
 		t.Fatal(err)
 	}
 
@@ -923,6 +925,28 @@ func TestAnimationCatalogEndpointIncludesNonPlayableMetadata(t *testing.T) {
 		if kind == string(animations.PublicKindFirmwarePreset) && playable {
 			t.Fatalf("GET /animations/catalog entry %d id=%s kind=firmware_preset must have playable=false", i, id)
 		}
+		if kind == string(animations.PublicKindGenerated) {
+			for _, field := range []string{"effect_id", "interval", "color"} {
+				if _, ok := entry[field]; ok {
+					t.Fatalf("GET /animations/catalog generated entry %d id=%s leaked firmware metadata field %q: %+v", i, id, field, entry)
+				}
+			}
+		}
+		if effectID, ok := entry["effect_id"]; ok {
+			if _, ok := effectID.(json.Number); !ok {
+				t.Fatalf("GET /animations/catalog firmware entry %d id=%s effect_id has type %T, want JSON number", i, id, effectID)
+			}
+		}
+		if interval, ok := entry["interval"]; ok {
+			if _, ok := interval.(string); !ok {
+				t.Fatalf("GET /animations/catalog firmware entry %d id=%s interval has type %T, want JSON string", i, id, interval)
+			}
+		}
+		if color, ok := entry["color"]; ok {
+			if _, ok := color.(map[string]any); !ok {
+				t.Fatalf("GET /animations/catalog firmware entry %d id=%s color has type %T, want JSON object", i, id, color)
+			}
+		}
 		if _, ok := seen[id]; ok {
 			t.Fatalf("GET /animations/catalog has duplicate id %q", id)
 		}
@@ -934,6 +958,29 @@ func TestAnimationCatalogEndpointIncludesNonPlayableMetadata(t *testing.T) {
 		}
 		if kind != expected.Kind || playable != expected.Playable {
 			t.Fatalf("GET /animations/catalog id=%s fields %s = %+v, want %+v", id, id, catalogEntry{ID: id, Kind: kind, Playable: playable}, expected)
+		}
+		if id == firmwarePresetID {
+			effectID, ok := entry["effect_id"].(json.Number)
+			if !ok || effectID.String() != "12" {
+				t.Fatalf("GET /animations/catalog firmware preset effect_id = %v (%T), want JSON number 12", entry["effect_id"], entry["effect_id"])
+			}
+			interval, ok := entry["interval"].(string)
+			if !ok || interval != "90ms" {
+				t.Fatalf("GET /animations/catalog firmware preset interval = %v (%T), want JSON string %q", entry["interval"], entry["interval"], "90ms")
+			}
+			color, ok := entry["color"].(map[string]any)
+			if !ok {
+				t.Fatalf("GET /animations/catalog firmware preset color = %v (%T), want JSON object", entry["color"], entry["color"])
+			}
+			if got, ok := color["r"].(json.Number); !ok || got.String() != "0" {
+				t.Fatalf("GET /animations/catalog firmware preset color.r = %v (%T), want JSON number 0", color["r"], color["r"])
+			}
+			if got, ok := color["g"].(json.Number); !ok || got.String() != "255" {
+				t.Fatalf("GET /animations/catalog firmware preset color.g = %v (%T), want JSON number 255", color["g"], color["g"])
+			}
+			if got, ok := color["b"].(json.Number); !ok || got.String() != "85" {
+				t.Fatalf("GET /animations/catalog firmware preset color.b = %v (%T), want JSON number 85", color["b"], color["b"])
+			}
 		}
 	}
 	for id, expected := range want {
@@ -965,12 +1012,12 @@ func TestFirmwarePresetIsNotPlayableThroughPublicAnimationIngress(t *testing.T) 
 
 		var body struct {
 			Animations []struct {
-				ID       string         `json:"id"`
-				Kind     string         `json:"kind"`
-				Playable bool           `json:"playable"`
-				EffectID *byte          `json:"effect_id"`
-				Interval *time.Duration `json:"interval"`
-				Color    *catalogColor  `json:"color"`
+				ID       string        `json:"id"`
+				Kind     string        `json:"kind"`
+				Playable bool          `json:"playable"`
+				EffectID *byte         `json:"effect_id"`
+				Interval *string       `json:"interval"`
+				Color    *catalogColor `json:"color"`
 			} `json:"animations"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
@@ -989,8 +1036,8 @@ func TestFirmwarePresetIsNotPlayableThroughPublicAnimationIngress(t *testing.T) 
 				if entry.EffectID == nil || *entry.EffectID != 12 {
 					t.Fatalf("catalog firmware preset entry %s has effect_id=%v, want 12", firmwarePresetID, entry.EffectID)
 				}
-				if entry.Interval == nil || *entry.Interval != 90*time.Millisecond {
-					t.Fatalf("catalog firmware preset entry %s has interval=%v, want %v", firmwarePresetID, entry.Interval, 90*time.Millisecond)
+				if entry.Interval == nil || *entry.Interval != "90ms" {
+					t.Fatalf("catalog firmware preset entry %s has interval=%v, want %q", firmwarePresetID, entry.Interval, "90ms")
 				}
 				if entry.Color == nil || entry.Color.R != 0 || entry.Color.G != 255 || entry.Color.B != 85 {
 					t.Fatalf("catalog firmware preset entry %s has color=%+v, want {r:0 g:255 b:85}", firmwarePresetID, entry.Color)
