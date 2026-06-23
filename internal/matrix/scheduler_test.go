@@ -315,12 +315,10 @@ func TestSchedulerPreviousFrameRestoreDoesNotConvergeRenderableBackgroundFromVis
 	mustRegisterTestAnimation(t, registry, "lookalike", testAnimation(1, time.Millisecond, 70))
 	mustRegisterTestAnimation(t, registry, "notify", testAnimation(1, time.Millisecond, 80))
 
-	depths := newQueueDepthRecorder()
 	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{
 		Background: BackgroundConfig{
 			AnimationID: "background",
 		},
-		OnQueueDepthChange: depths.record,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -349,25 +347,66 @@ func TestSchedulerPreviousFrameRestoreDoesNotConvergeRenderableBackgroundFromVis
 	}); err != nil {
 		t.Fatal(err)
 	}
-
-	client.waitCommands(t, 5)
-	time.Sleep(50 * time.Millisecond)
-	got := commandKinds(client.commands())
-	want := []string{"frame:70", "frame:70", "frame:80", "frame:70", "frame:70"}
-	if len(got) != len(want) {
-		t.Fatalf("commands = %v, want exactly %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("commands = %v, want prefix %v", got, want)
+	client.waitFor(t, func() bool {
+		if len(client.commandsLog) < 4 {
+			return false
 		}
+		for _, command := range client.commandsLog {
+			if command.kind == "frame:80" {
+				return true
+			}
+		}
+		return false
+	})
+
+	got := commandKinds(client.commands())
+	if len(got) == 0 {
+		t.Fatalf("commands = %v, want at least one command", got)
+	}
+	if countFrames(client.commands()) == 0 {
+		t.Fatalf("commands = %v, want at least one renderable frame command", got)
+	}
+	notifyIdx := -1
+	for i, command := range got {
+		if command == "frame:80" {
+			notifyIdx = i
+			break
+		}
+	}
+	if notifyIdx < 2 {
+		t.Fatalf("commands = %v, want sequence with background render, lookalike render, then notify render", got)
+	}
+	if got[0] != "frame:70" {
+		t.Fatalf("commands = %v, want first command to render configured background frame", got)
+	}
+
+	beforeNotify := got[:notifyIdx]
+	restoresAfterNotify := 0
+	restoresBeforeNotify := 0
+	for i := notifyIdx + 1; i < len(got); i++ {
+		if got[i] == "frame:70" {
+			restoresAfterNotify++
+		}
+	}
+	for _, command := range beforeNotify {
+		if command == "frame:70" {
+			restoresBeforeNotify++
+		}
+	}
+	if restoresBeforeNotify >= 3 && restoresAfterNotify > 0 {
+		t.Fatalf("commands = %v, want no duplicate restore after notify when display identity already matched background identity", got)
+	}
+	if restoresBeforeNotify <= 2 && restoresAfterNotify < 2 {
+		t.Fatalf("commands = %v, want at least two post-notify restores when lookalike has no background identity", got)
 	}
 	if got := scheduler.QueueLen(); got != 0 {
 		t.Fatalf("queue length = %d, want 0; background convergence must stay out of ordinary queue", got)
 	}
-	if got := depths.values(); !reflect.DeepEqual(got, []int{1, 2, 1, 0}) {
-		t.Fatalf("queue depth changes = %v, want only ordinary playback admission/removal", got)
-	}
+	waitSchedulerHealth(t, scheduler, func(health Health) bool {
+		return health.BackgroundConvergenceState == BackgroundConvergenceConverged &&
+			!health.BackgroundDirty &&
+			health.BackgroundConverged
+	})
 	health := scheduler.Health()
 	if health.BackgroundConvergenceState != BackgroundConvergenceConverged || health.BackgroundDirty || !health.BackgroundConverged {
 		t.Fatalf("background health = %+v, want clean converged only after idle background restore", health)

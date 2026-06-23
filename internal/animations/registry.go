@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 )
 
 var (
@@ -35,9 +36,12 @@ type Entry struct {
 }
 
 type CatalogEntry struct {
-	ID       string
-	Kind     EntryKind
-	Playable bool
+	ID       string         `json:"id"`
+	Kind     EntryKind      `json:"kind"`
+	Playable bool           `json:"playable"`
+	EffectID *byte          `json:"effect_id,omitempty"`
+	Interval *time.Duration `json:"interval,omitempty"`
+	Color    *RGB           `json:"color,omitempty"`
 }
 
 type Registry struct {
@@ -178,11 +182,20 @@ func (r *Registry) Catalog() []CatalogEntry {
 	defer r.mu.RUnlock()
 	catalog := make([]CatalogEntry, 0, len(r.entries))
 	for id, entry := range r.entries {
-		catalog = append(catalog, CatalogEntry{
+		item := CatalogEntry{
 			ID:       id,
 			Kind:     entry.Kind,
 			Playable: entry.Animation != nil,
-		})
+		}
+		if entry.FirmwarePreset != nil {
+			effectID := entry.FirmwarePreset.EffectID
+			interval := entry.FirmwarePreset.Interval
+			color := entry.FirmwarePreset.Color
+			item.EffectID = &effectID
+			item.Interval = &interval
+			item.Color = &color
+		}
+		catalog = append(catalog, item)
 	}
 	sort.Slice(catalog, func(i, j int) bool {
 		return catalog[i].ID < catalog[j].ID

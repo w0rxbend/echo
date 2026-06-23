@@ -53,7 +53,7 @@ background is enabled, the scheduler will apply that background again after the
 control path becomes idle.
 
 The configured background ID is resolved from the merged animation registry and
-may reference either a renderable animation or a `firmware_preset`. Firmware
+may reference either a generated animation or a `firmware_preset`. Firmware
 presets are applied with scheduler-owned `SetPreset` commands. Generated or
 otherwise renderable backgrounds are rendered as finite frame sequences and
 packed through the layout mapper; they are not long-running queue items and do
@@ -63,21 +63,23 @@ call the TCP matrix client directly.
 ### Animation Discovery
 
 `GET /api/v1/animations` returns the backward-compatible response shape
-`{"animations":[...]}`. The list contains only renderable, directly playable
+`{"animations":[...]}`. The list contains only generated, directly playable
 animation IDs, so clients that already submit discovered IDs to playback
 endpoints can keep using this endpoint. Metadata-only firmware preset IDs such
 as `matrix_rain_background` are intentionally excluded.
 
 `GET /api/v1/animations/catalog` returns the structured discovery catalog for
 all registry entries. Each entry exposes the stable fields `id`, `kind`, and
-`playable`; no other catalog fields are part of this contract.
+`playable`; no other catalog fields are part of this contract. `kind` is
+bounded to `generated` and `firmware_preset`, and `playable` is true only for
+`generated` entries.
 
 ```json
 {
   "animations": [
     {
       "id": "notification",
-      "kind": "renderable",
+      "kind": "generated",
       "playable": true
     },
     {
@@ -101,7 +103,7 @@ ordinary playback surfaces, including `POST /api/v1/play`,
 processing. Known playback override attributes are validated synchronously
 before the event is published to that async path:
 
-- `attributes.animation` must name a known renderable/playable animation, using
+- `attributes.animation` must name a known generated/playable animation, using
   the same playable animation contract as `POST /api/v1/play` and
   `POST /api/v1/notify`.
 - `attributes.restore` must use the same restore vocabulary accepted by
@@ -178,7 +180,7 @@ configured background is actually applied successfully.
 
 - `configured_id`: configured background animation ID, omitted when no
   background is configured.
-- `kind`: `firmware_preset` or `renderable`, omitted when no background is
+- `kind`: `firmware_preset` or `generated`, omitted when no background is
   configured.
 - `state`: one of `unknown`, `dirty`, `attempting`, `converged`, `failed`, or
   `retrying`. `retrying` means `dirty: true`, `next_retry` is pending in the
@@ -231,8 +233,8 @@ The current-state gauges are:
   `next_retry` is pending in the future, and reports `failed` after a failed
   restore when the retry deadline is due or not pending.
 
-The `kind` label is bounded to background kinds such as `firmware_preset` and
-`renderable`; background IDs are not metric labels. `failure_count` is available
+The `kind` label is bounded to `firmware_preset` and `generated`; background
+IDs are not metric labels. `failure_count` is available
 only in `/readyz.background`; there is intentionally no Prometheus
 failure-count metric in this v1 contract. Background restore attempts, failures,
 and state gauges are independent of ordinary playback outcome metrics, so

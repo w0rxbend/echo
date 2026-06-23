@@ -3304,3 +3304,83 @@ M  internal/matrix/scheduler_test.go
 2026-06-23T10:07:58Z iteration final-telemetry checkpoint status before commit:
 M  AGENT_LOG.md
 M  SCORES.jsonl
+2026-06-23T10:07:58Z orchestrator finished iterations_run=30 iterations_attempted=30 iterations_completed_successfully=20 had_nonfatal_failures=true nonfatal_failure_count=10 last_nonfatal_exit_code=1 last_nonfatal_failure_reason=planner_failed loop_exit_code=0 process_exit_code=0 fatal=false terminal_reason=iterations_complete_with_failures final_checkpoint_behavior=telemetry_only
+2026-06-23T10:33:19Z orchestrator started provider=codex budget=18000s iterations=30 max_workers=4
+2026-06-23T10:33:19Z iteration 1 started remaining=18000s
+2026-06-23T10:33:19Z iteration 1 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:33:19Z iteration 1 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-2esq9lyk/repo copied_entries=55
+2026-06-23T10:33:19Z iteration 1 ideator phase started count=3
+2026-06-23T10:33:19Z iteration 1 ideator phase concurrency workers=3
+2026-06-23T10:33:19Z iteration 1 ideator 1 role="the pragmatist" started
+2026-06-23T10:33:19Z iteration 1 ideator 2 role="the architect" started
+2026-06-23T10:33:19Z iteration 1 ideator 3 role="the contrarian" started
+2026-06-23T10:33:23Z iteration 1 ideator 2 role="the architect" completed status=0
+2026-06-23T10:33:27Z iteration 1 ideator 3 role="the contrarian" completed status=0
+2026-06-23T10:33:30Z iteration 1 ideator 1 role="the pragmatist" completed status=0
+2026-06-23T10:33:30Z iteration 1 ideator phase completed approaches=3
+2026-06-23T10:33:30Z iteration 1 selector started approaches=3
+2026-06-23T10:33:34Z iteration 1 selector completed status=0
+2026-06-23T10:33:34Z iteration 1 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-2esq9lyk/repo
+2026-06-23T10:33:34Z iteration 1 selector rejected alternative role="the architect" approach="Contract-Locked Reliability Spine" reason="Strong on risk framing, but less explicit about gating future API/metadata expansion through concrete compatibility contracts, which is a current top priority."
+2026-06-23T10:33:34Z iteration 1 selector rejected alternative role="the contrarian" approach="Stabilize Core Invariants First, Then Expand Surface" reason="Overly cautionary about determinism can overfit tests to race timing if not paired with explicit behavior-level completion criteria and extension gates."
+2026-06-23T10:33:34Z iteration 1 selector rejected alternative role="the pragmatist" approach="Contract-Closure Then Deliberate Expansion" reason="Closest fit, but underspecified on sequencing decisions for catalog extensibility and bounded additive fields, which should be formalized in the contract lock phase."
+2026-06-23T10:33:34Z iteration 1 selector alternatives persisted count=3
+2026-06-23T10:33:34Z iteration 1 selector structured alternatives persisted count=3
+2026-06-23T10:33:34Z iteration 1 planner started
+2026-06-23T10:33:44Z iteration 1 plan: 4 task(s) in 3 phase(s). Phases enforce contract-first sequencing: first remove unstable behavioral assertions, then align public contract text and loose coupling in tests, then lock in an explicit bounded additive catalog metadata schema so future expansions remain compatibility-safe.
+2026-06-23T10:33:44Z iteration 1 phase 1 started parallel=False tasks=1
+2026-06-23T10:45:24Z iteration 1 task t1 ('Stabilize previous-frame background restore regression test') status=0
+2026-06-23T10:45:24Z iteration 1 phase 2 started parallel=True tasks=2
+2026-06-23T10:45:47Z iteration 1 task t2 ('Align catalog kind values in public docs') status=0
+2026-06-23T10:46:19Z iteration 1 task t3 ('Relax catalog compatibility tests to permit additive fields') status=0
+2026-06-23T10:46:19Z iteration 1 phase 3 started parallel=False tasks=1
+2026-06-23T10:47:48Z iteration 1 task t4 ('Codify bounded catalog metadata contract for firmware presets') status=0
+2026-06-23T10:47:48Z iteration 1 reviewer started
+2026-06-23T10:51:00Z [iteration-summary] iteration=21 done
+what_was_done:
+- Stabilized the renderable-background identity regression from exact queue-depth sequencing to convergence-aware assertions and command-sequence checks.
+- Aligned catalog kind wording to `generated` in README/docs and updated `/api/v1/animations/catalog` shape docs/tests to boundedly include firmware-presets metadata.
+- Exposed additive firmware metadata in registry catalog output (`effect_id`, `interval`, `color`) while preserving stable `id/kind/playable`.
+what_was_found:
+- Internal/public surface consistency is still incomplete: `/readyz.background.kind` and background metric kinds are still emitted as internal `renderable` while docs now claim `generated`.
+- `TestSchedulerPreviousFrameRestore...` still uses command-order heuristics, so some scheduler timing nondeterminism risk remains though exact queue-depth race assertions were removed.
+- `server_test` and docs now permit optional firmware metadata, but some unrelated tests/docs still assert old background kind labels.
+top_improvement_proposals:
+1) Unify background kind vocabulary across user-facing docs, `/readyz.background`, and Prometheus labels, or document it explicitly as an internal/private term.
+2) Replace remaining heuristic-based dedupe regression assertions with deterministic synchronization/finality checks on display-state identity and background transitions.
+3) Add explicit contract tests for additive catalog metadata presence/absence, and keep non-playable firmware metadata from leaking into generated playback semantics.
+4) Keep a single documented source of contract truth (`ProjectBackgroundConvergence`) and prove docs/tests follow it.
+2026-06-23T10:56:10Z [iteration-review] iteration=21 review_completed
+what_was_done:
+- Implemented the phase-1 regression/test/docs/API cleanup targets:
+  - stabilized queue-depth-racy background identity test
+  - aligned public catalog kind vocabulary to `generated`
+  - relaxed catalog compatibility test shape checks and added bounded firmware metadata to catalog.
+- Registry catalog contract now exposes `effect_id`, `interval`, and `color` as optional additive metadata for `firmware_preset` entries, while keeping required stable fields stable.
+- `/api/v1/animations/catalog` now serves the internal `CatalogEntry` directly, avoiding duplicated DTO mapping.
+what_was_found:
+- Remaining high-priority gap: user-facing background vocabulary is still inconsistent; `/readyz.background.kind` and background gauges still report `renderable` while docs now claim `generated`.
+- The stabilized background identity regression still depends on command-order heuristics and can still be timing-sensitive under unusual scheduler interleaving.
+- This iteration’s API/documentation changes remain fragile unless all public surfaces (`/readyz.background`, metrics labels, docs, tests) are kept under one contract translation.
+top_improvement_proposals:
+1) Add explicit cross-surface kind normalization for user-facing background kind (`generated`) across readiness/metrics/docs/handlers; remove legacy `renderable` from public APIs.
+2) Replace heuristic command-order assertions in dedupe tests with deterministic synchronization in client hooks or explicit scheduler idle/finality probes.
+3) Add tests proving additive catalog metadata is present for firmware presets, absent for generated entries, and ignored by playback/resolve-playable paths.
+4) Add a compatibility test that checks `/api/v1/animations/catalog` includes only allowed firmware metadata keys (bounded additions) to prevent contract drift by unintended struct exposure.
+2026-06-23T10:51:14Z iteration 1 reviewer completed status=0
+2026-06-23T10:51:14Z iteration 1 memory updated
+2026-06-23T10:51:14Z iteration 1 completed validation_status=0
+2026-06-23T10:51:14Z iteration 1 checkpoint started
+2026-06-23T10:51:14Z iteration 1 checkpoint status before commit:
+M  AGENT_LOG.md
+M  ALTERNATIVES.jsonl
+M  MEMORY.md
+M  PLAN.md
+M  README.md
+M  SCORES.jsonl
+M  docs/background-convergence-v1.md
+M  internal/animations/registry.go
+M  internal/animations/registry_test.go
+M  internal/integrations/httpapi/handlers.go
+M  internal/integrations/httpapi/server_test.go
+M  internal/matrix/scheduler_test.go

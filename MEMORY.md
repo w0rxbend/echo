@@ -1,8 +1,3 @@
-[anti-pattern] Do not retry every matrix command error as a reconnect signal; permanent firmware status, protocol, and validation errors should surface immediately.
-[learning] Readiness based on last successful matrix command goes stale while idle; use an active heartbeat or equivalent connectivity source of truth.
-[learning] Matrix connectivity taxonomy must include host/network unreachable and dial-time wrapped errors as retryable, or transient outages can stop the scheduler.
-[learning] Validate scheduler-owned control payloads before enqueueing so bad admin requests do not wait behind playback before returning `400`.
-[anti-pattern] Leaving raw queue-clearing APIs outside scheduler ownership can strand future control waiters even if HTTP uses the safe scheduler path.
 [learning] Completing canceled or expired controls should also release queue capacity promptly, not just make the scheduler skip them later.
 [learning] Queue removal for canceled controls should use an internal queue identity, not caller-provided item IDs; duplicate IDs can complete or remove the wrong waiter.
 [learning] Bounded heartbeat probes prevent indefinite scheduler stalls, but synchronous probes still add queue latency up to the probe timeout.
@@ -48,3 +43,8 @@
 [pattern] Desired-background duplicate suppression should require explicit state identity, such as a configured background ID or exact preset parameters; pixel-equivalent output alone is not a safe convergence proof.
 [learning] Generic event endpoints should validate known override keys at ingress while preserving unknown attributes as schema-agnostic data; otherwise bad intents fail asynchronously.
 [anti-pattern] Scheduler concurrency tests should not assert exact queue-depth transition sequences unless item selection is explicitly blocked; assert final behavior or controlled synchronization instead.
+[pattern] Keep one bounded projection function as the single source for background convergence public state across scheduler health, readiness, and metrics.
+[learning] If an API contract document changes field names (`generated`/`renderable`), every user-facing surface and test surface should be updated before release.
+[learning] Catalog contracts can stay future-proof by requiring only stable semantics while allowing bounded additive metadata fields, with explicit contract tests for both forms.
+[anti-pattern] Regression tests should avoid exact queue-depth ordering assumptions when scheduler preemption can legitimately interleave item admission and removal.
+[anti-pattern] Returning internal contract-bearing structs directly from handlers can accidentally broaden API shape; enforce an explicit API-facing DTO or schema gate so additive fields stay intentional.

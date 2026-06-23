@@ -91,24 +91,34 @@ regardless of dirty/attempting/failed/retrying background state.
 ## Animation discovery
 
 `GET /api/v1/animations` is the backward-compatible playable list. It returns
-`{"animations":[...]}` with only renderable animation IDs that may be submitted
-to playback endpoints.
+`{"animations":[...]}` with only generated animation IDs that may be submitted to
+playback endpoints.
 
 `GET /api/v1/animations/catalog` is the structured catalog. It returns entries
-with the stable fields `id`, `kind`, and `playable`:
+with the stable fields `id`, `kind`, and `playable`. For firmware presets, it may
+also include bounded additive metadata fields: `effect_id`, `interval`, and
+`color` (when configured). `kind` is bounded to `generated` and
+`firmware_preset`, and `playable` is true only for `generated`.
 
 ```json
 {
   "animations": [
     {
       "id": "notification",
-      "kind": "renderable",
+      "kind": "generated",
       "playable": true
     },
     {
       "id": "matrix_rain_background",
       "kind": "firmware_preset",
-      "playable": false
+      "playable": false,
+      "effect_id": 12,
+      "interval": "90ms",
+      "color": {
+        "r": 0,
+        "g": 255,
+        "b": 85
+      }
     }
   ]
 }
@@ -125,7 +135,7 @@ not be submitted to `POST /api/v1/play`, `POST /api/v1/notify`, or generic
 playback override attributes. Before publishing an event to the asynchronous
 event path, the endpoint validates these known override keys:
 
-- `attributes.animation` must name a known renderable/playable animation, using
+- `attributes.animation` must name a known generated/playable animation, using
   the same playable animation contract as `POST /api/v1/play` and
   `POST /api/v1/notify`.
 - `attributes.restore` must use the same restore vocabulary accepted by

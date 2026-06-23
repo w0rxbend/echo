@@ -51,12 +51,6 @@ type presetRequest struct {
 	B        byte          `json:"b,omitempty"`
 }
 
-type animationCatalogEntry struct {
-	ID       string `json:"id"`
-	Kind     string `json:"kind"`
-	Playable bool   `json:"playable"`
-}
-
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	var event events.Event
 	if err := decodeJSON(r, &event); err != nil {
@@ -200,16 +194,7 @@ func (s *Server) handleAnimations(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAnimationCatalog(w http.ResponseWriter, r *http.Request) {
-	entries := s.registry.Catalog()
-	catalog := make([]animationCatalogEntry, 0, len(entries))
-	for _, entry := range entries {
-		catalog = append(catalog, animationCatalogEntry{
-			ID:       entry.ID,
-			Kind:     string(entry.Kind),
-			Playable: entry.Playable,
-		})
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"animations": catalog})
+	writeJSON(w, http.StatusOK, map[string]any{"animations": s.registry.Catalog()})
 }
 
 func (s *Server) validatePlayableAnimation(id string) error {

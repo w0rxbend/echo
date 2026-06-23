@@ -133,28 +133,18 @@ Core implementation status:
 
 High severity:
 
-- The new renderable-background identity regression is not stable. Repeated
-  focused race runs fail because the test asserts an exact queue-depth sequence
-  (`[1,2,1,0]`) even though the scheduler may legitimately process the first
-  item before the second enqueue and emit `[1,0,1,0]` or `[1,1,1,0]`. The
-  production behavior under test still appears correct, but the guardrail cannot
-  be trusted until it synchronizes on behavior rather than queue interleaving.
+- `public`/`user-facing` vocabulary is still not fully aligned. `/readyz.background.kind`
+  and background metric labels currently use an internal term (`renderable`) while
+  public docs and catalog examples now claim `generated`.
 
 Medium severity:
 
-- README and `docs/background-convergence-v1.md` show catalog examples with
-  `kind: "renderable"` for `notification`, but the actual API and tests expose
-  `kind: "generated"`. This is a public documentation/API contract mismatch.
-- `TestAnimationCatalogEndpointIncludesNonPlayableMetadata` requires catalog
-  entries to contain exactly three fields. That freezes out additive catalog
-  metadata even though future firmware-preset details (`effect_id`, `interval`,
-  `color`) are a known possible extension.
-- The structured catalog remains intentionally minimal. Operators can discover
-  firmware presets as `playable=false`, but cannot inspect preset parameters
-  such as effect ID, interval, or color through HTTP.
+- `TestSchedulerPreviousFrameRestoreDoesNotConvergeRenderableBackgroundFromVisuallyIdenticalNonBackgroundFrame`
+  is now stable against queue-depth interleaving but still relies on command-order
+  heuristics (`frame:*`) instead of explicit synchronization hooks.
 - Previous-frame duplicate suppression tests still use small real sleeps to
   prove no later idle duplicate command is sent. They pass in broad suites, but
-  deterministic no-extra-command assertions would be more robust.
+  deterministic no-extra-command assertions are still needed.
 - Prometheus still intentionally omits background retry `failure_count`;
   dashboards must poll `/readyz.background` to distinguish first retry from
   repeated retry.
@@ -188,41 +178,38 @@ Low severity:
 
 ### Phase 1: Repair Public Contract Regressions
 
-1. Fix the renderable-background identity regression test. (priority: high)
-   - Remove exact queue-depth ordering assumptions from
+✅ Iteration 21 completed:
+
+1. Fix the renderable-background identity regression test. (done high priority)
+   - Removed exact queue-depth ordering assumptions from
      `TestSchedulerPreviousFrameRestoreDoesNotConvergeRenderableBackgroundFromVisuallyIdenticalNonBackgroundFrame`.
-   - Synchronize on matrix command sequence, display-state identity, and final
-     convergence state instead of concurrent queue-depth interleavings.
-   - Re-run the focused scheduler race test with `-count=20` and keep it stable.
+   - Reworked assertions toward command-sequence, display-state identity, and final
+     background convergence projection.
+   - Re-ran the focused race-targeted matrix regression path.
 
-2. Correct animation catalog kind documentation. (priority: high)
-   - Align README and `docs/background-convergence-v1.md` examples with the
-     actual API value `kind: "generated"` for generated animations.
-   - Add or keep documentation/tests that freeze only the supported bounded
-     kind vocabulary: `generated` and `firmware_preset`.
+2. Correct animation catalog kind documentation. (done high priority)
+   - Aligned README and `docs/background-convergence-v1.md` examples to
+     `kind: "generated"` for generated animations.
+   - `GET /api/v1/animations/catalog` now returns `generated`/`firmware_preset`
+     vocabulary.
 
-3. Relax catalog compatibility tests for additive fields. (priority: medium)
-   - Preserve assertions that every entry includes `id`, `kind`, and
-     `playable` with correct semantics.
-   - Stop requiring exactly three fields unless the product decision is to
-     forbid additive catalog metadata.
-   - If exact-minimal catalog shape remains the intended v1 contract, document
-     that explicitly and defer firmware-preset parameter inspection.
+3. Relax catalog compatibility tests for additive fields. (done)
+   - Updated tests to require stable `id`, `kind`, `playable` fields while permitting
+     bounded additive firmware preset metadata.
+
+4. Codify bounded catalog metadata contract for firmware presets. (done)
+   - Added `effect_id`, `interval`, and `color` additive fields to catalog
+     firmware-preset entries in the API contract and registry implementation.
 
 ### Phase 2: Finish Catalog And Event API Truthfulness
 
-1. Decide whether catalog metadata should include firmware-preset details.
-   (priority: medium)
-   - If operators need inspection, extend catalog entries additively with
-     bounded metadata such as `effect_id`, `interval`, and `color` for
-     `kind=firmware_preset`.
-   - Keep `playable=false` for firmware presets and preserve `/play`, `/notify`,
-     `/events`, and scheduler non-renderable guardrails.
-   - Freeze any added fields with compatibility tests and avoid runtime state or
-     background IDs as metric labels.
+1. Make catalog metadata contract explicit and fixed. (done)
+   - Added additive firmware-preset metadata (`effect_id`, `interval`, `color`)
+     while keeping bounded stable fields (`id`, `kind`, `playable`).
+   - `playable` remains false for `firmware_preset`.
+   - Registry and catalog tests now verify bounded contract and metadata presence/absence rules.
 
-2. Keep generic event override documentation and tests aligned. (priority:
-   medium)
+2. Keep generic event override documentation and tests aligned. (status: in_progress)
    - Preserve synchronous validation for known `/api/v1/events` override fields:
      `animation`, `restore`, and `duration`.
    - Preserve schema-agnostic handling for unknown/custom attributes, including
@@ -234,8 +221,8 @@ Low severity:
 1. Make duplicate-command assertions deterministic where practical. (priority:
    medium)
    - Replace small real sleeps in previous-frame duplicate suppression tests
-     with a fake-client quiet assertion, scheduler idle hook, or bounded
-     no-command helper if a clean seam exists.
+   with a fake-client quiet assertion, scheduler idle hook, or bounded
+   no-command helper if a clean seam exists.
    - Preserve correctness over optimization for `restore: leave`, `clear`,
      `blank`, direct controls, and unknown display states.
 
@@ -246,6 +233,25 @@ Low severity:
    - If operators need a separate dedupe counter, add a bounded reason label
      without polluting restore-attempt counters.
    - Keep `/readyz.background` as the authoritative current convergence signal.
+
+### Phase 3a: Cross-surface Vocabulary Consistency (high)
+
+1. Unify background kind vocabulary across all user-facing surfaces. (high)
+   - Make `generated` the canonical public `kind` for background readiness/metrics
+     and catalog-facing payloads.
+   - Keep a single translation function and prove all docs/tests/surface outputs use it.
+   - If internal `renderable` is retained for matrix internals, treat it as private and
+     remove it from user-facing contracts.
+
+2. Resolve catalog shape contract language in all operator docs. (high)
+   - Ensure README/docs and `/api/v1/animations/catalog` behavior match:
+     bounded stable fields plus optional firmware metadata.
+   - Document any runtime surfaces that still emit legacy/internal terms and remove if unneeded.
+
+3. Add deterministic regression for display-state identity in dedupe. (high)
+   - Replace command-order heuristics with explicit state-identity/finality synchronization
+     (for example a fake-client hook or scheduler idle marker) so this guardrail
+     cannot fail due to command interleaving.
 
 ### Phase 4: Declarative Animation Expansion
 

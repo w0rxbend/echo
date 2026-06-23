@@ -46,7 +46,14 @@ func TestRegistryRenderableHelpersSeparateGeneratedAnimationsFromFirmwarePresets
 	}
 	if got, want := registry.Catalog(), []CatalogEntry{
 		{ID: "alert", Kind: EntryGenerated, Playable: true},
-		{ID: "matrix_rain_background", Kind: EntryFirmwarePreset, Playable: false},
+		{
+			ID:       "matrix_rain_background",
+			Kind:     EntryFirmwarePreset,
+			Playable: false,
+			EffectID: bytePtr(9),
+			Interval: durationPtr(150 * time.Millisecond),
+			Color:    rgbPtr(RGB{R: 3, G: 4, B: 5}),
+		},
 		{ID: "notification", Kind: EntryGenerated, Playable: true},
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Catalog() = %+v, want %+v", got, want)
@@ -82,9 +89,23 @@ func TestRegistryCatalogCoversAllEntriesAndKeepsFirmwarePresetsNonPlayable(t *te
 
 	got := registry.Catalog()
 	want := []CatalogEntry{
-		{ID: "matrix_rain_background", Kind: EntryFirmwarePreset, Playable: false},
+		{
+			ID:       "matrix_rain_background",
+			Kind:     EntryFirmwarePreset,
+			Playable: false,
+			EffectID: bytePtr(9),
+			Interval: durationPtr(150 * time.Millisecond),
+			Color:    rgbPtr(RGB{R: 3, G: 4, B: 5}),
+		},
 		{ID: "notification", Kind: EntryGenerated, Playable: true},
-		{ID: "slow_glow_background", Kind: EntryFirmwarePreset, Playable: false},
+		{
+			ID:       "slow_glow_background",
+			Kind:     EntryFirmwarePreset,
+			Playable: false,
+			EffectID: bytePtr(4),
+			Interval: durationPtr(500 * time.Millisecond),
+			Color:    rgbPtr(RGB{R: 1, G: 2, B: 3}),
+		},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Catalog() = %+v, want %+v", got, want)
@@ -144,4 +165,16 @@ func TestRegistryEntryAndFirmwarePresetReturnClonedMetadata(t *testing.T) {
 	if *secondEntry.FirmwarePreset != preset {
 		t.Fatalf("second Entry().FirmwarePreset = %+v, want %+v", *secondEntry.FirmwarePreset, preset)
 	}
+}
+
+func bytePtr(value byte) *byte {
+	return &value
+}
+
+func durationPtr(value time.Duration) *time.Duration {
+	return &value
+}
+
+func rgbPtr(value RGB) *RGB {
+	return &value
 }

@@ -877,18 +877,12 @@ func TestAnimationCatalogEndpointIncludesNonPlayableMetadata(t *testing.T) {
 		Kind     string
 		Playable bool
 	}
-	want := []catalogEntry{
-		{ID: firmwarePresetID, Kind: string(animations.EntryFirmwarePreset), Playable: false},
-		{ID: animations.NotificationAnimationID, Kind: string(animations.EntryGenerated), Playable: true},
+	want := map[string]catalogEntry{
+		firmwarePresetID:                   {ID: firmwarePresetID, Kind: string(animations.EntryFirmwarePreset), Playable: false},
+		animations.NotificationAnimationID: {ID: animations.NotificationAnimationID, Kind: string(animations.EntryGenerated), Playable: true},
 	}
-	if len(body.Animations) != len(want) {
-		t.Fatalf("GET /animations/catalog animations = %+v, want %+v", body.Animations, want)
-	}
-	for i := range want {
-		entry := body.Animations[i]
-		if len(entry) != 3 {
-			t.Fatalf("GET /animations/catalog entry %d = %+v, want exactly stable fields id, kind, playable", i, entry)
-		}
+	seen := map[string]bool{}
+	for i, entry := range body.Animations {
 		id, ok := entry["id"].(string)
 		if !ok {
 			t.Fatalf("GET /animations/catalog entry %d missing stable string field id: %+v", i, entry)
@@ -901,8 +895,34 @@ func TestAnimationCatalogEndpointIncludesNonPlayableMetadata(t *testing.T) {
 		if !ok {
 			t.Fatalf("GET /animations/catalog entry %d missing stable bool field playable: %+v", i, entry)
 		}
-		if id != want[i].ID || kind != want[i].Kind || playable != want[i].Playable {
-			t.Fatalf("GET /animations/catalog animations = %+v, want %+v", body.Animations, want)
+
+		switch kind {
+		case string(animations.EntryGenerated), string(animations.EntryFirmwarePreset):
+		default:
+			t.Fatalf("GET /animations/catalog entry %d id=%s has unsupported kind %q", i, id, kind)
+		}
+		if kind == string(animations.EntryGenerated) && !playable {
+			t.Fatalf("GET /animations/catalog entry %d id=%s kind=generated must have playable=true", i, id)
+		}
+		if kind == string(animations.EntryFirmwarePreset) && playable {
+			t.Fatalf("GET /animations/catalog entry %d id=%s kind=firmware_preset must have playable=false", i, id)
+		}
+		if _, ok := seen[id]; ok {
+			t.Fatalf("GET /animations/catalog has duplicate id %q", id)
+		}
+		seen[id] = true
+
+		expected, ok := want[id]
+		if !ok {
+			continue
+		}
+		if kind != expected.Kind || playable != expected.Playable {
+			t.Fatalf("GET /animations/catalog id=%s fields %s = %+v, want %+v", id, id, catalogEntry{ID: id, Kind: kind, Playable: playable}, expected)
+		}
+	}
+	for id, expected := range want {
+		if !seen[id] {
+			t.Fatalf("GET /animations/catalog missing required entry: %+v", expected)
 		}
 	}
 }
@@ -911,6 +931,11 @@ func TestFirmwarePresetIsNotPlayableThroughPublicAnimationIngress(t *testing.T) 
 	const firmwarePresetID = "matrix_rain_background"
 
 	t.Run("catalog", func(t *testing.T) {
+		type catalogColor struct {
+			R byte `json:"r"`
+			G byte `json:"g"`
+			B byte `json:"b"`
+		}
 		httpServer := newAnimationAPITestServer(t)
 		resp, err := http.Get(httpServer.URL + "/api/v1/animations/catalog")
 		if err != nil {
@@ -924,20 +949,42 @@ func TestFirmwarePresetIsNotPlayableThroughPublicAnimationIngress(t *testing.T) 
 
 		var body struct {
 			Animations []struct {
-				ID       string `json:"id"`
-				Kind     string `json:"kind"`
-				Playable bool   `json:"playable"`
+				ID       string         `json:"id"`
+				Kind     string         `json:"kind"`
+				Playable bool           `json:"playable"`
+				EffectID *byte          `json:"effect_id"`
+				Interval *time.Duration `json:"interval"`
+				Color    *catalogColor  `json:"color"`
 			} `json:"animations"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
 		for _, entry := range body.Animations {
-			if entry.ID == firmwarePresetID {
-				if entry.Kind != string(animations.EntryFirmwarePreset) || entry.Playable {
-					t.Fatalf("catalog firmware preset entry = %+v, want kind=%q playable=false", entry, animations.EntryFirmwarePreset)
+			switch entry.Kind {
+			case string(animations.EntryGenerated):
+				if entry.EffectID != nil || entry.Interval != nil || entry.Color != nil {
+					t.Fatalf("generated catalog entry must not include firmware preset metadata: %+v", entry)
+				}
+			case string(animations.EntryFirmwarePreset):
+				if entry.ID != firmwarePresetID {
+					continue
+				}
+				if entry.EffectID == nil || *entry.EffectID != 12 {
+					t.Fatalf("catalog firmware preset entry %s has effect_id=%v, want 12", firmwarePresetID, entry.EffectID)
+				}
+				if entry.Interval == nil || *entry.Interval != 90*time.Millisecond {
+					t.Fatalf("catalog firmware preset entry %s has interval=%v, want %v", firmwarePresetID, entry.Interval, 90*time.Millisecond)
+				}
+				if entry.Color == nil || entry.Color.R != 0 || entry.Color.G != 255 || entry.Color.B != 85 {
+					t.Fatalf("catalog firmware preset entry %s has color=%+v, want {r:0 g:255 b:85}", firmwarePresetID, entry.Color)
+				}
+				if entry.Playable {
+					t.Fatalf("catalog firmware preset entry = %+v, want playable=false", entry)
 				}
 				return
+			default:
+				t.Fatalf("GET /animations/catalog entry %q has unsupported kind %q", entry.ID, entry.Kind)
 			}
 		}
 		t.Fatalf("catalog missing firmware preset %q: %+v", firmwarePresetID, body.Animations)
