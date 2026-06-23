@@ -973,6 +973,8 @@ func TestAppPlaysConfigAuthoredFrameAnimationThroughFakeESP(t *testing.T) {
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_animation_render_duration_seconds_count",
 		`animation="orientation_badge"`)
 	waitForSchedulerState(t, httpServer.URL, "ready")
+	waitForMetricLine(t, httpServer.URL, "matrix_proxy_play_items_total",
+		`item_kind="animation"`, `item="orientation_badge"`, `outcome="executed"`, " 1")
 	waitForGaugeValue(t, httpServer.URL, "matrix_proxy_play_queue_depth", "0")
 	assertNoBufferedSetFrame(t, matrixServer)
 }

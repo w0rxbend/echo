@@ -11,8 +11,9 @@ import (
 
 func TestAnimationCatalogFreezesFrameAndFirmwarePresetContract(t *testing.T) {
 	const (
-		frameAnimationID = "pixel_badge"
-		firmwarePresetID = "matrix_rain_background"
+		generatedAnimationID = animations.NotificationAnimationID
+		frameAnimationID     = "pixel_badge"
+		firmwarePresetID     = "matrix_rain_background"
 	)
 	httpServer := newConfigAuthoredFrameAnimationAPITestServer(t)
 
@@ -60,7 +61,26 @@ func TestAnimationCatalogFreezesFrameAndFirmwarePresetContract(t *testing.T) {
 		if _, ok := entry["playable"].(bool); !ok {
 			t.Fatalf("GET /animations/catalog entry %d id=%s missing bool playable: %+v", i, id, entry)
 		}
+		if kind := entry["kind"]; kind == "renderable" {
+			t.Fatalf("GET /animations/catalog entry %d id=%s leaked internal kind %q", i, id, kind)
+		}
 		entries[id] = entry
+	}
+
+	generatedEntry, ok := entries[generatedAnimationID]
+	if !ok {
+		t.Fatalf("GET /animations/catalog missing generated animation %q: %+v", generatedAnimationID, body.Animations)
+	}
+	if got := generatedEntry["kind"]; got != string(animations.PublicKindGenerated) {
+		t.Fatalf("GET /animations/catalog generated animation kind = %v, want %q", got, animations.PublicKindGenerated)
+	}
+	if got := generatedEntry["playable"]; got != true {
+		t.Fatalf("GET /animations/catalog generated animation playable = %v, want true", got)
+	}
+	for _, field := range []string{"effect_id", "interval", "color"} {
+		if _, ok := generatedEntry[field]; ok {
+			t.Fatalf("GET /animations/catalog generated animation leaked firmware metadata field %q: %+v", field, generatedEntry)
+		}
 	}
 
 	frameEntry, ok := entries[frameAnimationID]

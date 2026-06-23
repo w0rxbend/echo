@@ -76,6 +76,8 @@ type schemaAnimation struct {
 	Color     *schemaRGB          `yaml:"color"`
 	Palette   *schemaFramePalette `yaml:"palette"`
 	Frames    *[]schemaFrame      `yaml:"frames"`
+
+	presentFields map[string]struct{}
 }
 
 type schemaRGB struct {
@@ -87,6 +89,26 @@ type schemaFramePalette []animations.FramePaletteEntry
 type schemaFrame struct {
 	Delay *schemaDuration `yaml:"delay"`
 	Rows  []string        `yaml:"rows"`
+}
+
+func (a *schemaAnimation) UnmarshalYAML(node *yaml.Node) error {
+	type rawSchemaAnimation schemaAnimation
+	var raw rawSchemaAnimation
+	if err := node.Decode(&raw); err != nil {
+		return err
+	}
+
+	*a = schemaAnimation(raw)
+	a.presentFields = make(map[string]struct{}, len(node.Content)/2)
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i < len(node.Content); i += 2 {
+			key := node.Content[i]
+			if key.Kind == yaml.ScalarNode {
+				a.presentFields[key.Value] = struct{}{}
+			}
+		}
+	}
+	return nil
 }
 
 func (c *schemaRGB) UnmarshalYAML(unmarshal func(any) error) error {
@@ -155,7 +177,7 @@ func loadAnimationRegistry(path string) (*animations.Registry, error) {
 	}
 
 	var file schemaAnimationsFile
-	if err := yaml.Unmarshal(data, &file); err != nil {
+	if err := parseAnimationsFile(data, &file); err != nil {
 		return nil, fmt.Errorf("parse animations file: %w", err)
 	}
 
@@ -171,6 +193,155 @@ func loadAnimationRegistry(path string) (*animations.Registry, error) {
 	}
 
 	return registry, nil
+}
+
+func parseAnimationsFile(data []byte, file *schemaAnimationsFile) error {
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return err
+	}
+	if err := validateAnimationsFileSchema(&root); err != nil {
+		return err
+	}
+	return root.Decode(file)
+}
+
+func validateAnimationsFileSchema(root *yaml.Node) error {
+	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 {
+		return errors.New("animations file must be a YAML document")
+	}
+	doc := root.Content[0]
+	if doc.Kind != yaml.MappingNode {
+		return errors.New("animations file must be a mapping")
+	}
+
+	for i := 0; i < len(doc.Content); i += 2 {
+		key := doc.Content[i]
+		value := doc.Content[i+1]
+		if key.Kind != yaml.ScalarNode {
+			return errors.New("top-level field must be a scalar")
+		}
+		if key.Value != "animations" {
+			return fmt.Errorf("unknown top-level field %q at %s", key.Value, key.Value)
+		}
+		if err := validateAnimationsMapSchema(value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateAnimationsMapSchema(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return errors.New("animations must be a mapping")
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		key := node.Content[i]
+		value := node.Content[i+1]
+		if key.Kind != yaml.ScalarNode {
+			return errors.New("animation id must be a scalar")
+		}
+		id := key.Value
+		if value.Kind != yaml.MappingNode {
+			return fmt.Errorf("animation %q: entry at animation %s must be a mapping", id, id)
+		}
+		if err := validateAnimationEntrySchema(id, value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateAnimationEntrySchema(id string, node *yaml.Node) error {
+	for i := 0; i < len(node.Content); i += 2 {
+		key := node.Content[i]
+		value := node.Content[i+1]
+		if key.Kind != yaml.ScalarNode {
+			return fmt.Errorf("animation %q: field at animation %s must be a scalar", id, id)
+		}
+		path := animationFieldPath(id, key.Value)
+		switch key.Value {
+		case "type", "generator", "effect_id", "interval":
+		case "color":
+			if err := validateAnimationColorSchema(id, value, path); err != nil {
+				return err
+			}
+		case "palette":
+			if err := validateAnimationPaletteSchema(id, value, path); err != nil {
+				return err
+			}
+		case "frames":
+			if err := validateAnimationFramesSchema(id, value, path); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("animation %q: unknown field %q at %s", id, key.Value, path)
+		}
+	}
+	return nil
+}
+
+func validateAnimationFramesSchema(id string, node *yaml.Node, path string) error {
+	if node.Kind != yaml.SequenceNode {
+		return nil
+	}
+	for i, frame := range node.Content {
+		framePath := fmt.Sprintf("%s[%d]", path, i)
+		if frame.Kind != yaml.MappingNode {
+			return fmt.Errorf("animation %q: frame at %s must be a mapping", id, framePath)
+		}
+		for j := 0; j < len(frame.Content); j += 2 {
+			key := frame.Content[j]
+			if key.Kind != yaml.ScalarNode {
+				return fmt.Errorf("animation %q: frame field at %s must be a scalar", id, framePath)
+			}
+			switch key.Value {
+			case "delay", "rows":
+			default:
+				return fmt.Errorf("animation %q: unknown field %q at %s.%s", id, key.Value, framePath, key.Value)
+			}
+		}
+	}
+	return nil
+}
+
+func validateAnimationPaletteSchema(id string, node *yaml.Node, path string) error {
+	if node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		key := node.Content[i]
+		value := node.Content[i+1]
+		if key.Kind != yaml.ScalarNode {
+			return fmt.Errorf("animation %q: palette symbol at %s must be a scalar", id, path)
+		}
+		if err := validateAnimationColorSchema(id, value, path+"."+key.Value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateAnimationColorSchema(id string, node *yaml.Node, path string) error {
+	if node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		key := node.Content[i]
+		if key.Kind != yaml.ScalarNode {
+			return fmt.Errorf("animation %q: color field at %s must be a scalar", id, path)
+		}
+		switch key.Value {
+		case "r", "g", "b":
+		default:
+			return fmt.Errorf("animation %q: unknown field %q at %s.%s", id, key.Value, path, key.Value)
+		}
+	}
+	return nil
+}
+
+func animationFieldPath(id, field string) string {
+	return "animation " + id + "." + field
 }
 
 func resolveReferencedPath(configPath, referencedPath string) string {
@@ -245,6 +416,9 @@ func rejectAnimationFields(animationType string, entry schemaAnimation, fields .
 }
 
 func animationFieldPresent(entry schemaAnimation, field string) bool {
+	if _, ok := entry.presentFields[field]; ok {
+		return true
+	}
 	switch field {
 	case "generator":
 		return entry.Generator != nil

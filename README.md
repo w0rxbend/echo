@@ -32,9 +32,14 @@ metadata instead of app-level special cases. Firmware preset entries are
 background-only metadata; they are not generated animations and cannot be used
 as ordinary rule `play.animation` values or direct playback requests.
 
-Animation config is additive under the top-level `animations` map. Each key is
-the registry ID and must be unique after all animation sources are merged. The
-supported entry forms are:
+Animation config is strict and additive under the top-level `animations` map.
+Each key is the registry ID and must be unique after all animation sources are
+merged. Unknown or misspelled keys are rejected during config load, including
+keys at the document root, under `animations`, inside an animation entry,
+inside frame objects, inside palette entries, and inside color objects. This
+strict schema applies only to operator-authored `animations.yaml`; generic
+event attributes remain schema-agnostic as described below. The supported entry
+forms are:
 
 - `type: generated`: a generated alias for a built-in app renderer. The
   `generator` field names the built-in generator, such as `notification`.
@@ -81,7 +86,11 @@ Config loading rejects malformed animation entries before they enter the
 registry. Rejections include duplicate animation IDs, frame entries with no
 frames, missing palettes, unknown row symbols, rows that are not exactly eight
 symbols, frame sets that do not contain exactly eight rows per frame, and
-missing, zero, negative, or malformed frame delays.
+missing, zero, negative, or malformed frame delays. Type-specific fields are
+also enforced by presence: generated entries may not include firmware or frame
+fields, firmware presets may not include generator, palette, or frames fields,
+and frame entries may not include generator, firmware preset metadata, or color
+fields, even when those fields are empty.
 
 When `background.restore_on_idle` is true and `background.animation` is set,
 the configured background is scheduler-owned desired matrix state. After the

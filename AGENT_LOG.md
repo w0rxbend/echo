@@ -4261,3 +4261,90 @@ A  internal/config/testdata/animation_generated_with_palette.yaml
 A  internal/integrations/httpapi/animations_test.go
 A  internal/integrations/httpapi/readyz_test.go
 M  internal/integrations/httpapi/server_test.go
+2026-06-23T12:34:40Z iteration 5 started remaining=15494s
+2026-06-23T12:34:40Z iteration 5 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T12:34:40Z iteration 5 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-r8idjrz6/repo copied_entries=73
+2026-06-23T12:34:40Z iteration 5 ideator phase started count=3
+2026-06-23T12:34:40Z iteration 5 ideator phase concurrency workers=3
+2026-06-23T12:34:40Z iteration 5 ideator 1 role="the pragmatist" started
+2026-06-23T12:34:40Z iteration 5 ideator 2 role="the architect" started
+2026-06-23T12:34:40Z iteration 5 ideator 3 role="the contrarian" started
+2026-06-23T12:34:49Z iteration 5 ideator 2 role="the architect" completed status=0
+2026-06-23T12:34:50Z iteration 5 ideator 3 role="the contrarian" completed status=0
+2026-06-23T12:34:52Z iteration 5 ideator 1 role="the pragmatist" completed status=0
+2026-06-23T12:34:52Z iteration 5 ideator phase completed approaches=3
+2026-06-23T12:34:52Z iteration 5 selector started approaches=3
+2026-06-23T12:35:02Z iteration 5 selector completed status=0
+2026-06-23T12:35:02Z iteration 5 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-r8idjrz6/repo
+2026-06-23T12:35:02Z iteration 5 selector rejected alternative role="the architect" approach="Contract-First Schema Hardening: treat the next iteration as a boundary-tightening pass, starting from externally visible config and catalog contracts, then driving implementati..." reason="Strongly aligned, but selected only as part of a hybrid because its broader contract-first framing could spread attention across catalog and API compatibility work when the immediate highest-priority gap is config ingress strictness."
+2026-06-23T12:35:02Z iteration 5 selector rejected alternative role="the contrarian" approach="Contract Freeze Before Strictness: treat the next iteration as a public/schema contract stabilization pass first, then let strict animation-config validation fall out of those c..." reason="Useful warning against accidental surface drift, but not selected as-is because leading with contract freeze risks becoming indirect or documentation-heavy before closing the known strict-config bug."
+2026-06-23T12:35:02Z iteration 5 selector rejected alternative role="the pragmatist" approach="Schema Firewall First: treat animation config loading as an operator-facing API boundary, and make the next iteration center on proving that only intentional YAML shapes can ent..." reason="Closest to the selected direction, but strengthened with explicit contract sentinels from the other approaches so schema hardening does not accidentally alter public catalog shape, kind projection, frame playback, or background behavior."
+2026-06-23T12:35:02Z iteration 5 selector alternatives persisted count=3
+2026-06-23T12:35:02Z iteration 5 selector structured alternatives persisted count=3
+2026-06-23T12:35:02Z iteration 5 planner started
+2026-06-23T12:35:24Z iteration 5 plan: 5 task(s) in 2 phase(s). The slice centers on the animation-config schema firewall because silent YAML acceptance is the highest-value current gap. Phase 1 changes the config trust boundary and its regression tests together. Phase 2 runs independent compatibility sentinels in parallel so strict config loading does not accidentally drift public catalog shape, kind projection, frame playback, or operator documentation.
+2026-06-23T12:35:24Z iteration 5 phase 1 started parallel=False tasks=2
+2026-06-23T12:36:59Z iteration 5 task t1 ('Add strict animations YAML schema validation') status=0
+2026-06-23T12:39:12Z iteration 5 task t2 ('Lock strict config rejection tests') status=0
+2026-06-23T12:39:12Z iteration 5 phase 2 started parallel=True tasks=3
+2026-06-23T12:39:50Z iteration 5 task t5 ('Document strict animation config behavior') status=0
+2026-06-23T12:40:11Z iteration 5 task t3 ('Preserve catalog and kind projection sentinels') status=0
+2026-06-23T12:40:55Z iteration 5 task t4 ('Keep frame playback black-box coverage intact') status=0
+2026-06-23T12:40:55Z iteration 5 reviewer started
+
+## Reviewer Summary - Iteration 5
+
+### What Was Done
+
+- Inspected the exact git diff and every file created or modified in this iteration: config loader/tests, strict-schema fixtures, README, animation config example, background contract doc, catalog/kind guardrail tests, app fake-ESP frame playback test, and orchestration metadata.
+- Confirmed `animations.yaml` now runs a YAML-node schema validation pass before decode and rejects unknown keys at the document root, animation entry level, frame-object level, palette color-object level, and firmware/color object level.
+- Confirmed unknown-key errors include the animation ID and field path for animation-scoped fields, with fixtures covering misspelled entry fields, unknown frame fields, unknown palette color fields, unknown firmware color fields, and unknown top-level fields.
+- Confirmed type-specific stray-field validation now treats empty-but-present fields as present, so generated, firmware preset, and frame entries reject disallowed fields even when those YAML values decode to nil or empty collections.
+- Confirmed public compatibility sentinels remained intact: frame animations stay `kind: "generated"`, firmware metadata stays absent from generated/frame catalog entries, internal `renderable` does not leak through catalog/kind projection tests, and fake-ESP frame playback still verifies physical-chain packed `SetFullFrame` payloads.
+- Confirmed README, `configs/animations.example.yaml`, and `docs/background-convergence-v1.md` now document strict operator-authored animation config while preserving schema-agnostic generic event attributes.
+
+### What Was Found
+
+- No high-severity runtime regression was found. `go test ./...`, `go vet ./...`, `go test -race ./...`, and focused strict-config/frame/catalog/app checks all pass.
+- The planned strict unknown-field work is complete for unknown keys and known type-specific stray fields, including empty-but-present disallowed fields.
+- Medium severity: duplicate YAML keys are still not explicitly rejected. Duplicate top-level `animations`, duplicate animation IDs, duplicate animation fields, duplicate frame fields, duplicate palette symbols, or duplicate color channels can remain ambiguous because YAML decoding may choose one value after the schema pre-pass.
+- Medium severity: the strict schema pre-pass validates allowed key names but leaves wrong-shape/type diagnostics to the downstream decoders. That is acceptable for correctness, but support-facing error vocabulary can still vary between unknown-key and malformed-shape failures.
+- Medium severity: catalog wire-shape and public kind compatibility remain hand-maintained sentinels. Future catalog metadata additions still need DTO, docs, and compatibility tests updated together.
+
+### Top Improvement Proposals
+
+1. Add duplicate YAML-key rejection for every `animations.yaml` mapping level, with animation ID and field-path errors matching the new unknown-key vocabulary.
+2. Add duplicate-key fixtures for root fields, animation IDs, animation entry fields, frame fields, palette symbols, and color channels.
+3. Preserve the strict unknown-field and empty-present stray-field tests as the operator-authored config firewall; keep generic event attributes schema-agnostic.
+4. Keep frame playback black-box coverage with the asymmetric display-space fixture as the firmware-payload contract for config-authored frames.
+5. Keep catalog and public-kind sentinels synchronized with explicit DTOs, README, and `docs/background-convergence-v1.md` whenever metadata changes.
+
+### Verification
+
+- `go test ./...` passed.
+- `go vet ./...` passed.
+- `go test -race ./...` passed.
+- `go test -race ./internal/animations ./internal/config ./internal/app ./internal/integrations/httpapi -run 'TestFrameAnimation|TestLoadFrameAnimation|TestLoadRejectsInvalidFrameAnimation|TestLoadRejectsUnknownAnimationConfigFields|TestLoadRejectsStrayAnimationTypeFields|TestLoadRejectsEmptyPresentStrayAnimationTypeFields|TestConfigAuthoredFrameAnimationPublicSurfaces|TestAnimationCatalog|TestAppPlaysConfigAuthoredFrameAnimationThroughFakeESP|TestReadyzAndMetricsProjectGeneratedBackgroundKind|TestRegistryCatalogProjectsInternalRenderableKindToGenerated' -count=10` passed.
+2026-06-23T12:43:35Z iteration 5 reviewer completed status=0
+2026-06-23T12:43:35Z iteration 5 memory updated
+2026-06-23T12:43:35Z iteration 5 completed validation_status=0
+2026-06-23T12:43:35Z iteration 5 checkpoint started
+2026-06-23T12:43:35Z iteration 5 checkpoint status before commit:
+M  AGENT_LOG.md
+M  ALTERNATIVES.jsonl
+M  MEMORY.md
+M  PLAN.md
+M  README.md
+M  SCORES.jsonl
+M  configs/animations.example.yaml
+M  docs/background-convergence-v1.md
+M  internal/animations/registry_test.go
+M  internal/app/app_test.go
+M  internal/config/config_test.go
+M  internal/config/loader.go
+A  internal/config/testdata/animation_unknown_color_field.yaml
+A  internal/config/testdata/animation_unknown_entry_field.yaml
+A  internal/config/testdata/animation_unknown_frame_field.yaml
+A  internal/config/testdata/animation_unknown_palette_field.yaml
+A  internal/config/testdata/animation_unknown_top_level.yaml
+M  internal/integrations/httpapi/animations_test.go

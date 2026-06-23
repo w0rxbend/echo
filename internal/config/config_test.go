@@ -334,6 +334,54 @@ animations:
 	}
 }
 
+func TestLoadRejectsUnknownAnimationConfigFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		fixture string
+		want    []string
+	}{
+		{
+			name:    "top level",
+			fixture: "animation_unknown_top_level.yaml",
+			want:    []string{`unknown top-level field "version"`, "version"},
+		},
+		{
+			name:    "animation entry",
+			fixture: "animation_unknown_entry_field.yaml",
+			want:    []string{`animation "pixel_badge"`, `unknown field "pallete"`, "animation pixel_badge.pallete"},
+		},
+		{
+			name:    "frame object",
+			fixture: "animation_unknown_frame_field.yaml",
+			want:    []string{`animation "pixel_badge"`, `unknown field "transition"`, "animation pixel_badge.frames[0].transition"},
+		},
+		{
+			name:    "palette entry",
+			fixture: "animation_unknown_palette_field.yaml",
+			want:    []string{`animation "pixel_badge"`, `unknown field "label"`, "animation pixel_badge.palette.R.label"},
+		},
+		{
+			name:    "color object",
+			fixture: "animation_unknown_color_field.yaml",
+			want:    []string{`animation "pixel_badge"`, `unknown field "alpha"`, "animation pixel_badge.color.alpha"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := loadWithAnimationFixture(t, tt.fixture)
+			if err == nil {
+				t.Fatal("Load() error = nil, want unknown field rejection")
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("Load() error = %v, want containing %q", err, want)
+				}
+			}
+		})
+	}
+}
+
 func TestLoadRejectsStrayAnimationTypeFields(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -358,6 +406,228 @@ func TestLoadRejectsStrayAnimationTypeFields(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := loadWithAnimationFixture(t, tt.fixture)
+			if err == nil {
+				t.Fatal("Load() error = nil, want stray field rejection")
+			}
+			for _, want := range []string{
+				`field "` + tt.field + `"`,
+				tt.animationType + " animation",
+			} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("Load() error = %v, want containing %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+func TestLoadRejectsEmptyPresentStrayAnimationTypeFields(t *testing.T) {
+	tests := []struct {
+		name          string
+		animation     string
+		animationType string
+		field         string
+	}{
+		{
+			name:          "generated empty effect id",
+			animationType: "generated",
+			field:         "effect_id",
+			animation: `
+animations:
+  stray_generated:
+    type: generated
+    generator: notification
+    effect_id:
+`,
+		},
+		{
+			name:          "generated empty interval",
+			animationType: "generated",
+			field:         "interval",
+			animation: `
+animations:
+  stray_generated:
+    type: generated
+    generator: notification
+    interval:
+`,
+		},
+		{
+			name:          "generated empty color",
+			animationType: "generated",
+			field:         "color",
+			animation: `
+animations:
+  stray_generated:
+    type: generated
+    generator: notification
+    color:
+`,
+		},
+		{
+			name:          "generated empty palette",
+			animationType: "generated",
+			field:         "palette",
+			animation: `
+animations:
+  stray_generated:
+    type: generated
+    generator: notification
+    palette: {}
+`,
+		},
+		{
+			name:          "generated empty frames",
+			animationType: "generated",
+			field:         "frames",
+			animation: `
+animations:
+  stray_generated:
+    type: generated
+    generator: notification
+    frames: []
+`,
+		},
+		{
+			name:          "firmware preset empty generator",
+			animationType: "firmware_preset",
+			field:         "generator",
+			animation: `
+animations:
+  stray_firmware_preset:
+    type: firmware_preset
+    effect_id: 12
+    interval: 90ms
+    generator:
+`,
+		},
+		{
+			name:          "firmware preset empty palette",
+			animationType: "firmware_preset",
+			field:         "palette",
+			animation: `
+animations:
+  stray_firmware_preset:
+    type: firmware_preset
+    effect_id: 12
+    interval: 90ms
+    palette: {}
+`,
+		},
+		{
+			name:          "firmware preset empty frames",
+			animationType: "firmware_preset",
+			field:         "frames",
+			animation: `
+animations:
+  stray_firmware_preset:
+    type: firmware_preset
+    effect_id: 12
+    interval: 90ms
+    frames: []
+`,
+		},
+		{
+			name:          "frames empty generator",
+			animationType: "frames",
+			field:         "generator",
+			animation: `
+animations:
+  stray_frames:
+    type: frames
+    generator:
+    palette:
+      ".": "#000000"
+    frames:
+      - delay: 100ms
+        rows:
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+`,
+		},
+		{
+			name:          "frames empty effect id",
+			animationType: "frames",
+			field:         "effect_id",
+			animation: `
+animations:
+  stray_frames:
+    type: frames
+    effect_id:
+    palette:
+      ".": "#000000"
+    frames:
+      - delay: 100ms
+        rows:
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+`,
+		},
+		{
+			name:          "frames empty interval",
+			animationType: "frames",
+			field:         "interval",
+			animation: `
+animations:
+  stray_frames:
+    type: frames
+    interval:
+    palette:
+      ".": "#000000"
+    frames:
+      - delay: 100ms
+        rows:
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+`,
+		},
+		{
+			name:          "frames empty color",
+			animationType: "frames",
+			field:         "color",
+			animation: `
+animations:
+  stray_frames:
+    type: frames
+    color:
+    palette:
+      ".": "#000000"
+    frames:
+      - delay: 100ms
+        rows:
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+          - "........"
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := loadWithAnimations(t, tt.animation, validRules("notification"))
 			if err == nil {
 				t.Fatal("Load() error = nil, want stray field rejection")
 			}

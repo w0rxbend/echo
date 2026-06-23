@@ -1,4 +1,9 @@
 animations:
+  # This file is strict: unknown or misspelled keys are rejected during config
+  # load at every level, including animation entries, frame objects, palette
+  # entries, and color objects. Generic event attributes remain schema-agnostic;
+  # operator-authored animation config does not.
+
   # Generated aliases are renderable/playable and may be used by rules, /play,
   # /notify animation overrides, generic event attributes.animation, or
   # background restore. The generator names a built-in app renderer.

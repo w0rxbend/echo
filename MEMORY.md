@@ -1,4 +1,3 @@
-[learning] Read-only queue snapshots must not expose live pointers or mutable slices; otherwise callers can mutate queued work after scheduler admission.
 [learning] Defining a terminal outcome is not enough if nothing observes it; queue-cleared animations need metrics/logs or outcome hooks, not only a local error value.
 [learning] Broad lifecycle outcome enums should be wired at every terminal path or named narrowly; partial emission creates false observability confidence.
 [learning] Scheduler shutdown outcome reporting must account for the current in-flight item as well as queued items; queued-only shutdown metrics silently undercount interrupted playback.
@@ -48,3 +47,4 @@
 [learning] Public API examples must be verified against actual JSON wire encoding; Go-native types like `time.Duration` can serialize differently than operator-friendly docs imply.
 [learning] Declarative config entries with a `type` discriminator need type-specific field validation; otherwise irrelevant or misspelled fields can be silently ignored.
 [pattern] End-to-end frame animation tests should use asymmetric display-space fixtures and assert fake-ESP physical payloads after layout packing, not just public discovery or render output.
+[learning] Strict YAML schema validation must reject duplicate keys as well as unknown keys; otherwise ambiguous operator config can still decode to an unintended value.

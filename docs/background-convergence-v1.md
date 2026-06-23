@@ -145,9 +145,14 @@ not be submitted to `POST /api/v1/play`, `POST /api/v1/notify`, or generic
 
 ## Animation config schema
 
-The animation config file is additive under a top-level `animations` map. The
-map key is the animation ID, and duplicate IDs across the merged registry are
-rejected during config load.
+The animation config file is strict and additive under a top-level `animations`
+map. The map key is the animation ID, and duplicate IDs across the merged
+registry are rejected during config load. Unknown or misspelled keys are also
+rejected, including keys at the document root, under `animations`, inside an
+animation entry, inside frame objects, inside palette entries, and inside color
+objects. This strict schema is limited to operator-authored animation config;
+generic event attributes stay schema-agnostic except for the known playback
+override fields documented below.
 
 Supported entry forms:
 
@@ -196,7 +201,11 @@ animations:
 Config load rejects malformed dimensions, unknown palette symbols, empty frame
 sets, missing or invalid palettes, missing/zero/negative/malformed frame
 delays, references from rules to unknown or non-renderable animations, and
-duplicate animation IDs.
+duplicate animation IDs. Type-specific fields are rejected by presence:
+generated entries cannot include firmware preset or frame fields, firmware
+preset entries cannot include generator, palette, or frames fields, and frame
+entries cannot include generator, firmware preset metadata, or color fields,
+even when those fields are present with empty values.
 
 ## Generic event override validation
 

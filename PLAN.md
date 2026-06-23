@@ -59,8 +59,7 @@ Verified during this review:
 - `go test ./...` passes.
 - `go vet ./...` passes.
 - `go test -race ./...` passes.
-- `go test -race ./internal/animations ./internal/config ./internal/app ./internal/integrations/httpapi -run 'TestFrameAnimation|TestLoadFrameAnimation|TestLoadRejectsInvalidFrameAnimation|TestLoadRejectsStrayAnimationTypeFields|TestConfigAuthoredFrameAnimationPublicSurfaces|TestAnimationCatalog|TestAppPlaysConfigAuthoredFrameAnimationThroughFakeESP|TestReadyzAndMetricsProjectGeneratedBackgroundKind|TestRegistryCatalogProjectsInternalRenderableKindToGenerated' -count=10` passes.
-- `go test -race ./internal/app -run 'TestAppPlaysConfigAuthoredFrameAnimationThroughFakeESP' -count=20` passes.
+- `go test -race ./internal/animations ./internal/config ./internal/app ./internal/integrations/httpapi -run 'TestFrameAnimation|TestLoadFrameAnimation|TestLoadRejectsInvalidFrameAnimation|TestLoadRejectsUnknownAnimationConfigFields|TestLoadRejectsStrayAnimationTypeFields|TestLoadRejectsEmptyPresentStrayAnimationTypeFields|TestConfigAuthoredFrameAnimationPublicSurfaces|TestAnimationCatalog|TestAppPlaysConfigAuthoredFrameAnimationThroughFakeESP|TestReadyzAndMetricsProjectGeneratedBackgroundKind|TestRegistryCatalogProjectsInternalRenderableKindToGenerated' -count=10` passes.
 
 Core implementation status:
 
@@ -87,10 +86,13 @@ Core implementation status:
   observations.
 - Runtime animation config loads generated aliases, metadata-only firmware
   presets, and declarative `type: frames` animations.
+- `animations.yaml` now has node-level strict unknown-key validation for the
+  document root, animation entries, frame objects, palette color objects, and
+  color objects. Errors include the animation ID and offending field path.
 - Frame animations are authored as 8x8 display-space rows, validate palette
   symbols/dimensions/delays at config load, render immutable frame copies,
-  reject known type-specific stray fields, and remain generated/playable
-  entries in public discovery.
+  reject known type-specific stray fields including empty-but-present fields,
+  and remain generated/playable entries in public discovery.
 - Config-authored frame animation playback is covered end-to-end through app
   workers, HTTP `/play`, scheduler playback, fake ESP `SetFullFrame` commands,
   and layout-packed physical-chain payload assertions.
@@ -147,11 +149,17 @@ High severity:
 
 Medium severity:
 
-- Animation config now rejects known cross-type stray fields, but the YAML
-  decoder still ignores completely unknown or misspelled keys. A typo such as
-  `pallete` or an unsupported future-looking field can still be silently
-  dropped before type validation. Add strict unknown-field validation for
-  `animations.yaml`, with clear errors that include animation ID and field path.
+- `animations.yaml` now rejects unknown keys, but duplicate YAML keys are still
+  not explicitly rejected. Duplicate top-level `animations`, duplicate
+  animation fields such as two `palette` keys, or duplicate nested color keys
+  can remain ambiguous because YAML decoding may choose one value after the
+  schema pre-pass. Add duplicate-key validation at every mapping level with
+  clear animation ID and field-path errors.
+- The strict schema pre-pass validates allowed key names but intentionally
+  leaves node kind/type validation to the existing decoders. This is mostly
+  fine, but error vocabulary can still differ between unknown-field and
+  wrong-shape cases. Keep targeted tests for malformed mappings/sequences if
+  operator error messages become part of support workflows.
 - Catalog wire-shape compatibility is strong today, but the handler depends on
   a hand-written DTO conversion. Future metadata additions must update the DTO,
   README, contract doc, and compatibility tests together or risk accidental API
@@ -199,30 +207,34 @@ Low severity:
 
 ## Next Iteration Priorities
 
-### Phase 1: Make Animation Config Schema Strict
+### Phase 1: Finish Animation Config Schema Hardening
 
-1. Reject unknown keys in `animations.yaml`. (high)
-   - Use YAML node-level validation or `KnownFields`-style decoding for
-     animation entries, frame objects, palette/color objects, and top-level
-     fields.
-   - Include the animation ID and offending key in errors.
-   - Preserve intentional schema-agnostic behavior only for event attributes,
-     not operator-authored animation config.
+1. Reject duplicate YAML keys in `animations.yaml`. (high)
+   - Detect duplicate keys at the document root, inside the `animations` map,
+     inside each animation entry, inside each frame object, and inside color
+     objects used by firmware preset colors or palette entries.
+   - Include the animation ID and exact field path in errors, for example
+     `animation pixel_badge.palette.R.r`.
+   - Add fixtures for duplicate top-level fields, duplicate animation IDs,
+     duplicate entry fields, duplicate frame fields, duplicate palette symbols,
+     and duplicate color channels.
 
-2. Keep type-specific stray-field validation locked. (high)
+2. Preserve strict unknown-field validation. (high)
+   - Keep rejection of misspelled root, animation-entry, frame-object,
+     palette-color, and color-object keys.
+   - Preserve schema-agnostic behavior only for generic event attributes, not
+     operator-authored animation config.
+   - Keep tests asserting error text includes the animation ID and offending
+     path.
+
+3. Preserve type-specific presence validation. (high)
    - Preserve generated rejection of firmware preset fields and frame fields.
    - Preserve firmware preset rejection of `generator`, `palette`, and
      `frames`.
    - Preserve frame rejection of `generator`, `effect_id`, `interval`, and
      `color`.
-   - Add regression cases for empty-but-present disallowed fields so presence,
-     not only value, drives rejection.
-
-3. Keep frame-animation playback coverage black-box. (medium)
-   - Preserve the fake-ESP test that submits a config-authored frame animation
-     through `/play` and verifies exact physical-chain `SetFullFrame` payloads.
-   - Keep an asymmetric fixture that fails if display-space rows bypass the
-     layout mapper or odd-row display compensation.
+   - Keep empty-but-present field cases in the suite so presence, not decoded
+     value, drives rejection.
 
 ### Phase 2: Preserve Public Animation Discovery Contracts
 
@@ -316,11 +328,13 @@ Low severity:
 
 Keep existing coverage and expand in these areas:
 
+- Animation config schema tests for strict unknown fields, duplicate YAML keys,
+  type-specific stray fields, empty-but-present disallowed fields, malformed
+  nested node shapes, and clear error vocabulary.
 - Declarative frame animation tests for display-space parsing, palette
   validation, immutable render output, type-specific rejection, unknown-key
-  rejection, public catalog projection, and fake-ESP packed-frame playback.
-- Animation config schema tests for strict unknown fields, type-specific stray
-  fields, empty-but-present disallowed fields, and clear error vocabulary.
+  rejection, duplicate-key rejection, public catalog projection, and fake-ESP
+  packed-frame playback.
 - Protocol builder checksum and payload limits, including 196-byte custom frame
   uploads.
 - Response parser validation and typed status mapping.

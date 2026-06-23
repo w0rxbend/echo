@@ -60,7 +60,7 @@ func TestRegistryRenderableHelpersSeparateGeneratedAnimationsFromFirmwarePresets
 	}
 }
 
-func TestProjectPublicKind(t *testing.T) {
+func TestProjectPublicKindRejectsInternalKindLeakage(t *testing.T) {
 	tests := []struct {
 		name string
 		kind string
@@ -78,6 +78,9 @@ func TestProjectPublicKind(t *testing.T) {
 			got, ok := ProjectPublicKind(tt.kind)
 			if got != tt.want || ok != tt.ok {
 				t.Fatalf("ProjectPublicKind(%q) = %q, %v; want %q, %v", tt.kind, got, ok, tt.want, tt.ok)
+			}
+			if got == PublicKind("renderable") {
+				t.Fatalf("ProjectPublicKind(%q) leaked internal kind %q", tt.kind, got)
 			}
 		})
 	}
