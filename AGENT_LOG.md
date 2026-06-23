@@ -3384,3 +3384,530 @@ M  internal/animations/registry_test.go
 M  internal/integrations/httpapi/handlers.go
 M  internal/integrations/httpapi/server_test.go
 M  internal/matrix/scheduler_test.go
+2026-06-23T10:51:16Z iteration 2 started remaining=16923s
+2026-06-23T10:51:16Z iteration 2 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:51:16Z iteration 2 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-stejx623/repo copied_entries=55
+2026-06-23T10:51:16Z iteration 2 ideator phase started count=3
+2026-06-23T10:51:16Z iteration 2 ideator phase concurrency workers=3
+2026-06-23T10:51:16Z iteration 2 ideator 1 role="the pragmatist" started
+2026-06-23T10:51:16Z iteration 2 ideator 2 role="the architect" started
+2026-06-23T10:51:16Z iteration 2 ideator 3 role="the contrarian" started
+2026-06-23T10:51:19Z iteration 2 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:51:19Z iteration 2 ideator 2 role="the architect" completed status=1
+2026-06-23T10:51:19Z iteration 2 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:51:19Z iteration 2 ideator phase completed approaches=0
+2026-06-23T10:51:19Z iteration 2 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:51:19Z iteration 2 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-stejx623/repo
+2026-06-23T10:51:19Z iteration 2 planner started
+2026-06-23T10:51:21Z iteration 2 planner failed status=1
+2026-06-23T10:51:21Z failure summary iter 2: planner failed (rc=1)
+2026-06-23T10:51:21Z iteration 2 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:51:21Z iteration 3 started remaining=16918s
+2026-06-23T10:51:21Z iteration 3 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:51:21Z iteration 3 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-7k86mgmv/repo copied_entries=55
+2026-06-23T10:51:21Z iteration 3 ideator phase started count=3
+2026-06-23T10:51:21Z iteration 3 ideator phase concurrency workers=3
+2026-06-23T10:51:21Z iteration 3 ideator 1 role="the pragmatist" started
+2026-06-23T10:51:21Z iteration 3 ideator 2 role="the architect" started
+2026-06-23T10:51:21Z iteration 3 ideator 3 role="the contrarian" started
+2026-06-23T10:51:23Z iteration 3 ideator 2 role="the architect" completed status=1
+2026-06-23T10:51:23Z iteration 3 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:51:25Z iteration 3 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:51:25Z iteration 3 ideator phase completed approaches=0
+2026-06-23T10:51:25Z iteration 3 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:51:25Z iteration 3 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-7k86mgmv/repo
+2026-06-23T10:51:25Z iteration 3 planner started
+2026-06-23T10:51:27Z iteration 3 planner failed status=1
+2026-06-23T10:51:27Z failure summary iter 3: planner failed (rc=1)
+2026-06-23T10:51:27Z iteration 3 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:51:27Z iteration 4 started remaining=16912s
+2026-06-23T10:51:27Z iteration 4 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:51:27Z iteration 4 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-c7ki2kbc/repo copied_entries=55
+2026-06-23T10:51:27Z iteration 4 ideator phase started count=3
+2026-06-23T10:51:27Z iteration 4 ideator phase concurrency workers=3
+2026-06-23T10:51:27Z iteration 4 ideator 1 role="the pragmatist" started
+2026-06-23T10:51:27Z iteration 4 ideator 2 role="the architect" started
+2026-06-23T10:51:27Z iteration 4 ideator 3 role="the contrarian" started
+2026-06-23T10:51:29Z iteration 4 ideator 2 role="the architect" completed status=1
+2026-06-23T10:51:29Z iteration 4 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:51:29Z iteration 4 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:51:29Z iteration 4 ideator phase completed approaches=0
+2026-06-23T10:51:29Z iteration 4 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:51:29Z iteration 4 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-c7ki2kbc/repo
+2026-06-23T10:51:29Z iteration 4 planner started
+2026-06-23T10:51:31Z iteration 4 planner failed status=1
+2026-06-23T10:51:31Z failure summary iter 4: planner failed (rc=1)
+2026-06-23T10:51:31Z iteration 4 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:51:31Z iteration 5 started remaining=16908s
+2026-06-23T10:51:31Z iteration 5 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:51:31Z iteration 5 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-kg4c_ohx/repo copied_entries=55
+2026-06-23T10:51:31Z iteration 5 ideator phase started count=3
+2026-06-23T10:51:31Z iteration 5 ideator phase concurrency workers=3
+2026-06-23T10:51:31Z iteration 5 ideator 1 role="the pragmatist" started
+2026-06-23T10:51:31Z iteration 5 ideator 2 role="the architect" started
+2026-06-23T10:51:31Z iteration 5 ideator 3 role="the contrarian" started
+2026-06-23T10:51:33Z iteration 5 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:51:34Z iteration 5 ideator 2 role="the architect" completed status=1
+2026-06-23T10:51:35Z iteration 5 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:51:35Z iteration 5 ideator phase completed approaches=0
+2026-06-23T10:51:35Z iteration 5 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:51:35Z iteration 5 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-kg4c_ohx/repo
+2026-06-23T10:51:35Z iteration 5 planner started
+2026-06-23T10:51:37Z iteration 5 planner failed status=1
+2026-06-23T10:51:37Z failure summary iter 5: planner failed (rc=1)
+2026-06-23T10:51:37Z iteration 5 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:51:37Z iteration 6 started remaining=16902s
+2026-06-23T10:51:37Z iteration 6 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:51:37Z iteration 6 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-321fhsft/repo copied_entries=55
+2026-06-23T10:51:37Z iteration 6 ideator phase started count=3
+2026-06-23T10:51:37Z iteration 6 ideator phase concurrency workers=3
+2026-06-23T10:51:37Z iteration 6 ideator 1 role="the pragmatist" started
+2026-06-23T10:51:37Z iteration 6 ideator 2 role="the architect" started
+2026-06-23T10:51:37Z iteration 6 ideator 3 role="the contrarian" started
+2026-06-23T10:51:38Z iteration 6 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:51:39Z iteration 6 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:51:39Z iteration 6 ideator 2 role="the architect" completed status=1
+2026-06-23T10:51:39Z iteration 6 ideator phase completed approaches=0
+2026-06-23T10:51:39Z iteration 6 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:51:39Z iteration 6 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-321fhsft/repo
+2026-06-23T10:51:39Z iteration 6 planner started
+2026-06-23T10:51:43Z iteration 6 planner failed status=1
+2026-06-23T10:51:43Z failure summary iter 6: planner failed (rc=1)
+2026-06-23T10:51:43Z iteration 6 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:51:43Z iteration 7 started remaining=16896s
+2026-06-23T10:51:43Z iteration 7 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:51:43Z iteration 7 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-rbivxg9x/repo copied_entries=55
+2026-06-23T10:51:43Z iteration 7 ideator phase started count=3
+2026-06-23T10:51:43Z iteration 7 ideator phase concurrency workers=3
+2026-06-23T10:51:43Z iteration 7 ideator 1 role="the pragmatist" started
+2026-06-23T10:51:43Z iteration 7 ideator 2 role="the architect" started
+2026-06-23T10:51:43Z iteration 7 ideator 3 role="the contrarian" started
+2026-06-23T10:51:45Z iteration 7 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:51:45Z iteration 7 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:51:45Z iteration 7 ideator 2 role="the architect" completed status=1
+2026-06-23T10:51:45Z iteration 7 ideator phase completed approaches=0
+2026-06-23T10:51:45Z iteration 7 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:51:45Z iteration 7 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-rbivxg9x/repo
+2026-06-23T10:51:45Z iteration 7 planner started
+2026-06-23T10:51:47Z iteration 7 planner failed status=1
+2026-06-23T10:51:47Z failure summary iter 7: planner failed (rc=1)
+2026-06-23T10:51:47Z iteration 7 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:51:47Z iteration 8 started remaining=16892s
+2026-06-23T10:51:47Z iteration 8 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:51:47Z iteration 8 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-tcap5r4_/repo copied_entries=55
+2026-06-23T10:51:47Z iteration 8 ideator phase started count=3
+2026-06-23T10:51:47Z iteration 8 ideator phase concurrency workers=3
+2026-06-23T10:51:47Z iteration 8 ideator 1 role="the pragmatist" started
+2026-06-23T10:51:47Z iteration 8 ideator 2 role="the architect" started
+2026-06-23T10:51:47Z iteration 8 ideator 3 role="the contrarian" started
+2026-06-23T10:51:49Z iteration 8 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:51:49Z iteration 8 ideator 2 role="the architect" completed status=1
+2026-06-23T10:51:49Z iteration 8 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:51:49Z iteration 8 ideator phase completed approaches=0
+2026-06-23T10:51:49Z iteration 8 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:51:49Z iteration 8 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-tcap5r4_/repo
+2026-06-23T10:51:49Z iteration 8 planner started
+2026-06-23T10:51:57Z iteration 8 planner failed status=1
+2026-06-23T10:51:57Z failure summary iter 8: planner failed (rc=1)
+2026-06-23T10:51:57Z iteration 8 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:51:57Z iteration 9 started remaining=16882s
+2026-06-23T10:51:57Z iteration 9 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:51:57Z iteration 9 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-kym5k9is/repo copied_entries=55
+2026-06-23T10:51:57Z iteration 9 ideator phase started count=3
+2026-06-23T10:51:57Z iteration 9 ideator phase concurrency workers=3
+2026-06-23T10:51:57Z iteration 9 ideator 1 role="the pragmatist" started
+2026-06-23T10:51:57Z iteration 9 ideator 2 role="the architect" started
+2026-06-23T10:51:57Z iteration 9 ideator 3 role="the contrarian" started
+2026-06-23T10:51:59Z iteration 9 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:51:59Z iteration 9 ideator 2 role="the architect" completed status=1
+2026-06-23T10:52:00Z iteration 9 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:52:00Z iteration 9 ideator phase completed approaches=0
+2026-06-23T10:52:00Z iteration 9 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:52:00Z iteration 9 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-kym5k9is/repo
+2026-06-23T10:52:00Z iteration 9 planner started
+2026-06-23T10:52:01Z iteration 9 planner failed status=1
+2026-06-23T10:52:01Z failure summary iter 9: planner failed (rc=1)
+2026-06-23T10:52:01Z iteration 9 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:52:01Z iteration 10 started remaining=16878s
+2026-06-23T10:52:01Z iteration 10 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:52:01Z iteration 10 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-zwd423lf/repo copied_entries=55
+2026-06-23T10:52:01Z iteration 10 ideator phase started count=3
+2026-06-23T10:52:01Z iteration 10 ideator phase concurrency workers=3
+2026-06-23T10:52:01Z iteration 10 ideator 1 role="the pragmatist" started
+2026-06-23T10:52:01Z iteration 10 ideator 2 role="the architect" started
+2026-06-23T10:52:01Z iteration 10 ideator 3 role="the contrarian" started
+2026-06-23T10:52:03Z iteration 10 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:52:03Z iteration 10 ideator 2 role="the architect" completed status=1
+2026-06-23T10:52:03Z iteration 10 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:52:03Z iteration 10 ideator phase completed approaches=0
+2026-06-23T10:52:03Z iteration 10 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:52:03Z iteration 10 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-zwd423lf/repo
+2026-06-23T10:52:03Z iteration 10 planner started
+2026-06-23T10:52:05Z iteration 10 planner failed status=1
+2026-06-23T10:52:05Z failure summary iter 10: planner failed (rc=1)
+2026-06-23T10:52:05Z iteration 10 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:52:05Z iteration 11 started remaining=16874s
+2026-06-23T10:52:05Z iteration 11 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:52:05Z iteration 11 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-9lowcp8o/repo copied_entries=55
+2026-06-23T10:52:05Z iteration 11 ideator phase started count=3
+2026-06-23T10:52:05Z iteration 11 ideator phase concurrency workers=3
+2026-06-23T10:52:05Z iteration 11 ideator 1 role="the pragmatist" started
+2026-06-23T10:52:05Z iteration 11 ideator 2 role="the architect" started
+2026-06-23T10:52:05Z iteration 11 ideator 3 role="the contrarian" started
+2026-06-23T10:52:08Z iteration 11 ideator 2 role="the architect" completed status=1
+2026-06-23T10:52:08Z iteration 11 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:52:08Z iteration 11 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:52:08Z iteration 11 ideator phase completed approaches=0
+2026-06-23T10:52:08Z iteration 11 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:52:08Z iteration 11 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-9lowcp8o/repo
+2026-06-23T10:52:08Z iteration 11 planner started
+2026-06-23T10:52:10Z iteration 11 planner failed status=1
+2026-06-23T10:52:10Z failure summary iter 11: planner failed (rc=1)
+2026-06-23T10:52:10Z iteration 11 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:52:10Z iteration 12 started remaining=16869s
+2026-06-23T10:52:10Z iteration 12 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:52:10Z iteration 12 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-xenz2nef/repo copied_entries=55
+2026-06-23T10:52:10Z iteration 12 ideator phase started count=3
+2026-06-23T10:52:10Z iteration 12 ideator phase concurrency workers=3
+2026-06-23T10:52:10Z iteration 12 ideator 1 role="the pragmatist" started
+2026-06-23T10:52:10Z iteration 12 ideator 2 role="the architect" started
+2026-06-23T10:52:10Z iteration 12 ideator 3 role="the contrarian" started
+2026-06-23T10:52:12Z iteration 12 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:52:14Z iteration 12 ideator 2 role="the architect" completed status=1
+2026-06-23T10:52:25Z iteration 12 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:52:25Z iteration 12 ideator phase completed approaches=0
+2026-06-23T10:52:25Z iteration 12 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:52:25Z iteration 12 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-xenz2nef/repo
+2026-06-23T10:52:25Z iteration 12 planner started
+2026-06-23T10:52:27Z iteration 12 planner failed status=1
+2026-06-23T10:52:27Z failure summary iter 12: planner failed (rc=1)
+2026-06-23T10:52:27Z iteration 12 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:52:27Z iteration 13 started remaining=16852s
+2026-06-23T10:52:27Z iteration 13 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:52:27Z iteration 13 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-yk_y7c5o/repo copied_entries=55
+2026-06-23T10:52:27Z iteration 13 ideator phase started count=3
+2026-06-23T10:52:27Z iteration 13 ideator phase concurrency workers=3
+2026-06-23T10:52:27Z iteration 13 ideator 1 role="the pragmatist" started
+2026-06-23T10:52:27Z iteration 13 ideator 2 role="the architect" started
+2026-06-23T10:52:27Z iteration 13 ideator 3 role="the contrarian" started
+2026-06-23T10:52:29Z iteration 13 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:52:29Z iteration 13 ideator 2 role="the architect" completed status=1
+2026-06-23T10:52:30Z iteration 13 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:52:30Z iteration 13 ideator phase completed approaches=0
+2026-06-23T10:52:30Z iteration 13 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:52:30Z iteration 13 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-yk_y7c5o/repo
+2026-06-23T10:52:30Z iteration 13 planner started
+2026-06-23T10:52:33Z iteration 13 planner failed status=1
+2026-06-23T10:52:33Z failure summary iter 13: planner failed (rc=1)
+2026-06-23T10:52:33Z iteration 13 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:52:33Z iteration 14 started remaining=16846s
+2026-06-23T10:52:33Z iteration 14 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:52:33Z iteration 14 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-bx8a5cgj/repo copied_entries=55
+2026-06-23T10:52:33Z iteration 14 ideator phase started count=3
+2026-06-23T10:52:33Z iteration 14 ideator phase concurrency workers=3
+2026-06-23T10:52:33Z iteration 14 ideator 1 role="the pragmatist" started
+2026-06-23T10:52:33Z iteration 14 ideator 2 role="the architect" started
+2026-06-23T10:52:33Z iteration 14 ideator 3 role="the contrarian" started
+2026-06-23T10:52:35Z iteration 14 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:52:35Z iteration 14 ideator 2 role="the architect" completed status=1
+2026-06-23T10:52:40Z iteration 14 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:52:40Z iteration 14 ideator phase completed approaches=0
+2026-06-23T10:52:40Z iteration 14 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:52:40Z iteration 14 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-bx8a5cgj/repo
+2026-06-23T10:52:40Z iteration 14 planner started
+2026-06-23T10:52:43Z iteration 14 planner failed status=1
+2026-06-23T10:52:43Z failure summary iter 14: planner failed (rc=1)
+2026-06-23T10:52:43Z iteration 14 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:52:43Z iteration 15 started remaining=16836s
+2026-06-23T10:52:43Z iteration 15 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:52:43Z iteration 15 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-ifulcikz/repo copied_entries=55
+2026-06-23T10:52:43Z iteration 15 ideator phase started count=3
+2026-06-23T10:52:43Z iteration 15 ideator phase concurrency workers=3
+2026-06-23T10:52:43Z iteration 15 ideator 1 role="the pragmatist" started
+2026-06-23T10:52:43Z iteration 15 ideator 2 role="the architect" started
+2026-06-23T10:52:43Z iteration 15 ideator 3 role="the contrarian" started
+2026-06-23T10:52:45Z iteration 15 ideator 2 role="the architect" completed status=1
+2026-06-23T10:52:45Z iteration 15 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:52:45Z iteration 15 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:52:45Z iteration 15 ideator phase completed approaches=0
+2026-06-23T10:52:45Z iteration 15 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:52:45Z iteration 15 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-ifulcikz/repo
+2026-06-23T10:52:45Z iteration 15 planner started
+2026-06-23T10:52:47Z iteration 15 planner failed status=1
+2026-06-23T10:52:47Z failure summary iter 15: planner failed (rc=1)
+2026-06-23T10:52:47Z iteration 15 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:52:47Z iteration 16 started remaining=16832s
+2026-06-23T10:52:47Z iteration 16 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:52:47Z iteration 16 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-oqhetl_v/repo copied_entries=55
+2026-06-23T10:52:47Z iteration 16 ideator phase started count=3
+2026-06-23T10:52:47Z iteration 16 ideator phase concurrency workers=3
+2026-06-23T10:52:47Z iteration 16 ideator 1 role="the pragmatist" started
+2026-06-23T10:52:47Z iteration 16 ideator 2 role="the architect" started
+2026-06-23T10:52:47Z iteration 16 ideator 3 role="the contrarian" started
+2026-06-23T10:52:49Z iteration 16 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:52:49Z iteration 16 ideator 2 role="the architect" completed status=1
+2026-06-23T10:52:50Z iteration 16 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:52:50Z iteration 16 ideator phase completed approaches=0
+2026-06-23T10:52:50Z iteration 16 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:52:50Z iteration 16 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-oqhetl_v/repo
+2026-06-23T10:52:50Z iteration 16 planner started
+2026-06-23T10:52:52Z iteration 16 planner failed status=1
+2026-06-23T10:52:52Z failure summary iter 16: planner failed (rc=1)
+2026-06-23T10:52:52Z iteration 16 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:52:52Z iteration 17 started remaining=16827s
+2026-06-23T10:52:52Z iteration 17 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:52:52Z iteration 17 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-zjfb64pe/repo copied_entries=55
+2026-06-23T10:52:52Z iteration 17 ideator phase started count=3
+2026-06-23T10:52:52Z iteration 17 ideator phase concurrency workers=3
+2026-06-23T10:52:52Z iteration 17 ideator 1 role="the pragmatist" started
+2026-06-23T10:52:52Z iteration 17 ideator 2 role="the architect" started
+2026-06-23T10:52:52Z iteration 17 ideator 3 role="the contrarian" started
+2026-06-23T10:52:54Z iteration 17 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:52:55Z iteration 17 ideator 2 role="the architect" completed status=1
+2026-06-23T10:52:55Z iteration 17 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:52:55Z iteration 17 ideator phase completed approaches=0
+2026-06-23T10:52:55Z iteration 17 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:52:55Z iteration 17 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-zjfb64pe/repo
+2026-06-23T10:52:55Z iteration 17 planner started
+2026-06-23T10:52:57Z iteration 17 planner failed status=1
+2026-06-23T10:52:57Z failure summary iter 17: planner failed (rc=1)
+2026-06-23T10:52:57Z iteration 17 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:52:57Z iteration 18 started remaining=16823s
+2026-06-23T10:52:57Z iteration 18 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:52:57Z iteration 18 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-hfpypeo9/repo copied_entries=55
+2026-06-23T10:52:57Z iteration 18 ideator phase started count=3
+2026-06-23T10:52:57Z iteration 18 ideator phase concurrency workers=3
+2026-06-23T10:52:57Z iteration 18 ideator 1 role="the pragmatist" started
+2026-06-23T10:52:57Z iteration 18 ideator 2 role="the architect" started
+2026-06-23T10:52:57Z iteration 18 ideator 3 role="the contrarian" started
+2026-06-23T10:52:59Z iteration 18 ideator 2 role="the architect" completed status=1
+2026-06-23T10:52:59Z iteration 18 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:52:59Z iteration 18 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:52:59Z iteration 18 ideator phase completed approaches=0
+2026-06-23T10:52:59Z iteration 18 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:52:59Z iteration 18 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-hfpypeo9/repo
+2026-06-23T10:52:59Z iteration 18 planner started
+2026-06-23T10:53:03Z iteration 18 planner failed status=1
+2026-06-23T10:53:03Z failure summary iter 18: planner failed (rc=1)
+2026-06-23T10:53:03Z iteration 18 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:53:03Z iteration 19 started remaining=16816s
+2026-06-23T10:53:03Z iteration 19 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:53:03Z iteration 19 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-dwzzf5x8/repo copied_entries=55
+2026-06-23T10:53:03Z iteration 19 ideator phase started count=3
+2026-06-23T10:53:03Z iteration 19 ideator phase concurrency workers=3
+2026-06-23T10:53:03Z iteration 19 ideator 1 role="the pragmatist" started
+2026-06-23T10:53:03Z iteration 19 ideator 2 role="the architect" started
+2026-06-23T10:53:03Z iteration 19 ideator 3 role="the contrarian" started
+2026-06-23T10:53:05Z iteration 19 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:53:05Z iteration 19 ideator 2 role="the architect" completed status=1
+2026-06-23T10:53:05Z iteration 19 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:53:05Z iteration 19 ideator phase completed approaches=0
+2026-06-23T10:53:05Z iteration 19 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:53:05Z iteration 19 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-dwzzf5x8/repo
+2026-06-23T10:53:05Z iteration 19 planner started
+2026-06-23T10:53:07Z iteration 19 planner failed status=1
+2026-06-23T10:53:07Z failure summary iter 19: planner failed (rc=1)
+2026-06-23T10:53:07Z iteration 19 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:53:07Z iteration 20 started remaining=16812s
+2026-06-23T10:53:07Z iteration 20 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:53:07Z iteration 20 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-gjfwj8gb/repo copied_entries=55
+2026-06-23T10:53:07Z iteration 20 ideator phase started count=3
+2026-06-23T10:53:07Z iteration 20 ideator phase concurrency workers=3
+2026-06-23T10:53:07Z iteration 20 ideator 1 role="the pragmatist" started
+2026-06-23T10:53:07Z iteration 20 ideator 2 role="the architect" started
+2026-06-23T10:53:07Z iteration 20 ideator 3 role="the contrarian" started
+2026-06-23T10:53:09Z iteration 20 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:53:10Z iteration 20 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:53:24Z iteration 20 ideator 2 role="the architect" completed status=1
+2026-06-23T10:53:24Z iteration 20 ideator phase completed approaches=0
+2026-06-23T10:53:24Z iteration 20 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:53:24Z iteration 20 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-gjfwj8gb/repo
+2026-06-23T10:53:24Z iteration 20 planner started
+2026-06-23T10:53:26Z iteration 20 planner failed status=1
+2026-06-23T10:53:26Z failure summary iter 20: planner failed (rc=1)
+2026-06-23T10:53:26Z iteration 20 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:53:26Z iteration 21 started remaining=16793s
+2026-06-23T10:53:26Z iteration 21 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:53:26Z iteration 21 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-msqs2qsj/repo copied_entries=55
+2026-06-23T10:53:26Z iteration 21 ideator phase started count=3
+2026-06-23T10:53:26Z iteration 21 ideator phase concurrency workers=3
+2026-06-23T10:53:26Z iteration 21 ideator 1 role="the pragmatist" started
+2026-06-23T10:53:26Z iteration 21 ideator 2 role="the architect" started
+2026-06-23T10:53:26Z iteration 21 ideator 3 role="the contrarian" started
+2026-06-23T10:53:28Z iteration 21 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:53:28Z iteration 21 ideator 2 role="the architect" completed status=1
+2026-06-23T10:53:28Z iteration 21 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:53:28Z iteration 21 ideator phase completed approaches=0
+2026-06-23T10:53:28Z iteration 21 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:53:28Z iteration 21 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-msqs2qsj/repo
+2026-06-23T10:53:28Z iteration 21 planner started
+2026-06-23T10:53:30Z iteration 21 planner failed status=1
+2026-06-23T10:53:30Z failure summary iter 21: planner failed (rc=1)
+2026-06-23T10:53:30Z iteration 21 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:53:30Z iteration 22 started remaining=16789s
+2026-06-23T10:53:30Z iteration 22 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:53:30Z iteration 22 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-dlgmf4p5/repo copied_entries=55
+2026-06-23T10:53:30Z iteration 22 ideator phase started count=3
+2026-06-23T10:53:30Z iteration 22 ideator phase concurrency workers=3
+2026-06-23T10:53:30Z iteration 22 ideator 1 role="the pragmatist" started
+2026-06-23T10:53:30Z iteration 22 ideator 2 role="the architect" started
+2026-06-23T10:53:30Z iteration 22 ideator 3 role="the contrarian" started
+2026-06-23T10:53:32Z iteration 22 ideator 2 role="the architect" completed status=1
+2026-06-23T10:53:32Z iteration 22 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:53:36Z iteration 22 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:53:36Z iteration 22 ideator phase completed approaches=0
+2026-06-23T10:53:36Z iteration 22 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:53:36Z iteration 22 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-dlgmf4p5/repo
+2026-06-23T10:53:36Z iteration 22 planner started
+2026-06-23T10:53:42Z iteration 22 planner failed status=1
+2026-06-23T10:53:42Z failure summary iter 22: planner failed (rc=1)
+2026-06-23T10:53:42Z iteration 22 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:53:42Z iteration 23 started remaining=16777s
+2026-06-23T10:53:42Z iteration 23 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:53:42Z iteration 23 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-b5eipt0w/repo copied_entries=55
+2026-06-23T10:53:42Z iteration 23 ideator phase started count=3
+2026-06-23T10:53:42Z iteration 23 ideator phase concurrency workers=3
+2026-06-23T10:53:42Z iteration 23 ideator 1 role="the pragmatist" started
+2026-06-23T10:53:42Z iteration 23 ideator 2 role="the architect" started
+2026-06-23T10:53:42Z iteration 23 ideator 3 role="the contrarian" started
+2026-06-23T10:53:45Z iteration 23 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:53:45Z iteration 23 ideator 2 role="the architect" completed status=1
+2026-06-23T10:53:45Z iteration 23 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:53:45Z iteration 23 ideator phase completed approaches=0
+2026-06-23T10:53:45Z iteration 23 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:53:45Z iteration 23 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-b5eipt0w/repo
+2026-06-23T10:53:45Z iteration 23 planner started
+2026-06-23T10:53:47Z iteration 23 planner failed status=1
+2026-06-23T10:53:47Z failure summary iter 23: planner failed (rc=1)
+2026-06-23T10:53:47Z iteration 23 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:53:47Z iteration 24 started remaining=16772s
+2026-06-23T10:53:47Z iteration 24 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:53:47Z iteration 24 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-ou0o3hsl/repo copied_entries=55
+2026-06-23T10:53:47Z iteration 24 ideator phase started count=3
+2026-06-23T10:53:47Z iteration 24 ideator phase concurrency workers=3
+2026-06-23T10:53:47Z iteration 24 ideator 1 role="the pragmatist" started
+2026-06-23T10:53:47Z iteration 24 ideator 2 role="the architect" started
+2026-06-23T10:53:47Z iteration 24 ideator 3 role="the contrarian" started
+2026-06-23T10:53:49Z iteration 24 ideator 2 role="the architect" completed status=1
+2026-06-23T10:53:49Z iteration 24 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:53:50Z iteration 24 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:53:50Z iteration 24 ideator phase completed approaches=0
+2026-06-23T10:53:50Z iteration 24 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:53:50Z iteration 24 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-ou0o3hsl/repo
+2026-06-23T10:53:50Z iteration 24 planner started
+2026-06-23T10:53:51Z iteration 24 planner failed status=1
+2026-06-23T10:53:51Z failure summary iter 24: planner failed (rc=1)
+2026-06-23T10:53:51Z iteration 24 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:53:51Z iteration 25 started remaining=16768s
+2026-06-23T10:53:51Z iteration 25 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:53:51Z iteration 25 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-3_q6h7w_/repo copied_entries=55
+2026-06-23T10:53:51Z iteration 25 ideator phase started count=3
+2026-06-23T10:53:51Z iteration 25 ideator phase concurrency workers=3
+2026-06-23T10:53:51Z iteration 25 ideator 1 role="the pragmatist" started
+2026-06-23T10:53:51Z iteration 25 ideator 2 role="the architect" started
+2026-06-23T10:53:51Z iteration 25 ideator 3 role="the contrarian" started
+2026-06-23T10:53:53Z iteration 25 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:53:54Z iteration 25 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:53:54Z iteration 25 ideator 2 role="the architect" completed status=1
+2026-06-23T10:53:54Z iteration 25 ideator phase completed approaches=0
+2026-06-23T10:53:54Z iteration 25 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:53:54Z iteration 25 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-3_q6h7w_/repo
+2026-06-23T10:53:54Z iteration 25 planner started
+2026-06-23T10:53:57Z iteration 25 planner failed status=1
+2026-06-23T10:53:57Z failure summary iter 25: planner failed (rc=1)
+2026-06-23T10:53:57Z iteration 25 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:53:57Z iteration 26 started remaining=16762s
+2026-06-23T10:53:57Z iteration 26 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:53:57Z iteration 26 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-y8exvam2/repo copied_entries=55
+2026-06-23T10:53:57Z iteration 26 ideator phase started count=3
+2026-06-23T10:53:57Z iteration 26 ideator phase concurrency workers=3
+2026-06-23T10:53:57Z iteration 26 ideator 1 role="the pragmatist" started
+2026-06-23T10:53:57Z iteration 26 ideator 2 role="the architect" started
+2026-06-23T10:53:57Z iteration 26 ideator 3 role="the contrarian" started
+2026-06-23T10:53:58Z iteration 26 ideator 2 role="the architect" completed status=1
+2026-06-23T10:53:59Z iteration 26 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:53:59Z iteration 26 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:53:59Z iteration 26 ideator phase completed approaches=0
+2026-06-23T10:53:59Z iteration 26 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:53:59Z iteration 26 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-y8exvam2/repo
+2026-06-23T10:53:59Z iteration 26 planner started
+2026-06-23T10:54:01Z iteration 26 planner failed status=1
+2026-06-23T10:54:01Z failure summary iter 26: planner failed (rc=1)
+2026-06-23T10:54:01Z iteration 26 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:54:01Z iteration 27 started remaining=16758s
+2026-06-23T10:54:01Z iteration 27 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:54:01Z iteration 27 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-w9m13h2b/repo copied_entries=55
+2026-06-23T10:54:01Z iteration 27 ideator phase started count=3
+2026-06-23T10:54:01Z iteration 27 ideator phase concurrency workers=3
+2026-06-23T10:54:01Z iteration 27 ideator 1 role="the pragmatist" started
+2026-06-23T10:54:01Z iteration 27 ideator 2 role="the architect" started
+2026-06-23T10:54:01Z iteration 27 ideator 3 role="the contrarian" started
+2026-06-23T10:54:03Z iteration 27 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:54:03Z iteration 27 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:54:03Z iteration 27 ideator 2 role="the architect" completed status=1
+2026-06-23T10:54:03Z iteration 27 ideator phase completed approaches=0
+2026-06-23T10:54:03Z iteration 27 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:54:03Z iteration 27 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-w9m13h2b/repo
+2026-06-23T10:54:03Z iteration 27 planner started
+2026-06-23T10:54:08Z iteration 27 planner failed status=1
+2026-06-23T10:54:08Z failure summary iter 27: planner failed (rc=1)
+2026-06-23T10:54:08Z iteration 27 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:54:08Z iteration 28 started remaining=16751s
+2026-06-23T10:54:08Z iteration 28 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:54:08Z iteration 28 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-n8p1dgmn/repo copied_entries=55
+2026-06-23T10:54:08Z iteration 28 ideator phase started count=3
+2026-06-23T10:54:08Z iteration 28 ideator phase concurrency workers=3
+2026-06-23T10:54:08Z iteration 28 ideator 1 role="the pragmatist" started
+2026-06-23T10:54:08Z iteration 28 ideator 2 role="the architect" started
+2026-06-23T10:54:08Z iteration 28 ideator 3 role="the contrarian" started
+2026-06-23T10:54:10Z iteration 28 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:54:10Z iteration 28 ideator 2 role="the architect" completed status=1
+2026-06-23T10:54:10Z iteration 28 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:54:10Z iteration 28 ideator phase completed approaches=0
+2026-06-23T10:54:10Z iteration 28 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:54:10Z iteration 28 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-n8p1dgmn/repo
+2026-06-23T10:54:10Z iteration 28 planner started
+2026-06-23T10:54:12Z iteration 28 planner failed status=1
+2026-06-23T10:54:12Z failure summary iter 28: planner failed (rc=1)
+2026-06-23T10:54:12Z iteration 28 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:54:12Z iteration 29 started remaining=16747s
+2026-06-23T10:54:12Z iteration 29 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:54:12Z iteration 29 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-8hmlp4ge/repo copied_entries=55
+2026-06-23T10:54:12Z iteration 29 ideator phase started count=3
+2026-06-23T10:54:12Z iteration 29 ideator phase concurrency workers=3
+2026-06-23T10:54:12Z iteration 29 ideator 1 role="the pragmatist" started
+2026-06-23T10:54:12Z iteration 29 ideator 2 role="the architect" started
+2026-06-23T10:54:12Z iteration 29 ideator 3 role="the contrarian" started
+2026-06-23T10:54:14Z iteration 29 ideator 2 role="the architect" completed status=1
+2026-06-23T10:54:15Z iteration 29 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:54:15Z iteration 29 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:54:15Z iteration 29 ideator phase completed approaches=0
+2026-06-23T10:54:15Z iteration 29 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:54:15Z iteration 29 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-8hmlp4ge/repo
+2026-06-23T10:54:15Z iteration 29 planner started
+2026-06-23T10:54:17Z iteration 29 planner failed status=1
+2026-06-23T10:54:17Z failure summary iter 29: planner failed (rc=1)
+2026-06-23T10:54:17Z iteration 29 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:54:17Z iteration 30 started remaining=16742s
+2026-06-23T10:54:17Z iteration 30 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:54:17Z iteration 30 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-6966__y_/repo copied_entries=55
+2026-06-23T10:54:17Z iteration 30 ideator phase started count=3
+2026-06-23T10:54:17Z iteration 30 ideator phase concurrency workers=3
+2026-06-23T10:54:17Z iteration 30 ideator 1 role="the pragmatist" started
+2026-06-23T10:54:17Z iteration 30 ideator 2 role="the architect" started
+2026-06-23T10:54:17Z iteration 30 ideator 3 role="the contrarian" started
+2026-06-23T10:54:19Z iteration 30 ideator 3 role="the contrarian" completed status=1
+2026-06-23T10:54:20Z iteration 30 ideator 1 role="the pragmatist" completed status=1
+2026-06-23T10:54:22Z iteration 30 ideator 2 role="the architect" completed status=1
+2026-06-23T10:54:22Z iteration 30 ideator phase completed approaches=0
+2026-06-23T10:54:22Z iteration 30 preplanner degraded mode preplanner_constraints=unavailable reason=all_ideators_invalid
+2026-06-23T10:54:22Z iteration 30 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-6966__y_/repo
+2026-06-23T10:54:22Z iteration 30 planner started
+2026-06-23T10:54:26Z iteration 30 planner failed status=1
+2026-06-23T10:54:26Z failure summary iter 30: planner failed (rc=1)
+2026-06-23T10:54:26Z iteration 30 nonfatal failure exit_code=1 outcome_reason=planner_failed
+2026-06-23T10:54:26Z final checkpoint policy behavior=telemetry_only terminal_reason=iterations_complete_with_failures
+2026-06-23T10:54:26Z iteration final-telemetry checkpoint started
+2026-06-23T10:54:26Z iteration final-telemetry checkpoint status before commit:
+M  AGENT_LOG.md
+M  SCORES.jsonl
