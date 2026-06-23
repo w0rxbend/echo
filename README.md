@@ -95,6 +95,26 @@ ordinary playback surfaces, including `POST /api/v1/play`,
 `POST /api/v1/notify`, or generic `POST /api/v1/events` with
 `attributes.animation`.
 
+### Generic Event Overrides
+
+`POST /api/v1/events` accepts normalized events for asynchronous rule
+processing. Known playback override attributes are validated synchronously
+before the event is published to that async path:
+
+- `attributes.animation` must name a known renderable/playable animation, using
+  the same playable animation contract as `POST /api/v1/play` and
+  `POST /api/v1/notify`.
+- `attributes.restore` must use the same restore vocabulary accepted by
+  `POST /api/v1/play` and `POST /api/v1/notify`, such as `leave`,
+  `previous_frame`, `background`, `clear`, or `blank`.
+- `attributes.duration` must be a well-formed, non-negative duration.
+
+Invalid known overrides return a client error before event publishing, so the
+async event worker never sees those malformed playback intents. Unknown or
+custom attributes remain schema-agnostic event data: they are not validated by
+the generic event endpoint and are preserved for downstream event processing.
+That includes namespaced custom attributes such as `param.*`.
+
 ### Desired Background Convergence
 
 `/readyz.background` and matrix background observability are v1 contract-fixed; full

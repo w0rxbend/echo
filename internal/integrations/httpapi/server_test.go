@@ -886,6 +886,9 @@ func TestAnimationCatalogEndpointIncludesNonPlayableMetadata(t *testing.T) {
 	}
 	for i := range want {
 		entry := body.Animations[i]
+		if len(entry) != 3 {
+			t.Fatalf("GET /animations/catalog entry %d = %+v, want exactly stable fields id, kind, playable", i, entry)
+		}
 		id, ok := entry["id"].(string)
 		if !ok {
 			t.Fatalf("GET /animations/catalog entry %d missing stable string field id: %+v", i, entry)
@@ -900,6 +903,93 @@ func TestAnimationCatalogEndpointIncludesNonPlayableMetadata(t *testing.T) {
 		}
 		if id != want[i].ID || kind != want[i].Kind || playable != want[i].Playable {
 			t.Fatalf("GET /animations/catalog animations = %+v, want %+v", body.Animations, want)
+		}
+	}
+}
+
+func TestFirmwarePresetIsNotPlayableThroughPublicAnimationIngress(t *testing.T) {
+	const firmwarePresetID = "matrix_rain_background"
+
+	t.Run("catalog", func(t *testing.T) {
+		httpServer := newAnimationAPITestServer(t)
+		resp, err := http.Get(httpServer.URL + "/api/v1/animations/catalog")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			data, _ := io.ReadAll(resp.Body)
+			t.Fatalf("GET /animations/catalog status = %d, body = %s, want %d", resp.StatusCode, data, http.StatusOK)
+		}
+
+		var body struct {
+			Animations []struct {
+				ID       string `json:"id"`
+				Kind     string `json:"kind"`
+				Playable bool   `json:"playable"`
+			} `json:"animations"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range body.Animations {
+			if entry.ID == firmwarePresetID {
+				if entry.Kind != string(animations.EntryFirmwarePreset) || entry.Playable {
+					t.Fatalf("catalog firmware preset entry = %+v, want kind=%q playable=false", entry, animations.EntryFirmwarePreset)
+				}
+				return
+			}
+		}
+		t.Fatalf("catalog missing firmware preset %q: %+v", firmwarePresetID, body.Animations)
+	})
+
+	t.Run("play", func(t *testing.T) {
+		httpServer := newAnimationAPITestServer(t)
+		body := bytes.NewBufferString(fmt.Sprintf(`{"animation":%q,"duration":"50ms","restore":"leave"}`, firmwarePresetID))
+		resp, err := http.Post(httpServer.URL+"/api/v1/play", "application/json", body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		assertFirmwarePresetRejected(t, "POST /play", resp)
+		waitForQueueDepth(t, httpServer.URL, 0)
+	})
+
+	t.Run("notify", func(t *testing.T) {
+		httpServer := newAnimationAPITestServer(t)
+		body := bytes.NewBufferString(fmt.Sprintf(`{"title":"Test","message":"hello","animation":%q,"duration":"50ms"}`, firmwarePresetID))
+		resp, err := http.Post(httpServer.URL+"/api/v1/notify", "application/json", body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		assertFirmwarePresetRejected(t, "POST /notify", resp)
+	})
+
+	t.Run("events", func(t *testing.T) {
+		httpServer := newAnimationAPITestServer(t)
+		body := bytes.NewBufferString(fmt.Sprintf(`{"type":"notify","attributes":{"animation":%q}}`, firmwarePresetID))
+		resp, err := http.Post(httpServer.URL+"/api/v1/events", "application/json", body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		assertFirmwarePresetRejected(t, "POST /events", resp)
+	})
+}
+
+func assertFirmwarePresetRejected(t *testing.T, operation string, resp *http.Response) {
+	t.Helper()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("%s status = %d, body = %s, want %d", operation, resp.StatusCode, data, http.StatusBadRequest)
+	}
+	for _, part := range []string{"matrix_rain_background", "not renderable/playable"} {
+		if !strings.Contains(string(data), part) {
+			t.Fatalf("%s body = %s, want to contain %q", operation, data, part)
 		}
 	}
 }

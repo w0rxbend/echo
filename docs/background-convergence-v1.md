@@ -118,3 +118,22 @@ Firmware preset entries are metadata-only and background-safe. They are exposed
 in the catalog with `kind: "firmware_preset"` and `playable: false`, but must
 not be submitted to `POST /api/v1/play`, `POST /api/v1/notify`, or generic
 `POST /api/v1/events` as `attributes.animation`.
+
+## Generic event override validation
+
+`POST /api/v1/events` keeps the event payload schema-agnostic except for known
+playback override attributes. Before publishing an event to the asynchronous
+event path, the endpoint validates these known override keys:
+
+- `attributes.animation` must name a known renderable/playable animation, using
+  the same playable animation contract as `POST /api/v1/play` and
+  `POST /api/v1/notify`.
+- `attributes.restore` must use the same restore vocabulary accepted by
+  `POST /api/v1/play` and `POST /api/v1/notify`, such as `leave`,
+  `previous_frame`, `background`, `clear`, or `blank`.
+- `attributes.duration` must be a well-formed, non-negative duration.
+
+Invalid known overrides return a client error synchronously and are not
+published to the async event worker. Unknown or custom attributes are preserved
+without endpoint-level schema validation for downstream event processing,
+including namespaced custom attributes such as `param.*`.

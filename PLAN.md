@@ -54,12 +54,13 @@ physical_index(server_x, y):
 
 ## Current Status
 
-Verified after iteration 19 review:
+Verified during iteration 20 review:
 
 - `go test ./...` passes.
 - `go vet ./...` passes.
 - `go test -race ./...` passes.
-- `go test -race ./internal/app ./internal/integrations/httpapi -run 'TestReadyAndMetricsExposePreviousFrameBackgroundDedupe|TestEventsOverrideValidation|TestEventsAnimationOverride|TestAnimationCatalog|TestAnimationsEndpoint' -count=5` passes.
+- `go test -race ./internal/app ./internal/integrations/httpapi -run 'TestReadyAndMetricsExposePreviousFrameBackgroundDedupe|TestEventsOverrideValidation|TestEventsAnimationOverride|TestAnimationCatalog|TestAnimationsEndpoint|TestFirmwarePresetIsNotPlayableThroughPublicAnimationIngress' -count=5` passes.
+- `go test -race ./internal/matrix -run 'TestSchedulerPreviousFrameRestoreDoesNotConvergeRenderableBackgroundFromVisuallyIdenticalNonBackgroundFrame' -count=20` fails intermittently/deterministically depending on scheduler interleaving.
 
 Core implementation status:
 
@@ -68,7 +69,8 @@ Core implementation status:
   implemented.
 - TCP matrix client has strict protocol framing/response validation, command
   serialization, retryable transport classification, immediate reconnect
-  telemetry, `TCP_NODELAY`, and fake TCP contract tests.
+  telemetry, `TCP_NODELAY`, fake TCP contract tests, and bounded observability
+  callback panic/drop accounting.
 - Scheduler owns queue mutation, controls, playback, background convergence,
   lifecycle outcomes, and matrix command sequencing.
 - Queue snapshots are immutable DTOs. Raw queue mutation is not exposed outside
@@ -94,10 +96,9 @@ Core implementation status:
   boundaries.
 - `/api/v1/animations` remains backward-compatible and lists only playable
   renderable IDs.
-- `/api/v1/animations/catalog` is documented and tested as the structured
-  metadata endpoint for all registry entries with stable `{id, kind, playable}`
-  fields. Firmware presets remain `playable=false`.
-- Generic `POST /api/v1/events` now rejects known invalid override fields before
+- `/api/v1/animations/catalog` exposes all registry entries with stable
+  `{id, kind, playable}` fields. Firmware presets remain `playable=false`.
+- Generic `POST /api/v1/events` rejects known invalid override fields before
   publish: unknown/non-renderable `attributes.animation`, invalid
   `attributes.restore`, and malformed or negative `attributes.duration`.
   Unknown/custom attributes, including `param.*`, remain schema-agnostic.
@@ -120,38 +121,40 @@ Core implementation status:
 - Duplicate idle background restores are suppressed when
   `restore: previous_frame` successfully restores a display state that
   explicitly matches the configured background. Firmware presets compare preset
-  parameters; renderable backgrounds rely on the recorded background ID.
+  parameters; renderable backgrounds rely on recorded background identity.
 - Deduped previous-frame background convergence is documented as
   playback-restore convergence: it can mark the desired background clean without
   updating scheduler-owned background restore attempt/success telemetry.
 - `docs/background-convergence-v1.md` is the source-of-truth public contract
-  for background state projection, retry semantics, animation discovery, and
-  duplicate-suppression telemetry.
+  for background state projection, retry semantics, animation discovery,
+  generic event override validation, and duplicate-suppression telemetry.
 
 ## Current Findings
 
 High severity:
 
-- No high-severity runtime regression was found in iteration 19.
+- The new renderable-background identity regression is not stable. Repeated
+  focused race runs fail because the test asserts an exact queue-depth sequence
+  (`[1,2,1,0]`) even though the scheduler may legitimately process the first
+  item before the second enqueue and emit `[1,0,1,0]` or `[1,1,1,0]`. The
+  production behavior under test still appears correct, but the guardrail cannot
+  be trusted until it synchronizes on behavior rather than queue interleaving.
 
 Medium severity:
 
-- The implementation validates generic `/api/v1/events` known overrides, but
-  README/operator API docs still do not describe `attributes.restore` and
-  `attributes.duration` validation or the choice to keep unknown/custom
-  attributes schema-agnostic.
-- `CatalogEntry` exposes only `id`, `kind`, and `playable`. That is safe and now
-  documented, but operators still cannot inspect firmware-preset metadata such
-  as effect ID, interval, and color through the HTTP catalog.
-- Renderable-background deduplication depends on display-state identity
-  (`BackgroundID`) captured from scheduler-owned background restore. Positive
-  coverage exists, but a negative regression should prove visually identical
-  frames from non-background sources do not incorrectly mark the configured
-  background clean.
-- Background previous-frame duplicate suppression tests use small real sleeps to
-  prove no later idle duplicate command is sent. They pass, but a deterministic
-  no-extra-command assertion would be more robust if a scheduler idle hook or
-  fake-client quiet assertion becomes available.
+- README and `docs/background-convergence-v1.md` show catalog examples with
+  `kind: "renderable"` for `notification`, but the actual API and tests expose
+  `kind: "generated"`. This is a public documentation/API contract mismatch.
+- `TestAnimationCatalogEndpointIncludesNonPlayableMetadata` requires catalog
+  entries to contain exactly three fields. That freezes out additive catalog
+  metadata even though future firmware-preset details (`effect_id`, `interval`,
+  `color`) are a known possible extension.
+- The structured catalog remains intentionally minimal. Operators can discover
+  firmware presets as `playable=false`, but cannot inspect preset parameters
+  such as effect ID, interval, or color through HTTP.
+- Previous-frame duplicate suppression tests still use small real sleeps to
+  prove no later idle duplicate command is sent. They pass in broad suites, but
+  deterministic no-extra-command assertions would be more robust.
 - Prometheus still intentionally omits background retry `failure_count`;
   dashboards must poll `/readyz.background` to distinguish first retry from
   repeated retry.
@@ -183,51 +186,60 @@ Low severity:
 
 ## Next Iteration Priorities
 
-### Phase 1: Finish Public API Truthfulness
+### Phase 1: Repair Public Contract Regressions
 
-1. Document generic event override validation. (priority: high)
-   - Add README/API documentation for `POST /api/v1/events` known override
-     fields: `attributes.animation`, `attributes.restore`, and
-     `attributes.duration`.
-   - State that invalid known overrides are rejected before publish.
-   - State that unknown/custom attributes, including `param.*`, remain
-     schema-agnostic and are preserved for the async event path.
-   - Keep `/notify`, `/play`, and `/events` validation vocabulary aligned.
+1. Fix the renderable-background identity regression test. (priority: high)
+   - Remove exact queue-depth ordering assumptions from
+     `TestSchedulerPreviousFrameRestoreDoesNotConvergeRenderableBackgroundFromVisuallyIdenticalNonBackgroundFrame`.
+   - Synchronize on matrix command sequence, display-state identity, and final
+     convergence state instead of concurrent queue-depth interleavings.
+   - Re-run the focused scheduler race test with `-count=20` and keep it stable.
 
-2. Decide whether catalog metadata should include firmware-preset details.
+2. Correct animation catalog kind documentation. (priority: high)
+   - Align README and `docs/background-convergence-v1.md` examples with the
+     actual API value `kind: "generated"` for generated animations.
+   - Add or keep documentation/tests that freeze only the supported bounded
+     kind vocabulary: `generated` and `firmware_preset`.
+
+3. Relax catalog compatibility tests for additive fields. (priority: medium)
+   - Preserve assertions that every entry includes `id`, `kind`, and
+     `playable` with correct semantics.
+   - Stop requiring exactly three fields unless the product decision is to
+     forbid additive catalog metadata.
+   - If exact-minimal catalog shape remains the intended v1 contract, document
+     that explicitly and defer firmware-preset parameter inspection.
+
+### Phase 2: Finish Catalog And Event API Truthfulness
+
+1. Decide whether catalog metadata should include firmware-preset details.
    (priority: medium)
-   - If operators need inspection, extend catalog entries with bounded metadata
-     such as `effect_id`, `interval`, and `color` for `kind=firmware_preset`.
+   - If operators need inspection, extend catalog entries additively with
+     bounded metadata such as `effect_id`, `interval`, and `color` for
+     `kind=firmware_preset`.
    - Keep `playable=false` for firmware presets and preserve `/play`, `/notify`,
      `/events`, and scheduler non-renderable guardrails.
-   - Freeze any added catalog fields with compatibility tests and avoid runtime
-     state or background IDs as metric labels.
+   - Freeze any added fields with compatibility tests and avoid runtime state or
+     background IDs as metric labels.
 
-3. Keep animation catalog compatibility frozen. (priority: medium)
-   - Preserve `/api/v1/animations` as the flat playable-only list.
-   - Preserve `/api/v1/animations/catalog` stable fields `{id, kind, playable}`.
-   - If metadata is added later, treat it as additive and retain the existing
-     fields and playability semantics.
+2. Keep generic event override documentation and tests aligned. (priority:
+   medium)
+   - Preserve synchronous validation for known `/api/v1/events` override fields:
+     `animation`, `restore`, and `duration`.
+   - Preserve schema-agnostic handling for unknown/custom attributes, including
+     `param.*`.
+   - Keep `/notify`, `/play`, and `/events` validation vocabulary aligned.
 
-### Phase 2: Strengthen Background Dedup Guardrails
+### Phase 3: Strengthen Background Dedup Guardrails
 
-1. Add explicit renderable-background identity tests. (priority: high)
-   - Prove dedupe only occurs when the previous display state carries the
-     configured background ID.
-   - Prove visually identical frames from a non-background source do not
-     incorrectly mark the configured background clean.
-   - Keep equality cheap and explicit; do not introduce full-frame comparisons
-     unless there is a real hardware-noise problem.
-
-2. Make duplicate-command assertions deterministic where practical.
-   (priority: medium)
+1. Make duplicate-command assertions deterministic where practical. (priority:
+   medium)
    - Replace small real sleeps in previous-frame duplicate suppression tests
      with a fake-client quiet assertion, scheduler idle hook, or bounded
      no-command helper if a clean seam exists.
    - Preserve correctness over optimization for `restore: leave`, `clear`,
      `blank`, direct controls, and unknown display states.
 
-3. Preserve telemetry separation for deduped playback restore convergence.
+2. Preserve telemetry separation for deduped playback restore convergence.
    (priority: medium)
    - Keep scheduler-owned background restore attempts/failures separate from
      playback restore commands.
@@ -235,7 +247,7 @@ Low severity:
      without polluting restore-attempt counters.
    - Keep `/readyz.background` as the authoritative current convergence signal.
 
-### Phase 3: Declarative Animation Expansion
+### Phase 4: Declarative Animation Expansion
 
 1. Add declarative frame/pixel-art animations. (priority: medium)
    - Parse palette and 8-row pixel art in display-space.
@@ -251,7 +263,7 @@ Low severity:
    - Decide whether relative `animations_file` and `rules_file` should resolve
      strictly relative to the config file.
 
-### Phase 4: Event Delivery Boundary
+### Phase 5: Event Delivery Boundary
 
 1. Preserve the accepted v1 event bus contract until a redesign is planned.
    (priority: medium)
@@ -268,7 +280,7 @@ Low severity:
      timeout/drop metrics, partial-delivery reporting, and subscriber
      attribution.
 
-### Phase 5: Scheduler, TCP, And Lifecycle Stability
+### Phase 6: Scheduler, TCP, And Lifecycle Stability
 
 1. Keep TCP callback critical paths bounded. (priority: medium)
    - Keep mutex-held callbacks limited to in-memory metrics and nonblocking
@@ -311,8 +323,8 @@ Keep existing coverage and expand in these areas:
   and no reconnect after protocol/status errors.
 - Display-space orientation tests using asymmetric fixtures.
 - Scheduler serial playback, priority, control lane, queue clear, cancellation,
-  capacity, queue identity, snapshot immutability, terminal outcomes, and
-  interrupt behavior.
+  capacity, queue identity, snapshot immutability, terminal outcomes,
+  background convergence/dedupe, and interrupt behavior.
 - Desired-background tests for startup, reconnect, transient restore policies,
   direct controls, firmware presets, renderable backgrounds, render failures,
   retry/backoff suppression, due-retry projection, prompt recovery triggers,
@@ -322,7 +334,8 @@ Keep existing coverage and expand in these areas:
   invalid generic event override rejection and documented preservation of
   schema-agnostic attributes.
 - Animation catalog tests for playable list compatibility, structured
-  metadata-only entries, and any future firmware-preset metadata.
+  metadata-only entries, additive metadata compatibility, and any future
+  firmware-preset metadata.
 - App lifecycle tests for never-run close, repeated close, construction
   rollback, close while running, post-stop one-shot semantics, shutdown timeout
   recovery, and process-run cleanup.
@@ -352,6 +365,7 @@ Manual hardware validation remains required before unattended LAN deployment:
 - Should background non-convergence ever affect top-level readiness, or remain
   visible-only in `/readyz.background`?
 - Should structured animation catalog expose firmware preset parameters?
+- Should the catalog v1 shape allow additive metadata fields?
 - Should generic `/api/v1/events` remain schema-agnostic beyond known override
   fields?
 - Should background retry remain fixed v1 policy, or become configurable after

@@ -3041,3 +3041,81 @@ M  docs/background-convergence-v1.md
 M  internal/app/app_test.go
 M  internal/integrations/httpapi/handlers.go
 M  internal/integrations/httpapi/server_test.go
+2026-06-23T10:01:35Z iteration 20 started remaining=3786s
+2026-06-23T10:01:35Z iteration 20 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T10:01:35Z iteration 20 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-l5utd4yy/repo copied_entries=55
+2026-06-23T10:01:35Z iteration 20 ideator phase started count=3
+2026-06-23T10:01:35Z iteration 20 ideator phase concurrency workers=3
+2026-06-23T10:01:35Z iteration 20 ideator 1 role="the pragmatist" started
+2026-06-23T10:01:35Z iteration 20 ideator 2 role="the architect" started
+2026-06-23T10:01:35Z iteration 20 ideator 3 role="the contrarian" started
+2026-06-23T10:01:43Z iteration 20 ideator 1 role="the pragmatist" completed status=0
+2026-06-23T10:01:45Z iteration 20 ideator 2 role="the architect" completed status=0
+2026-06-23T10:01:47Z iteration 20 ideator 3 role="the contrarian" completed status=0
+2026-06-23T10:01:47Z iteration 20 ideator phase completed approaches=3
+2026-06-23T10:01:47Z iteration 20 selector started approaches=3
+2026-06-23T10:01:55Z iteration 20 selector completed status=0
+2026-06-23T10:01:55Z iteration 20 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-l5utd4yy/repo
+2026-06-23T10:01:55Z iteration 20 selector rejected alternative role="the pragmatist" approach="Contract-First Surface Stabilization: spend the next iteration tightening externally visible promises before expanding behavior, using documentation, compatibility tests, and na..." reason="Strong and largely aligned, but selected as part of a synthesis because its wording risks leaning too much toward documentation unless paired explicitly with executable compatibility guardrails."
+2026-06-23T10:01:55Z iteration 20 selector rejected alternative role="the architect" approach="Contract-First Narrowing: treat iteration 20 as a public-contract hardening pass, starting with documentation truthfulness and executable guardrails before expanding capabilities." reason="Strong and largely aligned, but not selected as-is because it frames the work mainly as narrowing; the Planner also needs room to clarify and preserve the current surface where behavior is already intentionally schema-agnostic."
+2026-06-23T10:01:55Z iteration 20 selector rejected alternative role="the contrarian" approach="Contract-First Public Surface Freeze: treat the next iteration as a documentation and compatibility hardening pass before adding new runtime behavior. Start by making the operat..." reason="Strong and largely aligned, but not selected as-is because a strict freeze could over-document accidental details. The synthesized strategy keeps public truthfulness central while avoiding turning internal implementation details into lon..."
+2026-06-23T10:01:55Z iteration 20 selector alternatives persisted count=3
+2026-06-23T10:01:55Z iteration 20 selector structured alternatives persisted count=3
+2026-06-23T10:01:55Z iteration 20 planner started
+2026-06-23T10:02:18Z iteration 20 plan: 4 task(s) in 2 phase(s). This slice follows the contract-first constraint: first make the public API/docs truthful, then freeze current animation catalog compatibility, and add the highest-risk background dedupe regression guardrails. The phase 1 tasks are parallel because they touch disjoint files and do not depend on each other; phase 2 depends on all implementation/test edits being present.
+2026-06-23T10:02:18Z iteration 20 phase 1 started parallel=True tasks=3
+2026-06-23T10:02:50Z iteration 20 task t1 ('Document event override validation') status=0
+2026-06-23T10:03:40Z iteration 20 task t2 ('Freeze animation catalog compatibility') status=0
+2026-06-23T10:04:15Z iteration 20 task t3 ('Add renderable background identity guardrails') status=0
+2026-06-23T10:04:15Z iteration 20 phase 2 started parallel=False tasks=1
+2026-06-23T10:04:36Z iteration 20 task t4 ('Run focused regression checks') status=0
+2026-06-23T10:04:36Z iteration 20 reviewer started
+
+## Reviewer Summary - Iteration 20
+
+### What Was Done
+
+- Inspected the exact git diff and all files modified in this iteration: README, `docs/background-convergence-v1.md`, `internal/animations/registry_test.go`, `internal/integrations/httpapi/server_test.go`, `internal/matrix/scheduler_test.go`, and orchestration metadata.
+- Confirmed README now documents generic `POST /api/v1/events` known override validation for `attributes.animation`, `attributes.restore`, and `attributes.duration`, and states that unknown/custom attributes such as `param.*` remain schema-agnostic.
+- Confirmed `docs/background-convergence-v1.md` repeats the event override validation contract and keeps previous-frame background dedupe telemetry documented as playback-restore convergence, not scheduler-owned background restore telemetry.
+- Confirmed animation catalog tests now cover all registry entries, keep firmware presets non-playable, and verify public ingress rejects firmware preset IDs through `/play`, `/notify`, and `/events`.
+- Confirmed the new renderable-background identity test attempts to prove visually identical non-background frames do not suppress later idle background convergence.
+
+### What Was Found
+
+- No high-severity runtime regression was found in production code, but there is a high-priority test regression: `go test -race ./internal/matrix -run 'TestSchedulerPreviousFrameRestoreDoesNotConvergeRenderableBackgroundFromVisuallyIdenticalNonBackgroundFrame' -count=20` fails. The test asserts an exact queue-depth sequence even though scheduler processing can legitimately interleave between two enqueues and emit `[1 0 1 0]` or `[1 1 1 0]` instead of `[1 2 1 0]`.
+- README and `docs/background-convergence-v1.md` now show catalog examples with `kind: "renderable"` for `notification`, but the actual endpoint and tests expose `kind: "generated"`. This is a public API documentation mismatch.
+- `TestAnimationCatalogEndpointIncludesNonPlayableMetadata` requires each catalog entry to contain exactly three fields. That freezes out additive catalog metadata even though firmware-preset metadata such as `effect_id`, `interval`, and `color` remains a known possible future extension.
+- The event override documentation work is complete and matches the current HTTP boundary validation behavior.
+- The renderable-background identity guardrail is directionally correct but not yet reliable because its queue-depth assertion depends on concurrent scheduler timing.
+
+### Top Improvement Proposals
+
+1. Fix the new scheduler identity regression to synchronize on command sequence, display-state identity, and final convergence, not exact queue-depth interleaving; repeat it under race with `-count=20`.
+2. Correct catalog documentation examples so generated animations use `kind: "generated"` everywhere, matching the API and tests.
+3. Decide whether the catalog v1 shape permits additive metadata; if yes, relax exact-field-count tests while preserving required fields and playability semantics.
+4. If operator inspection needs it, add firmware-preset metadata additively to `/api/v1/animations/catalog` without making presets playable.
+5. Keep previous-frame background dedupe telemetry separate from scheduler-owned background restore counters, and replace sleep-based no-extra-command assertions with deterministic quiet checks if a clean seam exists.
+
+### Verification
+
+- `go test ./...` passed.
+- `go vet ./...` passed.
+- `go test -race ./...` passed.
+- `go test -race ./internal/app ./internal/integrations/httpapi -run 'TestReadyAndMetricsExposePreviousFrameBackgroundDedupe|TestEventsOverrideValidation|TestEventsAnimationOverride|TestAnimationCatalog|TestAnimationsEndpoint|TestFirmwarePresetIsNotPlayableThroughPublicAnimationIngress' -count=5` passed.
+- `go test -race ./internal/matrix -run 'TestSchedulerPreviousFrameRestoreDoesNotConvergeRenderableBackgroundFromVisuallyIdenticalNonBackgroundFrame' -count=20` failed with queue-depth sequence mismatches.
+2026-06-23T10:07:09Z iteration 20 reviewer completed status=0
+2026-06-23T10:07:09Z iteration 20 memory updated
+2026-06-23T10:07:10Z iteration 20 completed validation_status=0
+2026-06-23T10:07:10Z iteration 20 checkpoint started
+2026-06-23T10:07:10Z iteration 20 checkpoint status before commit:
+M  AGENT_LOG.md
+M  ALTERNATIVES.jsonl
+M  MEMORY.md
+M  PLAN.md
+M  README.md
+M  SCORES.jsonl
+M  docs/background-convergence-v1.md
+M  internal/animations/registry_test.go
+M  internal/integrations/httpapi/server_test.go
+M  internal/matrix/scheduler_test.go

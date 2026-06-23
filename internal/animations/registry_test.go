@@ -53,6 +53,57 @@ func TestRegistryRenderableHelpersSeparateGeneratedAnimationsFromFirmwarePresets
 	}
 }
 
+func TestRegistryCatalogCoversAllEntriesAndKeepsFirmwarePresetsNonPlayable(t *testing.T) {
+	registry := NewRegistry()
+	animation := AnimationFunc(func(context.Context, Params) ([]Frame, error) {
+		return []Frame{{Delay: time.Millisecond}}, nil
+	})
+	presets := map[string]FirmwarePreset{
+		"matrix_rain_background": {
+			EffectID: 9,
+			Interval: 150 * time.Millisecond,
+			Color:    RGB{R: 3, G: 4, B: 5},
+		},
+		"slow_glow_background": {
+			EffectID: 4,
+			Interval: 500 * time.Millisecond,
+			Color:    RGB{R: 1, G: 2, B: 3},
+		},
+	}
+
+	if err := registry.RegisterGenerated("notification", "notification", animation); err != nil {
+		t.Fatalf("RegisterGenerated() error = %v", err)
+	}
+	for id, preset := range presets {
+		if err := registry.RegisterFirmwarePreset(id, preset); err != nil {
+			t.Fatalf("RegisterFirmwarePreset(%q) error = %v", id, err)
+		}
+	}
+
+	got := registry.Catalog()
+	want := []CatalogEntry{
+		{ID: "matrix_rain_background", Kind: EntryFirmwarePreset, Playable: false},
+		{ID: "notification", Kind: EntryGenerated, Playable: true},
+		{ID: "slow_glow_background", Kind: EntryFirmwarePreset, Playable: false},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Catalog() = %+v, want %+v", got, want)
+	}
+
+	if got, want := registry.IDs(), []string{"matrix_rain_background", "notification", "slow_glow_background"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("IDs() = %v, want %v", got, want)
+	}
+	for id := range presets {
+		entry, ok := registry.Entry(id)
+		if !ok {
+			t.Fatalf("Entry(%q) ok = false, want true", id)
+		}
+		if entry.Kind != EntryFirmwarePreset || entry.Animation != nil {
+			t.Fatalf("Entry(%q) = %+v, want metadata-only firmware preset", id, entry)
+		}
+	}
+}
+
 func TestRegistryEntryAndFirmwarePresetReturnClonedMetadata(t *testing.T) {
 	registry := NewRegistry()
 	preset := FirmwarePreset{

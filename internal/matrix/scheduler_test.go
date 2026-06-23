@@ -263,6 +263,15 @@ func TestSchedulerPreviousFrameRestoreConvergesToRenderableBackgroundWithoutIdle
 	runScheduler(t, ctx, scheduler)
 
 	client.waitCommands(t, 1)
+	waitSchedulerHealth(t, scheduler, func(health Health) bool {
+		return health.BackgroundConvergenceState == BackgroundConvergenceConverged &&
+			!health.BackgroundDirty &&
+			health.BackgroundConverged
+	})
+	initialState := scheduler.snapshotDisplayState()
+	if initialState.Kind != displayStateFrame || initialState.BackgroundID != "background" {
+		t.Fatalf("initial display state = %+v, want scheduler-owned renderable background identity", initialState)
+	}
 	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
 		ID:            "notify",
 		AnimationID:   "notify",
@@ -292,6 +301,80 @@ func TestSchedulerPreviousFrameRestoreConvergesToRenderableBackgroundWithoutIdle
 	health := scheduler.Health()
 	if health.BackgroundConvergenceState != BackgroundConvergenceConverged || health.BackgroundDirty || !health.BackgroundConverged {
 		t.Fatalf("background health = %+v, want clean converged after exact previous-frame restore", health)
+	}
+	restoredState := scheduler.snapshotDisplayState()
+	if restoredState.Kind != displayStateFrame || restoredState.BackgroundID != "background" {
+		t.Fatalf("restored display state = %+v, want previous frame to retain renderable background identity", restoredState)
+	}
+}
+
+func TestSchedulerPreviousFrameRestoreDoesNotConvergeRenderableBackgroundFromVisuallyIdenticalNonBackgroundFrame(t *testing.T) {
+	client := newFakeMatrixClient()
+	registry := animations.NewRegistry()
+	mustRegisterTestAnimation(t, registry, "background", testAnimation(1, time.Millisecond, 70))
+	mustRegisterTestAnimation(t, registry, "lookalike", testAnimation(1, time.Millisecond, 70))
+	mustRegisterTestAnimation(t, registry, "notify", testAnimation(1, time.Millisecond, 80))
+
+	depths := newQueueDepthRecorder()
+	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{
+		Background: BackgroundConfig{
+			AnimationID: "background",
+		},
+		OnQueueDepthChange: depths.record,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runScheduler(t, ctx, scheduler)
+
+	client.waitCommands(t, 1)
+	waitSchedulerHealth(t, scheduler, func(health Health) bool {
+		return health.BackgroundConvergenceState == BackgroundConvergenceConverged &&
+			!health.BackgroundDirty &&
+			health.BackgroundConverged
+	})
+	if state := scheduler.snapshotDisplayState(); state.Kind != displayStateFrame || state.BackgroundID != "background" {
+		t.Fatalf("initial display state = %+v, want scheduler-owned renderable background identity", state)
+	}
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:            "lookalike",
+		AnimationID:   "lookalike",
+		RestorePolicy: animations.RestoreLeave,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
+		ID:            "notify",
+		AnimationID:   "notify",
+		RestorePolicy: animations.RestorePreviousFrame,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	client.waitCommands(t, 5)
+	time.Sleep(50 * time.Millisecond)
+	got := commandKinds(client.commands())
+	want := []string{"frame:70", "frame:70", "frame:80", "frame:70", "frame:70"}
+	if len(got) != len(want) {
+		t.Fatalf("commands = %v, want exactly %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("commands = %v, want prefix %v", got, want)
+		}
+	}
+	if got := scheduler.QueueLen(); got != 0 {
+		t.Fatalf("queue length = %d, want 0; background convergence must stay out of ordinary queue", got)
+	}
+	if got := depths.values(); !reflect.DeepEqual(got, []int{1, 2, 1, 0}) {
+		t.Fatalf("queue depth changes = %v, want only ordinary playback admission/removal", got)
+	}
+	health := scheduler.Health()
+	if health.BackgroundConvergenceState != BackgroundConvergenceConverged || health.BackgroundDirty || !health.BackgroundConverged {
+		t.Fatalf("background health = %+v, want clean converged only after idle background restore", health)
+	}
+	finalState := scheduler.snapshotDisplayState()
+	if finalState.Kind != displayStateFrame || finalState.BackgroundID != "background" {
+		t.Fatalf("final display state = %+v, want idle restore to reestablish renderable background identity", finalState)
 	}
 }
 
