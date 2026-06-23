@@ -202,17 +202,26 @@ func TestSchedulerPreviousFrameRestoreConvergesToFirmwarePresetBackgroundWithout
 	}
 
 	depths := newQueueDepthRecorder()
+	backgrounds := newBackgroundRestoreRecorder()
 	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{
 		Background: BackgroundConfig{
 			AnimationID: "rain",
 		},
-		OnQueueDepthChange: depths.record,
+		OnQueueDepthChange:  depths.record,
+		OnBackgroundRestore: backgrounds.record,
 	})
+	idle := newSchedulerIdleRecorder()
+	scheduler.onIdle = idle.notify
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	runScheduler(t, ctx, scheduler)
 
-	client.waitCommands(t, 1)
+	idle.wait(t, scheduler, client, 1, func(health Health, _ displayState) bool {
+		return health.BackgroundConvergenceState == BackgroundConvergenceConverged &&
+			!health.BackgroundDirty &&
+			health.BackgroundConverged
+	})
+	backgrounds.waitCount(t, 1)
 	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
 		ID:            "notify",
 		AnimationID:   "notify",
@@ -221,17 +230,20 @@ func TestSchedulerPreviousFrameRestoreConvergesToFirmwarePresetBackgroundWithout
 		t.Fatal(err)
 	}
 
-	client.waitCommands(t, 4)
-	time.Sleep(50 * time.Millisecond)
-	got := commandKinds(client.commands())
-	want := []string{"preset:12", "frame:30", "frame:31", "preset:12"}
-	if len(got) != len(want) {
-		t.Fatalf("commands = %v, want exactly %v", got, want)
+	commands := idle.wait(t, scheduler, client, 4, func(health Health, _ displayState) bool {
+		return health.BackgroundConvergenceState == BackgroundConvergenceConverged &&
+			!health.BackgroundDirty &&
+			health.BackgroundConverged
+	})
+	got := commandKinds(commands)
+	if len(got) != 4 ||
+		countCommandKinds(got, "preset:12") != 2 ||
+		countCommandKinds(got, "frame:30") != 1 ||
+		countCommandKinds(got, "frame:31") != 1 {
+		t.Fatalf("commands = %v, want startup preset, notify frames, and previous-frame preset restore only", got)
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("commands = %v, want prefix %v", got, want)
-		}
+	if got := backgrounds.count(); got != 1 {
+		t.Fatalf("background restore attempts = %d, want only startup restore; previous-frame exact preset restore must suppress idle duplicate", got)
 	}
 	if got := scheduler.QueueLen(); got != 0 {
 		t.Fatalf("queue length = %d, want 0; background convergence must stay out of ordinary queue", got)
@@ -252,22 +264,26 @@ func TestSchedulerPreviousFrameRestoreConvergesToRenderableBackgroundWithoutIdle
 	mustRegisterTestAnimation(t, registry, "notify", testAnimation(2, time.Millisecond, 80))
 
 	depths := newQueueDepthRecorder()
+	backgrounds := newBackgroundRestoreRecorder()
 	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{
 		Background: BackgroundConfig{
 			AnimationID: "background",
 		},
-		OnQueueDepthChange: depths.record,
+		OnQueueDepthChange:  depths.record,
+		OnBackgroundRestore: backgrounds.record,
 	})
+	idle := newSchedulerIdleRecorder()
+	scheduler.onIdle = idle.notify
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	runScheduler(t, ctx, scheduler)
 
-	client.waitCommands(t, 1)
-	waitSchedulerHealth(t, scheduler, func(health Health) bool {
+	idle.wait(t, scheduler, client, 1, func(health Health, _ displayState) bool {
 		return health.BackgroundConvergenceState == BackgroundConvergenceConverged &&
 			!health.BackgroundDirty &&
 			health.BackgroundConverged
 	})
+	backgrounds.waitCount(t, 1)
 	initialState := scheduler.snapshotDisplayState()
 	if initialState.Kind != displayStateFrame || initialState.BackgroundID != "background" {
 		t.Fatalf("initial display state = %+v, want scheduler-owned renderable background identity", initialState)
@@ -280,17 +296,22 @@ func TestSchedulerPreviousFrameRestoreConvergesToRenderableBackgroundWithoutIdle
 		t.Fatal(err)
 	}
 
-	client.waitCommands(t, 4)
-	time.Sleep(50 * time.Millisecond)
-	got := commandKinds(client.commands())
-	want := []string{"frame:70", "frame:80", "frame:81", "frame:70"}
-	if len(got) != len(want) {
-		t.Fatalf("commands = %v, want exactly %v", got, want)
+	commands := idle.wait(t, scheduler, client, 4, func(health Health, state displayState) bool {
+		return health.BackgroundConvergenceState == BackgroundConvergenceConverged &&
+			!health.BackgroundDirty &&
+			health.BackgroundConverged &&
+			state.Kind == displayStateFrame &&
+			state.BackgroundID == "background"
+	})
+	got := commandKinds(commands)
+	if len(got) != 4 ||
+		countCommandKinds(got, "frame:70") != 2 ||
+		countCommandKinds(got, "frame:80") != 1 ||
+		countCommandKinds(got, "frame:81") != 1 {
+		t.Fatalf("commands = %v, want startup background, notify frames, and previous-frame background restore only", got)
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("commands = %v, want prefix %v", got, want)
-		}
+	if got := backgrounds.count(); got != 1 {
+		t.Fatalf("background restore attempts = %d, want only startup restore; previous-frame exact background identity must suppress idle duplicate", got)
 	}
 	if got := scheduler.QueueLen(); got != 0 {
 		t.Fatalf("queue length = %d, want 0; background convergence must stay out of ordinary queue", got)
@@ -315,21 +336,25 @@ func TestSchedulerPreviousFrameRestoreDoesNotConvergeRenderableBackgroundFromVis
 	mustRegisterTestAnimation(t, registry, "lookalike", testAnimation(1, time.Millisecond, 70))
 	mustRegisterTestAnimation(t, registry, "notify", testAnimation(1, time.Millisecond, 80))
 
+	backgrounds := newBackgroundRestoreRecorder()
 	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{
 		Background: BackgroundConfig{
 			AnimationID: "background",
 		},
+		OnBackgroundRestore: backgrounds.record,
 	})
+	idle := newSchedulerIdleRecorder()
+	scheduler.onIdle = idle.notify
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	runScheduler(t, ctx, scheduler)
 
-	client.waitCommands(t, 1)
-	waitSchedulerHealth(t, scheduler, func(health Health) bool {
+	idle.wait(t, scheduler, client, 1, func(health Health, _ displayState) bool {
 		return health.BackgroundConvergenceState == BackgroundConvergenceConverged &&
 			!health.BackgroundDirty &&
 			health.BackgroundConverged
 	})
+	backgrounds.waitCount(t, 1)
 	if state := scheduler.snapshotDisplayState(); state.Kind != displayStateFrame || state.BackgroundID != "background" {
 		t.Fatalf("initial display state = %+v, want scheduler-owned renderable background identity", state)
 	}
@@ -347,66 +372,27 @@ func TestSchedulerPreviousFrameRestoreDoesNotConvergeRenderableBackgroundFromVis
 	}); err != nil {
 		t.Fatal(err)
 	}
-	client.waitFor(t, func() bool {
-		if len(client.commandsLog) < 4 {
-			return false
-		}
-		for _, command := range client.commandsLog {
-			if command.kind == "frame:80" {
-				return true
-			}
-		}
-		return false
+
+	backgrounds.waitCount(t, 2)
+	commands := idle.wait(t, scheduler, client, 5, func(health Health, state displayState) bool {
+		return health.BackgroundConvergenceState == BackgroundConvergenceConverged &&
+			!health.BackgroundDirty &&
+			health.BackgroundConverged &&
+			state.Kind == displayStateFrame &&
+			state.BackgroundID == "background"
 	})
-
-	got := commandKinds(client.commands())
-	if len(got) == 0 {
-		t.Fatalf("commands = %v, want at least one command", got)
+	got := commandKinds(commands)
+	if len(got) != 5 ||
+		countCommandKinds(got, "frame:70") != 4 ||
+		countCommandKinds(got, "frame:80") != 1 {
+		t.Fatalf("commands = %v, want startup background, lookalike, notify, previous-frame restore, and idle background restore", got)
 	}
-	if countFrames(client.commands()) == 0 {
-		t.Fatalf("commands = %v, want at least one renderable frame command", got)
-	}
-	notifyIdx := -1
-	for i, command := range got {
-		if command == "frame:80" {
-			notifyIdx = i
-			break
-		}
-	}
-	if notifyIdx < 2 {
-		t.Fatalf("commands = %v, want sequence with background render, lookalike render, then notify render", got)
-	}
-	if got[0] != "frame:70" {
-		t.Fatalf("commands = %v, want first command to render configured background frame", got)
-	}
-
-	beforeNotify := got[:notifyIdx]
-	restoresAfterNotify := 0
-	restoresBeforeNotify := 0
-	for i := notifyIdx + 1; i < len(got); i++ {
-		if got[i] == "frame:70" {
-			restoresAfterNotify++
-		}
-	}
-	for _, command := range beforeNotify {
-		if command == "frame:70" {
-			restoresBeforeNotify++
-		}
-	}
-	if restoresBeforeNotify >= 3 && restoresAfterNotify > 0 {
-		t.Fatalf("commands = %v, want no duplicate restore after notify when display identity already matched background identity", got)
-	}
-	if restoresBeforeNotify <= 2 && restoresAfterNotify < 2 {
-		t.Fatalf("commands = %v, want at least two post-notify restores when lookalike has no background identity", got)
+	if got := backgrounds.count(); got != 2 {
+		t.Fatalf("background restore attempts = %d, want startup plus idle restore after visually identical non-background previous frame", got)
 	}
 	if got := scheduler.QueueLen(); got != 0 {
 		t.Fatalf("queue length = %d, want 0; background convergence must stay out of ordinary queue", got)
 	}
-	waitSchedulerHealth(t, scheduler, func(health Health) bool {
-		return health.BackgroundConvergenceState == BackgroundConvergenceConverged &&
-			!health.BackgroundDirty &&
-			health.BackgroundConverged
-	})
 	health := scheduler.Health()
 	if health.BackgroundConvergenceState != BackgroundConvergenceConverged || health.BackgroundDirty || !health.BackgroundConverged {
 		t.Fatalf("background health = %+v, want clean converged only after idle background restore", health)
@@ -5955,6 +5941,102 @@ func waitSchedulerQueueLen(t *testing.T, scheduler *Scheduler, want int) {
 	}
 }
 
+type schedulerIdleRecorder struct {
+	ch chan struct{}
+}
+
+func newSchedulerIdleRecorder() *schedulerIdleRecorder {
+	return &schedulerIdleRecorder{ch: make(chan struct{}, 1)}
+}
+
+func (r *schedulerIdleRecorder) notify() {
+	select {
+	case r.ch <- struct{}{}:
+	default:
+	}
+}
+
+func (r *schedulerIdleRecorder) wait(
+	t *testing.T,
+	scheduler *Scheduler,
+	client *fakeMatrixClient,
+	minCommands int,
+	predicate func(Health, displayState) bool,
+) []fakeCommand {
+	t.Helper()
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+	for {
+		select {
+		case <-r.ch:
+			commands, inFlight := client.commandSnapshot()
+			health := scheduler.Health()
+			state := scheduler.snapshotDisplayState()
+			if len(commands) >= minCommands &&
+				inFlight == 0 &&
+				scheduler.QueueLen() == 0 &&
+				predicate(health, state) {
+				return commands
+			}
+		case <-deadline.C:
+			commands, inFlight := client.commandSnapshot()
+			t.Fatalf(
+				"scheduler did not reach idle state; commands=%v in_flight=%d queue_len=%d health=%+v display_state=%+v",
+				commandKinds(commands),
+				inFlight,
+				scheduler.QueueLen(),
+				scheduler.Health(),
+				scheduler.snapshotDisplayState(),
+			)
+		}
+	}
+}
+
+type backgroundRestoreRecorder struct {
+	mu     sync.Mutex
+	cond   *sync.Cond
+	events []BackgroundRestoreEvent
+}
+
+func newBackgroundRestoreRecorder() *backgroundRestoreRecorder {
+	recorder := &backgroundRestoreRecorder{}
+	recorder.cond = sync.NewCond(&recorder.mu)
+	return recorder
+}
+
+func (r *backgroundRestoreRecorder) record(event BackgroundRestoreEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, event)
+	r.cond.Broadcast()
+}
+
+func (r *backgroundRestoreRecorder) waitCount(t *testing.T, want int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for len(r.events) < want {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			t.Fatalf("background restore attempts = %d, want at least %d", len(r.events), want)
+		}
+		timer := time.AfterFunc(remaining, func() {
+			r.mu.Lock()
+			r.cond.Broadcast()
+			r.mu.Unlock()
+		})
+		r.cond.Wait()
+		timer.Stop()
+	}
+}
+
+func (r *backgroundRestoreRecorder) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.events)
+}
+
 func waitOutcomeDispatcherStopped(t *testing.T, scheduler *Scheduler) {
 	t.Helper()
 	if scheduler.outcomeDispatcher == nil {
@@ -6766,6 +6848,14 @@ func (c *fakeMatrixClient) commands() []fakeCommand {
 	return commands
 }
 
+func (c *fakeMatrixClient) commandSnapshot() ([]fakeCommand, int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	commands := make([]fakeCommand, len(c.commandsLog))
+	copy(commands, c.commandsLog)
+	return commands, c.inFlight
+}
+
 func (c *fakeMatrixClient) maxConcurrent() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -6796,6 +6886,16 @@ func countFrames(commands []fakeCommand) int {
 		}
 	}
 	return frames
+}
+
+func countCommandKinds(commands []string, kind string) int {
+	count := 0
+	for _, command := range commands {
+		if command == kind {
+			count++
+		}
+	}
+	return count
 }
 
 func stringMarker(value byte) string {

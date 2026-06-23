@@ -3911,3 +3911,93 @@ M  internal/matrix/scheduler_test.go
 2026-06-23T10:54:26Z iteration final-telemetry checkpoint status before commit:
 M  AGENT_LOG.md
 M  SCORES.jsonl
+2026-06-23T10:54:28Z orchestrator finished iterations_run=30 iterations_attempted=30 iterations_completed_successfully=1 had_nonfatal_failures=true nonfatal_failure_count=29 last_nonfatal_exit_code=1 last_nonfatal_failure_reason=planner_failed loop_exit_code=0 process_exit_code=0 fatal=false terminal_reason=iterations_complete_with_failures final_checkpoint_behavior=telemetry_only
+2026-06-23T11:52:53Z orchestrator started provider=codex budget=18000s iterations=30 max_workers=4
+2026-06-23T11:52:53Z iteration 1 started remaining=18000s
+2026-06-23T11:52:53Z iteration 1 preplanner effective budgets untracked_scan_max_bytes=536870912 untracked_scan_max_count=10000 snapshot_copy_max_bytes=536870912 snapshot_copy_max_count=10000 snapshot_copy_max_file_bytes=134217728
+2026-06-23T11:52:53Z iteration 1 disposable preplanner repo created path=/tmp/agent-loop-preplanner-repo-zrucg9lp/repo copied_entries=55
+2026-06-23T11:52:53Z iteration 1 ideator phase started count=3
+2026-06-23T11:52:53Z iteration 1 ideator phase concurrency workers=3
+2026-06-23T11:52:53Z iteration 1 ideator 1 role="the pragmatist" started
+2026-06-23T11:52:53Z iteration 1 ideator 2 role="the architect" started
+2026-06-23T11:52:53Z iteration 1 ideator 3 role="the contrarian" started
+2026-06-23T11:53:03Z iteration 1 ideator 1 role="the pragmatist" completed status=0
+2026-06-23T11:53:03Z iteration 1 ideator 2 role="the architect" completed status=0
+2026-06-23T11:53:04Z iteration 1 ideator 3 role="the contrarian" completed status=0
+2026-06-23T11:53:04Z iteration 1 ideator phase completed approaches=3
+2026-06-23T11:53:04Z iteration 1 selector started approaches=3
+2026-06-23T11:53:13Z iteration 1 selector completed status=0
+2026-06-23T11:53:13Z iteration 1 disposable preplanner repo cleanup path=/tmp/agent-loop-preplanner-repo-zrucg9lp/repo
+2026-06-23T11:53:13Z iteration 1 selector rejected alternative role="the pragmatist" approach="Contract-First Surface Alignment: treat the next iteration as a public-contract repair pass before adding scheduler complexity. Start from the documented API/metrics/readiness v..." reason="Strong direction, but not selected as-is because it underemphasizes the need to freeze all operator-facing surfaces together, especially metrics/readiness labels and catalog schema gates."
+2026-06-23T11:53:13Z iteration 1 selector rejected alternative role="the architect" approach="Contract-First Surface Convergence: treat the next iteration as a public contract stabilization pass before any feature expansion, using one canonical vocabulary/projection boun..." reason="Strong direction, but not selected as-is because it is slightly too broad around convergence and could invite unnecessary internal renames instead of boundary translation."
+2026-06-23T11:53:13Z iteration 1 selector rejected alternative role="the contrarian" approach="Contract-First Surface Freeze: Treat the next iteration as a public-contract stabilization pass before touching deeper scheduler behavior. Start from the documented operator sur..." reason="Closest to the selected strategy, but not selected verbatim because the final planner guidance should explicitly include deterministic display-state identity assertions alongside public vocabulary and DTO boundaries."
+2026-06-23T11:53:13Z iteration 1 selector alternatives persisted count=3
+2026-06-23T11:53:13Z iteration 1 selector structured alternatives persisted count=3
+2026-06-23T11:53:13Z iteration 1 planner started
+2026-06-23T11:53:34Z iteration 1 plan: 5 task(s) in 3 phase(s). The decomposition prioritizes the contract-first stabilization slice: first establish a single public vocabulary projection, then update independent API/metrics/readiness and event-validation surfaces, then freeze docs and strengthen the scheduler regression guardrail. Parallel phases only group tasks with different primary ownership and no required shared edits beyond consuming the phase 1 public vocabulary behavior.
+2026-06-23T11:53:34Z iteration 1 phase 1 started parallel=False tasks=1
+2026-06-23T11:55:41Z iteration 1 task t1 ('Create canonical public animation kind projection') status=0
+2026-06-23T11:55:41Z iteration 1 phase 2 started parallel=True tasks=2
+2026-06-23T11:57:17Z iteration 1 task t3 ('Freeze event override validation contract') status=0
+2026-06-23T11:57:46Z iteration 1 task t2 ('Align readiness and metrics background kind vocabulary') status=0
+2026-06-23T11:57:46Z iteration 1 phase 3 started parallel=True tasks=2
+2026-06-23T11:58:29Z iteration 1 task t4 ('Document fixed public contract surfaces') status=0
+2026-06-23T12:00:56Z iteration 1 task t5 ('Make previous-frame dedupe regression deterministic') status=0
+2026-06-23T12:00:56Z iteration 1 reviewer started
+
+## Reviewer Summary - Iteration 1
+
+### What Was Done
+
+- Inspected the actual git diff for every file touched this iteration: README, background/event contract docs, animation registry/catalog, app readiness/metrics, HTTP handlers/tests, scheduler/dedupe tests, metrics tests, PLAN, MEMORY, and AGENT_LOG.
+- Confirmed the public animation/background kind vocabulary is now projected through `animations.ProjectPublicKind`: internal matrix `renderable` backgrounds are exposed publicly as `generated`, and firmware presets remain `firmware_preset`.
+- Confirmed `/readyz.background.kind` and background metric `kind` labels now use the public vocabulary, with tests preventing public `kind="renderable"` leakage.
+- Confirmed `/api/v1/animations/catalog` uses an explicit HTTP DTO with bounded stable fields plus optional firmware metadata (`effect_id`, `interval`, `color`), while `/api/v1/animations` remains playable-only.
+- Confirmed generic event override validation is documented and cross-ingress tests keep `/events`, `/notify`, and `/play` error vocabulary aligned for animation, restore, and duration failures.
+- Confirmed previous-frame background dedupe tests now use an idle recorder plus background restore recorder instead of exact queue-depth ordering, and cover both positive identity matches and the negative visually-identical non-background case.
+- Rewrote `PLAN.md` to mark the completed public-vocabulary/event-validation/dedupe work and reprioritize the remaining catalog wire-shape mismatch and projection guardrails.
+
+### What Was Found
+
+- No high-severity runtime regression was found. `go test ./...`, `go vet ./...`, `go test -race ./...`, and focused race checks for the touched surfaces all pass.
+- Medium severity: README and `docs/background-convergence-v1.md` show catalog firmware preset `interval` as `"90ms"`, but the handler serializes `*time.Duration` directly, which encodes as a numeric nanosecond value on the JSON wire. The docs and tests do not currently freeze the actual JSON type.
+- Medium severity: the scheduler idle hook makes dedupe regression tests more deterministic, but it is a package-private production field used only by tests. Keep it contained or replace it with a cleaner fake-client/test-only synchronization seam if more tests need it.
+- Medium severity: background restore event metrics still consume event-time state directly, while readiness and current-state metrics use the shared projection. No failure was observed, but future background metric edits should avoid bypassing the projection authority.
+- Existing accepted limitations remain: no background retry `failure_count` metric, synchronous heartbeat probe latency, TCP metric callbacks under the TCP mutex, blocking event-bus v1 delivery, no declarative frame/pixel-art animations, ignored `InterruptMode`, and no admin reload endpoint.
+
+### Top Improvement Proposals
+
+1. Decide and freeze the catalog `interval` wire type. Either emit duration strings intentionally through the API DTO, or update README/docs/tests to document numeric nanoseconds.
+2. Add catalog metadata wire-shape tests that assert JSON types for `effect_id`, `interval`, and `color`, while preserving stable required fields and optional bounded firmware metadata.
+3. Add cross-surface compatibility tests proving generated backgrounds expose `generated` in `/readyz`, Prometheus background metrics, and catalog output, and that no public surface emits `renderable`.
+4. Keep the scheduler idle test hook under review; prefer a test-only seam or fake-client quiet assertion if synchronization needs grow beyond these dedupe tests.
+5. Continue routing public background state through the single projection function, especially when adding or changing metrics based on background restore events.
+
+### Verification
+
+- `go test ./...` passed.
+- `go vet ./...` passed.
+- `go test -race ./...` passed.
+- `go test -race ./internal/matrix ./internal/app ./internal/integrations/httpapi ./internal/metrics -run 'TestSchedulerPreviousFrameRestore|TestProjectPublicKind|TestReadyAndMetricsExpose.*Background|TestAnimationCatalog|TestAnimationsEndpoint|TestEventsOverrideValidation|TestOverrideValidationErrorVocabulary|TestBackgroundStateGauges|TestBackgroundRestoreMetrics' -count=5` passed.
+2026-06-23T12:03:40Z iteration 1 reviewer completed status=0
+2026-06-23T12:03:40Z iteration 1 memory updated
+2026-06-23T12:03:40Z iteration 1 completed validation_status=0
+2026-06-23T12:03:40Z iteration 1 checkpoint started
+2026-06-23T12:03:40Z iteration 1 checkpoint status before commit:
+M  AGENT_LOG.md
+M  ALTERNATIVES.jsonl
+M  MEMORY.md
+M  PLAN.md
+M  README.md
+M  SCORES.jsonl
+M  docs/background-convergence-v1.md
+M  docs/event-bus-contract.md
+M  internal/animations/registry.go
+M  internal/animations/registry_test.go
+M  internal/app/app.go
+M  internal/app/app_test.go
+M  internal/integrations/httpapi/handlers.go
+M  internal/integrations/httpapi/server_test.go
+M  internal/matrix/scheduler.go
+M  internal/matrix/scheduler_test.go
+M  internal/metrics/metrics_test.go

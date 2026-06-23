@@ -27,6 +27,24 @@ const (
 	EntryFirmwarePreset EntryKind = "firmware_preset"
 )
 
+type PublicKind string
+
+const (
+	PublicKindGenerated      PublicKind = "generated"
+	PublicKindFirmwarePreset PublicKind = "firmware_preset"
+)
+
+func ProjectPublicKind(kind string) (PublicKind, bool) {
+	switch kind {
+	case string(EntryGenerated), "renderable":
+		return PublicKindGenerated, true
+	case string(EntryFirmwarePreset):
+		return PublicKindFirmwarePreset, true
+	default:
+		return "", false
+	}
+}
+
 type Entry struct {
 	ID             string
 	Kind           EntryKind
@@ -36,12 +54,12 @@ type Entry struct {
 }
 
 type CatalogEntry struct {
-	ID       string         `json:"id"`
-	Kind     EntryKind      `json:"kind"`
-	Playable bool           `json:"playable"`
-	EffectID *byte          `json:"effect_id,omitempty"`
-	Interval *time.Duration `json:"interval,omitempty"`
-	Color    *RGB           `json:"color,omitempty"`
+	ID       string
+	Kind     PublicKind
+	Playable bool
+	EffectID *byte
+	Interval *time.Duration
+	Color    *RGB
 }
 
 type Registry struct {
@@ -182,9 +200,13 @@ func (r *Registry) Catalog() []CatalogEntry {
 	defer r.mu.RUnlock()
 	catalog := make([]CatalogEntry, 0, len(r.entries))
 	for id, entry := range r.entries {
+		kind, ok := ProjectPublicKind(string(entry.Kind))
+		if !ok {
+			continue
+		}
 		item := CatalogEntry{
 			ID:       id,
-			Kind:     entry.Kind,
+			Kind:     kind,
 			Playable: entry.Animation != nil,
 		}
 		if entry.FirmwarePreset != nil {

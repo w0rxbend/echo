@@ -45,18 +45,41 @@ func TestRegistryRenderableHelpersSeparateGeneratedAnimationsFromFirmwarePresets
 		t.Fatalf("IDs() = %v, want %v", got, want)
 	}
 	if got, want := registry.Catalog(), []CatalogEntry{
-		{ID: "alert", Kind: EntryGenerated, Playable: true},
+		{ID: "alert", Kind: PublicKindGenerated, Playable: true},
 		{
 			ID:       "matrix_rain_background",
-			Kind:     EntryFirmwarePreset,
+			Kind:     PublicKindFirmwarePreset,
 			Playable: false,
 			EffectID: bytePtr(9),
 			Interval: durationPtr(150 * time.Millisecond),
 			Color:    rgbPtr(RGB{R: 3, G: 4, B: 5}),
 		},
-		{ID: "notification", Kind: EntryGenerated, Playable: true},
+		{ID: "notification", Kind: PublicKindGenerated, Playable: true},
 	}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("Catalog() = %+v, want %+v", got, want)
+	}
+}
+
+func TestProjectPublicKind(t *testing.T) {
+	tests := []struct {
+		name string
+		kind string
+		want PublicKind
+		ok   bool
+	}{
+		{name: "generated", kind: string(EntryGenerated), want: PublicKindGenerated, ok: true},
+		{name: "renderable internal background", kind: "renderable", want: PublicKindGenerated, ok: true},
+		{name: "firmware preset", kind: string(EntryFirmwarePreset), want: PublicKindFirmwarePreset, ok: true},
+		{name: "unknown", kind: "custom", ok: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := ProjectPublicKind(tt.kind)
+			if got != tt.want || ok != tt.ok {
+				t.Fatalf("ProjectPublicKind(%q) = %q, %v; want %q, %v", tt.kind, got, ok, tt.want, tt.ok)
+			}
+		})
 	}
 }
 
@@ -91,16 +114,16 @@ func TestRegistryCatalogCoversAllEntriesAndKeepsFirmwarePresetsNonPlayable(t *te
 	want := []CatalogEntry{
 		{
 			ID:       "matrix_rain_background",
-			Kind:     EntryFirmwarePreset,
+			Kind:     PublicKindFirmwarePreset,
 			Playable: false,
 			EffectID: bytePtr(9),
 			Interval: durationPtr(150 * time.Millisecond),
 			Color:    rgbPtr(RGB{R: 3, G: 4, B: 5}),
 		},
-		{ID: "notification", Kind: EntryGenerated, Playable: true},
+		{ID: "notification", Kind: PublicKindGenerated, Playable: true},
 		{
 			ID:       "slow_glow_background",
-			Kind:     EntryFirmwarePreset,
+			Kind:     PublicKindFirmwarePreset,
 			Playable: false,
 			EffectID: bytePtr(4),
 			Interval: durationPtr(500 * time.Millisecond),

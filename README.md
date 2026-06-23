@@ -29,7 +29,7 @@ The obsolete `matrix_proxy_event_publish_backpressure_wait_seconds` metric famil
 and loads it from `configs/animations.example.yaml`. That entry is a
 `firmware_preset`, so the rain effect ID, interval, and color are configuration
 metadata instead of app-level special cases. Firmware preset entries are
-background-only metadata; they are not renderable animations and cannot be used
+background-only metadata; they are not generated animations and cannot be used
 as ordinary rule `play.animation` values or direct playback requests.
 
 When `background.restore_on_idle` is true and `background.animation` is set,
@@ -55,7 +55,7 @@ control path becomes idle.
 The configured background ID is resolved from the merged animation registry and
 may reference either a generated animation or a `firmware_preset`. Firmware
 presets are applied with scheduler-owned `SetPreset` commands. Generated or
-otherwise renderable backgrounds are rendered as finite frame sequences and
+generated backgrounds are rendered as finite frame sequences and
 packed through the layout mapper; they are not long-running queue items and do
 not block later transient events. HTTP handlers and app event processing do not
 call the TCP matrix client directly.
@@ -70,9 +70,10 @@ as `matrix_rain_background` are intentionally excluded.
 
 `GET /api/v1/animations/catalog` returns the structured discovery catalog for
 all registry entries. Each entry exposes the stable fields `id`, `kind`, and
-`playable`; no other catalog fields are part of this contract. `kind` is
-bounded to `generated` and `firmware_preset`, and `playable` is true only for
-`generated` entries.
+`playable`. `kind` is bounded to `generated` and `firmware_preset`, and
+`playable` is true only for `generated` entries. Firmware preset entries may
+additionally expose the bounded metadata fields `effect_id`, `interval`, and
+`color` when configured; no other catalog fields are part of this contract.
 
 ```json
 {
@@ -85,7 +86,14 @@ bounded to `generated` and `firmware_preset`, and `playable` is true only for
     {
       "id": "matrix_rain_background",
       "kind": "firmware_preset",
-      "playable": false
+      "playable": false,
+      "effect_id": 12,
+      "interval": "90ms",
+      "color": {
+        "r": 0,
+        "g": 255,
+        "b": 85
+      }
     }
   ]
 }

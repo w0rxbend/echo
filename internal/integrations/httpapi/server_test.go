@@ -878,11 +878,24 @@ func TestAnimationCatalogEndpointIncludesNonPlayableMetadata(t *testing.T) {
 		Playable bool
 	}
 	want := map[string]catalogEntry{
-		firmwarePresetID:                   {ID: firmwarePresetID, Kind: string(animations.EntryFirmwarePreset), Playable: false},
-		animations.NotificationAnimationID: {ID: animations.NotificationAnimationID, Kind: string(animations.EntryGenerated), Playable: true},
+		firmwarePresetID:                   {ID: firmwarePresetID, Kind: string(animations.PublicKindFirmwarePreset), Playable: false},
+		animations.NotificationAnimationID: {ID: animations.NotificationAnimationID, Kind: string(animations.PublicKindGenerated), Playable: true},
 	}
 	seen := map[string]bool{}
+	allowedFields := map[string]bool{
+		"id":        true,
+		"kind":      true,
+		"playable":  true,
+		"effect_id": true,
+		"interval":  true,
+		"color":     true,
+	}
 	for i, entry := range body.Animations {
+		for field := range entry {
+			if !allowedFields[field] {
+				t.Fatalf("GET /animations/catalog entry %d id=%v leaked unsupported field %q: %+v", i, entry["id"], field, entry)
+			}
+		}
 		id, ok := entry["id"].(string)
 		if !ok {
 			t.Fatalf("GET /animations/catalog entry %d missing stable string field id: %+v", i, entry)
@@ -896,15 +909,18 @@ func TestAnimationCatalogEndpointIncludesNonPlayableMetadata(t *testing.T) {
 			t.Fatalf("GET /animations/catalog entry %d missing stable bool field playable: %+v", i, entry)
 		}
 
+		if kind == "renderable" {
+			t.Fatalf("GET /animations/catalog entry %d id=%s leaked internal kind %q", i, id, kind)
+		}
 		switch kind {
-		case string(animations.EntryGenerated), string(animations.EntryFirmwarePreset):
+		case string(animations.PublicKindGenerated), string(animations.PublicKindFirmwarePreset):
 		default:
 			t.Fatalf("GET /animations/catalog entry %d id=%s has unsupported kind %q", i, id, kind)
 		}
-		if kind == string(animations.EntryGenerated) && !playable {
+		if kind == string(animations.PublicKindGenerated) && !playable {
 			t.Fatalf("GET /animations/catalog entry %d id=%s kind=generated must have playable=true", i, id)
 		}
-		if kind == string(animations.EntryFirmwarePreset) && playable {
+		if kind == string(animations.PublicKindFirmwarePreset) && playable {
 			t.Fatalf("GET /animations/catalog entry %d id=%s kind=firmware_preset must have playable=false", i, id)
 		}
 		if _, ok := seen[id]; ok {
@@ -962,11 +978,11 @@ func TestFirmwarePresetIsNotPlayableThroughPublicAnimationIngress(t *testing.T) 
 		}
 		for _, entry := range body.Animations {
 			switch entry.Kind {
-			case string(animations.EntryGenerated):
+			case string(animations.PublicKindGenerated):
 				if entry.EffectID != nil || entry.Interval != nil || entry.Color != nil {
 					t.Fatalf("generated catalog entry must not include firmware preset metadata: %+v", entry)
 				}
-			case string(animations.EntryFirmwarePreset):
+			case string(animations.PublicKindFirmwarePreset):
 				if entry.ID != firmwarePresetID {
 					continue
 				}
@@ -1039,6 +1055,28 @@ func assertFirmwarePresetRejected(t *testing.T, operation string, resp *http.Res
 			t.Fatalf("%s body = %s, want to contain %q", operation, data, part)
 		}
 	}
+}
+
+func readErrorResponse(t *testing.T, operation string, resp *http.Response, wantStatus int) string {
+	t.Helper()
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != wantStatus {
+		t.Fatalf("%s status = %d, body = %s, want %d", operation, resp.StatusCode, data, wantStatus)
+	}
+	var body struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatalf("%s body = %s, decode error: %v", operation, data, err)
+	}
+	if body.Error == "" {
+		t.Fatalf("%s body = %s, want non-empty error", operation, data)
+	}
+	return body.Error
 }
 
 func TestPlayValidatesPlayableAnimation(t *testing.T) {
@@ -1148,6 +1186,88 @@ func TestNotifyAnimationOverrideValidatesPlayableAnimation(t *testing.T) {
 			for _, part := range tt.wantErrorParts {
 				if !strings.Contains(string(data), part) {
 					t.Fatalf("POST /notify body = %s, want to contain %q", data, part)
+				}
+			}
+		})
+	}
+}
+
+func TestOverrideValidationErrorVocabularyMatchesAcrossHTTPIngresses(t *testing.T) {
+	httpServer := newAnimationAPITestServer(t)
+
+	tests := []struct {
+		name      string
+		requests  map[string]string
+		wantParts []string
+	}{
+		{
+			name: "unknown animation",
+			requests: map[string]string{
+				"/api/v1/events": `{"type":"notify","attributes":{"animation":"unknown_animation"}}`,
+				"/api/v1/notify": `{"title":"Test","message":"hello","animation":"unknown_animation"}`,
+				"/api/v1/play":   `{"animation":"unknown_animation","duration":"50ms","restore":"leave"}`,
+			},
+			wantParts: []string{"unknown animation", "unknown_animation"},
+		},
+		{
+			name: "non-renderable animation",
+			requests: map[string]string{
+				"/api/v1/events": `{"type":"notify","attributes":{"animation":"matrix_rain_background"}}`,
+				"/api/v1/notify": `{"title":"Test","message":"hello","animation":"matrix_rain_background"}`,
+				"/api/v1/play":   `{"animation":"matrix_rain_background","duration":"50ms","restore":"leave"}`,
+			},
+			wantParts: []string{"matrix_rain_background", "not renderable/playable"},
+		},
+		{
+			name: "invalid restore",
+			requests: map[string]string{
+				"/api/v1/events": `{"type":"notify","attributes":{"restore":"afterglow"}}`,
+				"/api/v1/notify": `{"title":"Test","message":"hello","restore":"afterglow"}`,
+				"/api/v1/play":   `{"animation":"notification","duration":"50ms","restore":"afterglow"}`,
+			},
+			wantParts: []string{"invalid restore policy"},
+		},
+		{
+			name: "malformed duration",
+			requests: map[string]string{
+				"/api/v1/events": `{"type":"notify","attributes":{"duration":"not-a-duration"}}`,
+				"/api/v1/notify": `{"title":"Test","message":"hello","duration":"not-a-duration"}`,
+				"/api/v1/play":   `{"animation":"notification","duration":"not-a-duration","restore":"leave"}`,
+			},
+			wantParts: []string{"invalid duration"},
+		},
+		{
+			name: "negative duration",
+			requests: map[string]string{
+				"/api/v1/events": `{"type":"notify","attributes":{"duration":"-1ms"}}`,
+				"/api/v1/notify": `{"title":"Test","message":"hello","duration":"-1ms"}`,
+				"/api/v1/play":   `{"animation":"notification","duration":"-1ms","restore":"leave"}`,
+			},
+			wantParts: []string{"duration cannot be negative"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotByPath := make(map[string]string, len(tt.requests))
+			var baseline string
+			for path, body := range tt.requests {
+				resp, err := http.Post(httpServer.URL+path, "application/json", strings.NewReader(body))
+				if err != nil {
+					t.Fatal(err)
+				}
+				errorMessage := readErrorResponse(t, path, resp, http.StatusBadRequest)
+				gotByPath[path] = errorMessage
+				if baseline == "" {
+					baseline = errorMessage
+				}
+				if errorMessage != baseline {
+					t.Fatalf("%s error = %q, want same vocabulary as first ingress %q; all errors = %#v", path, errorMessage, baseline, gotByPath)
+				}
+				for _, part := range tt.wantParts {
+					if !strings.Contains(errorMessage, part) {
+						t.Fatalf("%s error = %q, want to contain %q", path, errorMessage, part)
+					}
 				}
 			}
 		})

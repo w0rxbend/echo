@@ -165,6 +165,7 @@ type Scheduler struct {
 	heartbeatInterval                 time.Duration
 	probeTimeout                      time.Duration
 	now                               func() time.Time
+	onIdle                            func()
 
 	mu                              sync.RWMutex
 	state                           State
@@ -623,6 +624,9 @@ runLoop:
 			continue
 		}
 
+		if s.queue.len() == 0 {
+			s.notifyIdle()
+		}
 		item, ok, err := s.nextItemOrHeartbeat(ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -1064,6 +1068,12 @@ func (s *Scheduler) recordObservabilityCallbackPanic(name string) {
 		s.observabilityCallbackPanicCounts = make(map[string]uint64)
 	}
 	s.observabilityCallbackPanicCounts[name]++
+}
+
+func (s *Scheduler) notifyIdle() {
+	if s.onIdle != nil {
+		s.onIdle()
+	}
 }
 
 type outcomeObserverDispatcher struct {

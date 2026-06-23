@@ -194,7 +194,19 @@ func (s *Server) handleAnimations(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAnimationCatalog(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"animations": s.registry.Catalog()})
+	catalog := s.registry.Catalog()
+	entries := make([]animationCatalogEntry, 0, len(catalog))
+	for _, entry := range catalog {
+		entries = append(entries, animationCatalogEntry{
+			ID:       entry.ID,
+			Kind:     entry.Kind,
+			Playable: entry.Playable,
+			EffectID: entry.EffectID,
+			Interval: entry.Interval,
+			Color:    entry.Color,
+		})
+	}
+	writeJSON(w, http.StatusOK, animationCatalogResponse{Animations: entries})
 }
 
 func (s *Server) validatePlayableAnimation(id string) error {
@@ -206,6 +218,19 @@ func (s *Server) validatePlayableAnimation(id string) error {
 		return fmt.Errorf("animation %q is not renderable/playable", id)
 	}
 	return nil
+}
+
+type animationCatalogResponse struct {
+	Animations []animationCatalogEntry `json:"animations"`
+}
+
+type animationCatalogEntry struct {
+	ID       string                `json:"id"`
+	Kind     animations.PublicKind `json:"kind"`
+	Playable bool                  `json:"playable"`
+	EffectID *byte                 `json:"effect_id,omitempty"`
+	Interval *time.Duration        `json:"interval,omitempty"`
+	Color    *animations.RGB       `json:"color,omitempty"`
 }
 
 func (s *Server) validateEventOverrides(attrs map[string]string) error {

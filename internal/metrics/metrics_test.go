@@ -35,7 +35,7 @@ func TestBackgroundRestoreMetricsUseBoundedLabelsAndSeparateFamilies(t *testing.
 	}
 
 	registry.BackgroundRestoreAttemptsTotal.WithLabelValues("firmware_preset").Inc()
-	registry.BackgroundRestoreFailuresTotal.WithLabelValues("renderable", "retryable").Inc()
+	registry.BackgroundRestoreFailuresTotal.WithLabelValues("generated", "retryable").Inc()
 	registry.PlayItemsTotal.WithLabelValues("animation", "notification", "executed").Inc()
 
 	families, err := registry.Gatherer().Gather()
@@ -46,6 +46,8 @@ func TestBackgroundRestoreMetricsUseBoundedLabelsAndSeparateFamilies(t *testing.
 
 	assertMetricFamilyLabelNames(t, byName, "matrix_proxy_background_restore_attempts_total", []string{"kind"})
 	assertMetricFamilyLabelNames(t, byName, "matrix_proxy_background_restore_failures_total", []string{"error_class", "kind"})
+	assertMetricFamilyHasNoLabelValue(t, byName, "matrix_proxy_background_restore_attempts_total", "kind", "renderable")
+	assertMetricFamilyHasNoLabelValue(t, byName, "matrix_proxy_background_restore_failures_total", "kind", "renderable")
 	if family := byName["matrix_proxy_play_items_total"]; family == nil {
 		t.Fatal("matrix_proxy_play_items_total is not registered")
 	} else if got := len(family.GetMetric()); got != 1 {
@@ -60,7 +62,7 @@ func TestBackgroundStateGaugesUseBoundedKindOnly(t *testing.T) {
 	}
 
 	registry.BackgroundDirty.WithLabelValues("firmware_preset").Set(1)
-	registry.BackgroundConverged.WithLabelValues("renderable").Set(0)
+	registry.BackgroundConverged.WithLabelValues("generated").Set(0)
 	registry.BackgroundNextRetrySeconds.WithLabelValues("firmware_preset").Set(12)
 	for _, state := range []string{"unknown", "dirty", "attempting", "converged", "failed", "retrying"} {
 		value := 0.0
@@ -96,6 +98,10 @@ func TestBackgroundStateGaugesUseBoundedKindOnly(t *testing.T) {
 	assertMetricFamilyHasNoLabelNames(t, byName, "matrix_proxy_background_converged", "background_id", "animation", "id")
 	assertMetricFamilyHasNoLabelNames(t, byName, "matrix_proxy_background_next_retry_seconds", "background_id", "animation", "id")
 	assertMetricFamilyHasNoLabelNames(t, byName, "matrix_proxy_background_state", "background_id", "animation", "id")
+	assertMetricFamilyHasNoLabelValue(t, byName, "matrix_proxy_background_dirty", "kind", "renderable")
+	assertMetricFamilyHasNoLabelValue(t, byName, "matrix_proxy_background_converged", "kind", "renderable")
+	assertMetricFamilyHasNoLabelValue(t, byName, "matrix_proxy_background_next_retry_seconds", "kind", "renderable")
+	assertMetricFamilyHasNoLabelValue(t, byName, "matrix_proxy_background_state", "kind", "renderable")
 	assertMetricFamilyGaugeValue(t, byName, "matrix_proxy_background_state", 1, map[string]string{
 		"kind":  "firmware_preset",
 		"state": "retrying",
@@ -105,6 +111,21 @@ func TestBackgroundStateGaugesUseBoundedKindOnly(t *testing.T) {
 			"kind":  "firmware_preset",
 			"state": state,
 		})
+	}
+}
+
+func assertMetricFamilyHasNoLabelValue(t *testing.T, families map[string]*dto.MetricFamily, name, labelName, forbidden string) {
+	t.Helper()
+	family, ok := families[name]
+	if !ok {
+		t.Fatalf("metric family %q is not registered", name)
+	}
+	for _, metric := range family.GetMetric() {
+		for _, label := range metric.GetLabel() {
+			if label.GetName() == labelName && label.GetValue() == forbidden {
+				t.Fatalf("metric family %q has forbidden label %s=%q in %v", name, labelName, forbidden, metric.GetLabel())
+			}
+		}
 	}
 }
 

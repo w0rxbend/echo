@@ -286,6 +286,7 @@ func TestReadyAndMetricsExposePreviousFrameBackgroundDedupeAsPlaybackRestoreConv
 	assertNoMetricLine(t, httpServer.URL, "matrix_proxy_background_restore_failures_total", `kind="firmware_preset"`)
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_state",
 		`kind="firmware_preset"`, `state="converged"`, " 1")
+	assertNoRenderableBackgroundMetrics(t, httpServer.URL)
 }
 
 func TestReadyAndMetricsExposeFirmwarePresetBackgroundFailureAndRecoveryWithoutPlaybackPollution(t *testing.T) {
@@ -547,7 +548,7 @@ func TestReadyAndMetricsExposeGeneratedBackgroundFrameFailureAndRecoveryWithoutP
 	httpServer := httptest.NewServer(application.Handler())
 	defer httpServer.Close()
 
-	ready, status := waitForReadyBackground(t, httpServer.URL, backgroundID, "renderable", "retrying")
+	ready, status := waitForReadyBackground(t, httpServer.URL, backgroundID, "generated", "retrying")
 	if status != http.StatusOK {
 		t.Fatalf("GET /readyz status = %d, body = %#v, want %d", status, ready, http.StatusOK)
 	}
@@ -573,18 +574,18 @@ func TestReadyAndMetricsExposeGeneratedBackgroundFrameFailureAndRecoveryWithoutP
 	}
 
 	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
-		1, `kind="renderable"`)
+		1, `kind="generated"`)
 	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_restore_failures_total",
-		1, `kind="renderable"`, `error_class="permanent"`)
+		1, `kind="generated"`, `error_class="permanent"`)
 	assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
-		[]string{"kind"}, `kind="renderable"`)
+		[]string{"kind"}, `kind="generated"`)
 	assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_background_restore_failures_total",
-		[]string{"error_class", "kind"}, `kind="renderable"`, `error_class="permanent"`)
+		[]string{"error_class", "kind"}, `kind="generated"`, `error_class="permanent"`)
 	assertNoMetricLine(t, httpServer.URL, "matrix_proxy_play_items_total")
 
 	matrixServer.RecoverCommandStatus(testCommandSetFrame)
 	matrixServer.CloseActiveConnections()
-	ready, status = waitForReadyBackground(t, httpServer.URL, backgroundID, "renderable", "converged")
+	ready, status = waitForReadyBackground(t, httpServer.URL, backgroundID, "generated", "converged")
 	if status != http.StatusOK {
 		t.Fatalf("GET /readyz status = %d, body = %#v, want %d", status, ready, http.StatusOK)
 	}
@@ -603,8 +604,9 @@ func TestReadyAndMetricsExposeGeneratedBackgroundFrameFailureAndRecoveryWithoutP
 			ready.Background.LastError, ready.Background.LastErrorClass, ready.Background)
 	}
 	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
-		2, `kind="renderable"`)
+		2, `kind="generated"`)
 	assertNoMetricLine(t, httpServer.URL, "matrix_proxy_play_items_total")
+	assertNoRenderableBackgroundMetrics(t, httpServer.URL)
 }
 
 func TestReadyAndMetricsExposePartialGeneratedBackgroundFrameFailureAndFullReplayRecovery(t *testing.T) {
@@ -652,7 +654,7 @@ func TestReadyAndMetricsExposePartialGeneratedBackgroundFrameFailureAndFullRepla
 	defer httpServer.Close()
 
 	waitForExactSetFramePayloads(t, matrixServer, expectedBackgroundPayloads[:2])
-	ready, status := waitForReadyBackground(t, httpServer.URL, backgroundID, "renderable", "retrying")
+	ready, status := waitForReadyBackground(t, httpServer.URL, backgroundID, "generated", "retrying")
 	if status != http.StatusOK {
 		t.Fatalf("GET /readyz status = %d, body = %#v, want %d", status, ready, http.StatusOK)
 	}
@@ -678,22 +680,22 @@ func TestReadyAndMetricsExposePartialGeneratedBackgroundFrameFailureAndFullRepla
 	}
 
 	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
-		1, `kind="renderable"`)
+		1, `kind="generated"`)
 	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_restore_failures_total",
-		1, `kind="renderable"`, `error_class="permanent"`)
+		1, `kind="generated"`, `error_class="permanent"`)
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_dirty",
-		`kind="renderable"`, " 1")
+		`kind="generated"`, " 1")
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_converged",
-		`kind="renderable"`, " 0")
+		`kind="generated"`, " 0")
 	assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_background_dirty",
-		[]string{"kind"}, `kind="renderable"`)
+		[]string{"kind"}, `kind="generated"`)
 	assertMetricLabelKeys(t, httpServer.URL, "matrix_proxy_background_converged",
-		[]string{"kind"}, `kind="renderable"`)
+		[]string{"kind"}, `kind="generated"`)
 	assertNoMetricLine(t, httpServer.URL, "matrix_proxy_play_items_total")
 
 	matrixServer.CloseActiveConnections()
 	waitForExactSetFramePayloads(t, matrixServer, expectedBackgroundPayloads)
-	ready, status = waitForReadyBackground(t, httpServer.URL, backgroundID, "renderable", "converged")
+	ready, status = waitForReadyBackground(t, httpServer.URL, backgroundID, "generated", "converged")
 	if status != http.StatusOK {
 		t.Fatalf("GET /readyz status = %d, body = %#v, want %d", status, ready, http.StatusOK)
 	}
@@ -712,12 +714,13 @@ func TestReadyAndMetricsExposePartialGeneratedBackgroundFrameFailureAndFullRepla
 			ready.Background.LastError, ready.Background.LastErrorClass, ready.Background)
 	}
 	waitForMetricLineValueAtLeast(t, httpServer.URL, "matrix_proxy_background_restore_attempts_total",
-		2, `kind="renderable"`)
+		2, `kind="generated"`)
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_dirty",
-		`kind="renderable"`, " 0")
+		`kind="generated"`, " 0")
 	waitForMetricLine(t, httpServer.URL, "matrix_proxy_background_converged",
-		`kind="renderable"`, " 1")
+		`kind="generated"`, " 1")
 	assertNoMetricLine(t, httpServer.URL, "matrix_proxy_play_items_total")
+	assertNoRenderableBackgroundMetrics(t, httpServer.URL)
 }
 
 func TestAppRestoresMatrixRainBackgroundAfterFakeESPReconnectThroughTCP(t *testing.T) {
@@ -2655,6 +2658,20 @@ func assertNoMetricLine(t *testing.T, baseURL, metric string, parts ...string) {
 		if matched {
 			t.Fatalf("metrics unexpectedly contained %s with %v in line:\n%s", metric, parts, line)
 		}
+	}
+}
+
+func assertNoRenderableBackgroundMetrics(t *testing.T, baseURL string) {
+	t.Helper()
+	for _, metric := range []string{
+		"matrix_proxy_background_restore_attempts_total",
+		"matrix_proxy_background_restore_failures_total",
+		"matrix_proxy_background_dirty",
+		"matrix_proxy_background_converged",
+		"matrix_proxy_background_next_retry_seconds",
+		"matrix_proxy_background_state",
+	} {
+		assertNoMetricLine(t, baseURL, metric, `kind="renderable"`)
 	}
 }
 

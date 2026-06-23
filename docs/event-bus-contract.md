@@ -52,3 +52,22 @@ until the contract is revisited or replaced.
 Any future design pass must explicitly decide whether to preserve or replace the
 blocking fan-out model, partial-delivery error semantics, terminal zero-depth
 lifecycle observations, and synchronous depth-callback behavior.
+
+## Generic Event Ingestion
+
+`POST /api/v1/events` accepts schema-agnostic normalized events and publishes
+valid events to the asynchronous event path. The endpoint validates only known
+playback override attributes before publish:
+
+- `attributes.animation` must name a known generated/playable animation, using
+  the same playable animation contract as `POST /api/v1/play` and
+  `POST /api/v1/notify`.
+- `attributes.restore` must use the same restore vocabulary accepted by
+  `POST /api/v1/play` and `POST /api/v1/notify`, such as `leave`,
+  `previous_frame`, `background`, `clear`, or `blank`.
+- `attributes.duration` must be a well-formed, non-negative duration.
+
+Invalid known overrides are rejected synchronously and are not published.
+Unknown or custom attributes remain event data: the generic endpoint preserves
+them unchanged for downstream processing, including namespaced custom
+attributes such as `param.*`.

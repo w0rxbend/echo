@@ -81,12 +81,18 @@ commands only.
 ## Exported channels
 
 - `/readyz` exposes `background` object fields:
-  - `state`, `dirty`, `converged`, `last_attempt`, `last_success`, `last_error`,
-    `last_error_class`, `next_retry`, `failure_count`
+  - `configured_id`, `kind`, `state`, `dirty`, `converged`, `last_attempt`,
+    `last_success`, `last_error`, `last_error_class`, `next_retry`,
+    `failure_count`
 - `matrix_proxy_background_state{kind,state}` exposes the one-hot projected state.
 
 Top-level `/readyz` still returns HTTP 200 when workers are running and matrix is connected,
 regardless of dirty/attempting/failed/retrying background state.
+
+The public background `kind` vocabulary is bounded to `generated` for
+generated backgrounds and `firmware_preset` for firmware preset backgrounds.
+The same vocabulary is used by `/readyz.background.kind`, animation catalog
+entries, and background metric `kind` labels.
 
 ## Animation discovery
 

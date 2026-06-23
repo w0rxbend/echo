@@ -392,7 +392,7 @@ type readyResponse struct {
 
 type backgroundReady struct {
 	ConfiguredID   string                            `json:"configured_id,omitempty"`
-	Kind           matrix.BackgroundKind             `json:"kind,omitempty"`
+	Kind           animations.PublicKind             `json:"kind,omitempty"`
 	State          matrix.BackgroundConvergenceState `json:"state"`
 	Dirty          bool                              `json:"dirty"`
 	Converged      bool                              `json:"converged"`
@@ -412,6 +412,7 @@ func (a *App) readiness() (readyResponse, bool) {
 	now := time.Now()
 	background := backgroundConvergenceProjectionForApp(health, now)
 	recordBackgroundHealthMetrics(a.metrics, health, now)
+	backgroundKind, _ := publicBackgroundKind(health.BackgroundKind)
 
 	ready := workersRunning &&
 		!draining &&
@@ -431,7 +432,7 @@ func (a *App) readiness() (readyResponse, bool) {
 		MatrixConnected: health.MatrixConnected,
 		Background: backgroundReady{
 			ConfiguredID:   health.BackgroundID,
-			Kind:           health.BackgroundKind,
+			Kind:           backgroundKind,
 			State:          background.State,
 			Dirty:          background.Dirty,
 			Converged:      background.Converged,
@@ -565,12 +566,16 @@ func recordProbeFailure(registry *metrics.Registry, failure matrix.ProbeFailure)
 }
 
 func recordBackgroundRestoreMetric(registry *metrics.Registry, event matrix.BackgroundRestoreEvent) {
+	kind, ok := publicBackgroundKindLabel(event.Kind)
+	if !ok {
+		return
+	}
 	switch event.State {
 	case matrix.BackgroundConvergenceAttempting:
-		registry.BackgroundRestoreAttemptsTotal.WithLabelValues(string(event.Kind)).Inc()
+		registry.BackgroundRestoreAttemptsTotal.WithLabelValues(kind).Inc()
 		setBackgroundGaugeMetrics(registry, event.Kind, matrix.BackgroundConvergenceAttempting, true, false)
 	case matrix.BackgroundConvergenceFailed, matrix.BackgroundConvergenceRetrying:
-		registry.BackgroundRestoreFailuresTotal.WithLabelValues(string(event.Kind), string(event.ErrorKind)).Inc()
+		registry.BackgroundRestoreFailuresTotal.WithLabelValues(kind, string(event.ErrorKind)).Inc()
 		setBackgroundGaugeMetrics(registry, event.Kind, event.State, true, false)
 	}
 }
@@ -626,7 +631,11 @@ func setBackgroundGaugeMetrics(
 	dirty bool,
 	converged bool,
 ) {
-	if registry == nil || kind == "" {
+	if registry == nil {
+		return
+	}
+	labelKind, ok := publicBackgroundKindLabel(kind)
+	if !ok {
 		return
 	}
 	if state == "" {
@@ -640,19 +649,23 @@ func setBackgroundGaugeMetrics(
 	if converged {
 		convergedValue = 1
 	}
-	registry.BackgroundDirty.WithLabelValues(string(kind)).Set(dirtyValue)
-	registry.BackgroundConverged.WithLabelValues(string(kind)).Set(convergedValue)
+	registry.BackgroundDirty.WithLabelValues(labelKind).Set(dirtyValue)
+	registry.BackgroundConverged.WithLabelValues(labelKind).Set(convergedValue)
 	for _, metricState := range matrix.BackgroundConvergenceV1States() {
 		value := 0.0
 		if state == metricState {
 			value = 1
 		}
-		registry.BackgroundState.WithLabelValues(string(kind), string(metricState)).Set(value)
+		registry.BackgroundState.WithLabelValues(labelKind, string(metricState)).Set(value)
 	}
 }
 
 func setBackgroundNextRetryMetric(registry *metrics.Registry, kind matrix.BackgroundKind, nextRetry *time.Time, now time.Time) {
-	if registry == nil || kind == "" {
+	if registry == nil {
+		return
+	}
+	labelKind, ok := publicBackgroundKindLabel(kind)
+	if !ok {
 		return
 	}
 	nextRetrySeconds := 0.0
@@ -662,7 +675,22 @@ func setBackgroundNextRetryMetric(registry *metrics.Registry, kind matrix.Backgr
 			nextRetrySeconds = 0
 		}
 	}
-	registry.BackgroundNextRetrySeconds.WithLabelValues(string(kind)).Set(nextRetrySeconds)
+	registry.BackgroundNextRetrySeconds.WithLabelValues(labelKind).Set(nextRetrySeconds)
+}
+
+func publicBackgroundKind(kind matrix.BackgroundKind) (animations.PublicKind, bool) {
+	if kind == "" {
+		return "", false
+	}
+	return animations.ProjectPublicKind(string(kind))
+}
+
+func publicBackgroundKindLabel(kind matrix.BackgroundKind) (string, bool) {
+	publicKind, ok := publicBackgroundKind(kind)
+	if !ok {
+		return "", false
+	}
+	return string(publicKind), true
 }
 
 func logItemOutcome(logger *slog.Logger, report matrix.OutcomeReport) {
