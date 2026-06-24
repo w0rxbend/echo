@@ -3281,6 +3281,7 @@ func expectedPackedPayloads(t *testing.T, cfg config.Config, frames []animations
 		cfg.Devices["default"].Layout.Height,
 		cfg.Devices["default"].Layout.Wiring,
 		cfg.Devices["default"].Layout.OddRowDisplayFlip,
+		cfg.Devices["default"].Layout.Rotation,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -3314,6 +3315,7 @@ func assertFramePlaybackFixtureCatchesUncompensatedLayout(t *testing.T, frames [
 		animations.CanvasHeight,
 		animations.WiringHorizontalTopLeft,
 		false,
+		0,
 	)
 	if err != nil {
 		t.Fatal(err)

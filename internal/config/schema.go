@@ -46,6 +46,7 @@ type schemaLayout struct {
 	Height            *int    `yaml:"height"`
 	Wiring            *string `yaml:"wiring"`
 	OddRowDisplayFlip *bool   `yaml:"odd_row_display_flip"`
+	Rotation          *int    `yaml:"rotation"`
 }
 
 type schemaQueueConfig struct {
@@ -194,6 +195,9 @@ func (s *schemaDeviceConfig) apply(d *DeviceConfig) {
 	}
 	if s.Layout.OddRowDisplayFlip != nil {
 		d.Layout.OddRowDisplayFlip = *s.Layout.OddRowDisplayFlip
+	}
+	if s.Layout.Rotation != nil {
+		d.Layout.Rotation = *s.Layout.Rotation
 	}
 }
 

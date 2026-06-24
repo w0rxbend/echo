@@ -167,6 +167,36 @@
         }
       }
     },
+    "/api/v1/devices/{device}/preset/{animation}": {
+      "post": {
+        "tags": ["device"],
+        "summary": "Play a firmware preset by animation ID",
+        "description": "Looks up the registered firmware preset by animation ID and sends its `effect_id`, `interval`, and `color` to the device. The scheduler queues this as an immediate control command — the idle background will be restored afterward if `restore_on_idle` is enabled.\n\nUse `GET /api/v1/animations/catalog` to discover registered preset IDs.",
+        "parameters": [
+          { "$ref": "#/components/parameters/device" },
+          {
+            "name": "animation",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Firmware preset animation ID as defined in `animations.yaml` (e.g. `matrix_rain_background`)."
+          }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Preset applied",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "status": { "type": "string" }, "animation": { "type": "string" } } } } }
+          },
+          "400": { "description": "Animation exists but is not a firmware preset" },
+          "401": { "description": "Missing bearer token" },
+          "403": { "description": "Invalid bearer token" },
+          "404": { "description": "Unknown animation ID" },
+          "502": { "description": "Matrix firmware error" },
+          "503": { "description": "Scheduler stopped or control canceled" }
+        }
+      }
+    },
     "/api/v1/devices/{device}/background": {
       "get": {
         "tags": ["device"],

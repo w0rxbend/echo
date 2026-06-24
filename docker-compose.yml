@@ -19,7 +19,6 @@ services:
   # Optional observability stack — start with: docker compose --profile observability up
   prometheus:
     image: prom/prometheus:v2.55.1
-    profiles: [observability]
     ports:
       - "9090:9090"
     volumes:
@@ -35,7 +34,6 @@ services:
 
   grafana:
     image: grafana/grafana:11.3.0
-    profiles: [observability]
     ports:
       - "3000:3000"
     volumes:

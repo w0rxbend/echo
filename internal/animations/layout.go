@@ -4,11 +4,21 @@ import "fmt"
 
 const WiringHorizontalTopLeft = "h-tl"
 
+// ValidRotations are the supported display rotation values in degrees.
+// A non-zero rotation compensates for the physical mounting orientation of
+// the matrix so that authored animations appear upright on the panel.
+// Positive values rotate content clockwise; negative values rotate CCW.
+var ValidRotations = []int{-90, 0, 90, 180}
+
 type Layout struct {
 	Width             int
 	Height            int
 	Wiring            string
 	OddRowDisplayFlip bool
+	// Rotation is the clockwise rotation in degrees applied to every frame
+	// before physical LED mapping. Use 0 for the default upright mounting.
+	// Valid values: -90, 0, 90, 180.
+	Rotation int
 }
 
 type LayoutPacker struct {
@@ -21,15 +31,17 @@ func DefaultLayout() Layout {
 		Height:            CanvasHeight,
 		Wiring:            WiringHorizontalTopLeft,
 		OddRowDisplayFlip: true,
+		Rotation:          0,
 	}
 }
 
-func NewLayout(width, height int, wiring string, oddRowDisplayFlip bool) (Layout, error) {
+func NewLayout(width, height int, wiring string, oddRowDisplayFlip bool, rotation int) (Layout, error) {
 	layout := Layout{
 		Width:             width,
 		Height:            height,
 		Wiring:            wiring,
 		OddRowDisplayFlip: oddRowDisplayFlip,
+		Rotation:          rotation,
 	}
 	if err := layout.Validate(); err != nil {
 		return Layout{}, err
@@ -44,7 +56,35 @@ func (l Layout) Validate() error {
 	if l.Wiring != WiringHorizontalTopLeft {
 		return fmt.Errorf("unsupported matrix wiring %q", l.Wiring)
 	}
+	if !validRotation(l.Rotation) {
+		return fmt.Errorf("layout rotation must be one of -90, 0, 90, 180: got %d", l.Rotation)
+	}
 	return nil
+}
+
+func validRotation(r int) bool {
+	for _, v := range ValidRotations {
+		if v == r {
+			return true
+		}
+	}
+	return false
+}
+
+// rotatePoint maps a source frame coordinate (x, y) to the display coordinate
+// it should appear at after clockwise rotation by degrees. This matches the
+// Python client's rotate_point function in tools/matrix_client.py.
+func rotatePoint(x, y, rotation, width, height int) (int, int) {
+	switch rotation {
+	case 90:
+		return width - 1 - y, x
+	case -90:
+		return y, height - 1 - x
+	case 180:
+		return width - 1 - x, height - 1 - y
+	default:
+		return x, y
+	}
 }
 
 func (l Layout) DisplayToServerPoint(x, y int) (int, int, error) {
@@ -97,15 +137,17 @@ func (p LayoutPacker) Layout() Layout {
 func (p LayoutPacker) Pack(frame Frame) PackedFrame {
 	layout := p.layoutOrDefault()
 	var packed PackedFrame
-	for y := 0; y < layout.Height; y++ {
-		for x := 0; x < layout.Width; x++ {
-			physicalIndex, err := layout.DisplayPointToPhysicalIndex(x, y)
+	for srcY := 0; srcY < layout.Height; srcY++ {
+		for srcX := 0; srcX < layout.Width; srcX++ {
+			// Rotate the source frame coordinate to its display position.
+			dispX, dispY := rotatePoint(srcX, srcY, layout.Rotation, layout.Width, layout.Height)
+			physicalIndex, err := layout.DisplayPointToPhysicalIndex(dispX, dispY)
 			if err != nil {
 				panic(err)
 			}
-			displayIndex := y*layout.Width + x
+			srcIndex := srcY*layout.Width + srcX
 			offset := physicalIndex * 3
-			pixel := frame.Pixels[displayIndex]
+			pixel := frame.Pixels[srcIndex]
 			packed[offset] = pixel.R
 			packed[offset+1] = pixel.G
 			packed[offset+2] = pixel.B

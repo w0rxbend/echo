@@ -154,6 +154,7 @@ func newWithOptions(cfg config.Config, logger *slog.Logger, options ...appNewOpt
 			devCfg.Layout.Height,
 			devCfg.Layout.Wiring,
 			devCfg.Layout.OddRowDisplayFlip,
+			devCfg.Layout.Rotation,
 		)
 		if err != nil {
 			return nil, err
@@ -327,6 +328,8 @@ func (a *App) router() http.Handler {
 	r.Get("/readyz", a.handleReady)
 	r.Handle("/metrics", http.HandlerFunc(a.handleMetrics))
 	r.Get("/openapi.json", a.httpAPI.HandleOpenAPI)
+	r.Get("/swagger.json", a.httpAPI.HandleSwagger)
+	r.Get("/docs", a.httpAPI.HandleDocs)
 	r.Mount("/api/v1", a.httpAPI.Router())
 
 	return r

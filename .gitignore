@@ -3,6 +3,10 @@
 /matrix-proxy
 *.exe
 
+# Auto-generated Swagger 2.0 spec — regenerate with: go generate ./cmd/matrix-proxy
+# Committed to repo so the binary embeds it; rebuilt in CI.
+# internal/integrations/httpapi/swaggerdocs/
+
 # Local environment — contains secrets; use .env.example as template
 .env
 

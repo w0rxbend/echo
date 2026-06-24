@@ -37,7 +37,7 @@ func TestDefaultLayoutOddRowCompensation(t *testing.T) {
 		t.Fatalf("display (0,1) physical index = %d, want 8", physicalIndex)
 	}
 
-	unflipped, err := NewLayout(CanvasWidth, CanvasHeight, WiringHorizontalTopLeft, false)
+	unflipped, err := NewLayout(CanvasWidth, CanvasHeight, WiringHorizontalTopLeft, false, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,6 +80,56 @@ func TestDefaultPackerFullAsymmetricFixture(t *testing.T) {
 	if !bytes.Equal(packed[:], expected[:]) {
 		t.Fatalf("packed asymmetric fixture mismatch\n got: %v\nwant: %v", packed, expected)
 	}
+}
+
+func TestPackerRotation90CWMovesOriginToTopRight(t *testing.T) {
+	// With 90° CW rotation, source (0,0) should appear at display (7,0) (top-right),
+	// matching the Python client's rotate_point(0, 0, 90) = (7, 0).
+	layout, err := NewLayout(CanvasWidth, CanvasHeight, WiringHorizontalTopLeft, true, 90)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packer, err := NewPacker(layout)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	frame := NewFrame(100 * time.Millisecond)
+	red := RGB{R: 255}
+	if err := frame.SetPixel(0, 0, red); err != nil {
+		t.Fatal(err)
+	}
+
+	// After 90° CW rotation, source (0,0) maps to display (7,0).
+	// display (7,0) → even row → physical index 7.
+	packed := packer.Pack(frame)
+	assertPackedPixel(t, packed, 7, red)
+	assertOnlyPackedPixel(t, packed, 7)
+}
+
+func TestPackerRotation180FlipsFrame(t *testing.T) {
+	// With 180° rotation, source (0,0) should appear at display (7,7).
+	layout, err := NewLayout(CanvasWidth, CanvasHeight, WiringHorizontalTopLeft, true, 180)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packer, err := NewPacker(layout)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	frame := NewFrame(100 * time.Millisecond)
+	red := RGB{R: 255}
+	if err := frame.SetPixel(0, 0, red); err != nil {
+		t.Fatal(err)
+	}
+
+	// After 180° rotation, source (0,0) → display (7,7).
+	// display (7,7) with odd_row_display_flip=true: odd row, serverX = 7-7 = 0
+	// physical index = 7*8 + (8-1-0) = 56 + 7 = 63.
+	packed := packer.Pack(frame)
+	assertPackedPixel(t, packed, 63, red)
+	assertOnlyPackedPixel(t, packed, 63)
 }
 
 func assertPackedPixel(t *testing.T, packed PackedFrame, physicalIndex int, want RGB) {

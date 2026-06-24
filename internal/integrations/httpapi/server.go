@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -110,6 +109,9 @@ func (s *Server) Router() http.Handler {
 		r.With(s.adminOnly).Get("/background", s.handleGetBackground)
 		r.With(s.adminOnly).Put("/background", s.handleSetBackground)
 
+		// Play a firmware preset animation by its registry ID.
+		r.With(s.adminOnly).Post("/preset/{animation}", s.handlePlayPreset)
+
 		r.Route("/matrix", func(r chi.Router) {
 			r.Use(s.adminOnly)
 			r.Post("/clear", s.handleMatrixClear)
@@ -144,14 +146,6 @@ func (s *Server) requireKnownDevice(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) handleDeviceList(w http.ResponseWriter, _ *http.Request) {
-	ids := make([]string, 0, len(s.schedulers))
-	for id := range s.schedulers {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	writeJSON(w, http.StatusOK, map[string]any{"devices": ids})
-}
 
 func (s *Server) adminOnly(next http.Handler) http.Handler {
 	if !s.requireAuth {
