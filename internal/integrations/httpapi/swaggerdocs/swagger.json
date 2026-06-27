@@ -1,1231 +1,1546 @@
 {
-    "schemes": [
-        "http",
-        "https"
-    ],
-    "swagger": "2.0",
+    "components": {
+        "schemas": {
+            "animations.PublicKind": {
+                "enum": [
+                    "generated",
+                    "firmware_preset"
+                ],
+                "type": "string",
+                "x-enum-varnames": [
+                    "PublicKindGenerated",
+                    "PublicKindFirmwarePreset"
+                ]
+            },
+            "animations.RGB": {
+                "properties": {
+                    "b": {
+                        "type": "integer"
+                    },
+                    "g": {
+                        "type": "integer"
+                    },
+                    "r": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "events.Event": {
+                "properties": {
+                    "actor": {
+                        "type": "string"
+                    },
+                    "attributes": {
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "type": "object"
+                    },
+                    "channel": {
+                        "type": "string"
+                    },
+                    "dedup_key": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "priority": {
+                        "type": "integer"
+                    },
+                    "received_at": {
+                        "type": "string"
+                    },
+                    "source": {
+                        "$ref": "#/components/schemas/events.Source"
+                    },
+                    "target": {
+                        "description": "Target is the device ID this event is routed to. Set automatically from\nthe URL path parameter when submitted via /api/v1/devices/{device}/events.",
+                        "type": "string"
+                    },
+                    "text": {
+                        "type": "string"
+                    },
+                    "type": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "events.Source": {
+                "enum": [
+                    "http",
+                    "external",
+                    "twitch",
+                    "youtube",
+                    "telegram",
+                    "discord"
+                ],
+                "type": "string",
+                "x-enum-varnames": [
+                    "SourceHTTP",
+                    "SourceExternal",
+                    "SourceTwitch",
+                    "SourceYouTube",
+                    "SourceTelegram",
+                    "SourceDiscord"
+                ]
+            },
+            "httpapi.animationCatalogEntry": {
+                "properties": {
+                    "color": {
+                        "$ref": "#/components/schemas/animations.RGB"
+                    },
+                    "effect_id": {
+                        "type": "integer"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "interval": {
+                        "type": "string"
+                    },
+                    "kind": {
+                        "$ref": "#/components/schemas/animations.PublicKind"
+                    },
+                    "playable": {
+                        "type": "boolean"
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.animationCatalogResponse": {
+                "properties": {
+                    "animations": {
+                        "items": {
+                            "$ref": "#/components/schemas/httpapi.animationCatalogEntry"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.animationListResponse": {
+                "properties": {
+                    "animations": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.backgroundConfigRequest": {
+                "properties": {
+                    "animation": {
+                        "example": "matrix_rain_background",
+                        "type": "string"
+                    },
+                    "restore_on_idle": {
+                        "example": true,
+                        "type": "boolean"
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.brightnessRequest": {
+                "properties": {
+                    "value": {
+                        "example": 30,
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.colorRequest": {
+                "properties": {
+                    "b": {
+                        "example": 85,
+                        "type": "integer"
+                    },
+                    "g": {
+                        "example": 255,
+                        "type": "integer"
+                    },
+                    "r": {
+                        "example": 0,
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.deviceListResponse": {
+                "properties": {
+                    "devices": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.errorResponse": {
+                "properties": {
+                    "error": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.eventAccepted": {
+                "properties": {
+                    "event_id": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.notifyRequest": {
+                "properties": {
+                    "animation": {
+                        "example": "alert_pulse",
+                        "type": "string"
+                    },
+                    "duration": {
+                        "example": "3s",
+                        "type": "string"
+                    },
+                    "level": {
+                        "example": "info",
+                        "type": "string"
+                    },
+                    "message": {
+                        "example": "v2.3.0 deployed to prod",
+                        "type": "string"
+                    },
+                    "params": {
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "type": "object"
+                    },
+                    "priority": {
+                        "example": 50,
+                        "type": "integer"
+                    },
+                    "restore": {
+                        "example": "background",
+                        "type": "string"
+                    },
+                    "title": {
+                        "example": "Deployment finished",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.playRequest": {
+                "properties": {
+                    "animation": {
+                        "example": "alert_pulse",
+                        "type": "string"
+                    },
+                    "duration": {
+                        "example": "2s",
+                        "type": "string"
+                    },
+                    "interrupt_mode": {
+                        "example": "none",
+                        "type": "string"
+                    },
+                    "params": {
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "type": "object"
+                    },
+                    "priority": {
+                        "example": 50,
+                        "type": "integer"
+                    },
+                    "restore": {
+                        "example": "background",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.presetRequest": {
+                "properties": {
+                    "b": {
+                        "type": "integer"
+                    },
+                    "color": {
+                        "$ref": "#/components/schemas/httpapi.colorRequest"
+                    },
+                    "effect_id": {
+                        "example": 12,
+                        "type": "integer"
+                    },
+                    "g": {
+                        "type": "integer"
+                    },
+                    "interval": {
+                        "example": "90ms",
+                        "type": "string"
+                    },
+                    "r": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.queueClearResponse": {
+                "properties": {
+                    "cleared": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.queueResponse": {
+                "properties": {
+                    "depth": {
+                        "type": "integer"
+                    },
+                    "items": {
+                        "items": {},
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "state": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.requestAccepted": {
+                "properties": {
+                    "request_id": {
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.statusOK": {
+                "properties": {
+                    "status": {
+                        "example": "ok",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.statusOKPreset": {
+                "properties": {
+                    "animation": {
+                        "example": "matrix_rain_background",
+                        "type": "string"
+                    },
+                    "status": {
+                        "example": "ok",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            }
+        },
+        "securitySchemes": {
+            "BearerAuth": {
+                "description": "Required when server.addr is not a loopback address. Token value from the env var named by server.admin_token_env.",
+                "in": "header",
+                "name": "Authorization",
+                "type": "apiKey"
+            }
+        }
+    },
     "info": {
         "description": "HTTP proxy for ESP8266 LED matrix controllers. Send events, rules pick animations, the scheduler owns the TCP connection.",
         "title": "LED Matrix Proxy",
-        "contact": {},
         "version": "1.0.0"
     },
-    "host": "localhost:8080",
-    "basePath": "/",
+    "externalDocs": {
+        "description": "",
+        "url": ""
+    },
     "paths": {
         "/api/v1/animations": {
             "get": {
                 "description": "Returns only generated/frame animations that can be submitted to /play or /notify. Firmware preset IDs are excluded.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "animations"
-                ],
-                "summary": "List playable animation IDs",
                 "responses": {
                     "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.animationListResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.animationListResponse"
+                                }
+                            }
+                        },
+                        "description": "OK"
                     }
-                }
+                },
+                "summary": "List playable animation IDs",
+                "tags": [
+                    "animations"
+                ]
             }
         },
         "/api/v1/animations/catalog": {
             "get": {
                 "description": "Returns all registered animations including firmware presets. Each entry exposes id, kind, and playable. Firmware presets have playable=false and may include effect_id, interval, and color.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "animations"
-                ],
-                "summary": "Full animation catalog",
                 "responses": {
                     "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.animationCatalogResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.animationCatalogResponse"
+                                }
+                            }
+                        },
+                        "description": "OK"
                     }
-                }
+                },
+                "summary": "Full animation catalog",
+                "tags": [
+                    "animations"
+                ]
             }
         },
         "/api/v1/devices": {
             "get": {
+                "description": "Returns the sorted list of device IDs as defined in the config file.",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.deviceListResponse"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Forbidden"
+                    }
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns the sorted list of device IDs as defined in the config file.",
-                "produces": [
-                    "application/json"
-                ],
+                "summary": "List configured device IDs",
                 "tags": [
                     "device"
-                ],
-                "summary": "List configured device IDs",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.deviceListResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    }
-                }
+                ]
             }
         },
         "/api/v1/devices/{device}/background": {
             "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
                 "description": "Returns the current desired idle animation for this device. When restore_on_idle is true, the scheduler converges back to this animation whenever the play queue empties.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "device"
-                ],
-                "summary": "Get idle background configuration",
                 "parameters": [
                     {
-                        "type": "string",
                         "description": "Device ID",
-                        "name": "device",
                         "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.backgroundConfigRequest"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Unknown device",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    }
-                }
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Replaces the desired idle animation without restarting the service. The scheduler converges to the new animation at the next idle opportunity. Set restore_on_idle=false or omit animation to disable idle convergence.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "device"
-                ],
-                "summary": "Set idle background animation at runtime",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Device ID",
                         "name": "device",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Background config",
-                        "name": "body",
-                        "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httpapi.backgroundConfigRequest"
+                            "type": "string"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.statusOKPreset"
-                        }
-                    },
-                    "400": {
-                        "description": "Unknown animation ID or validation error",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.backgroundConfigRequest"
+                                }
+                            }
+                        },
+                        "description": "OK"
                     },
                     "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
                     },
                     "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Forbidden"
                     },
                     "404": {
-                        "description": "Unknown device",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown device"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Get idle background configuration",
+                "tags": [
+                    "device"
+                ]
+            },
+            "put": {
+                "description": "Replaces the desired idle animation without restarting the service. The scheduler converges to the new animation at the next idle opportunity. Set restore_on_idle=false or omit animation to disable idle convergence.",
+                "parameters": [
+                    {
+                        "description": "Device ID",
+                        "in": "path",
+                        "name": "device",
+                        "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
+                            "type": "string"
                         }
                     }
-                }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/httpapi.backgroundConfigRequest",
+                                        "summary": "body",
+                                        "description": "Background config"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Background config",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.statusOKPreset"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown animation ID or validation error"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown device"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Set idle background animation at runtime",
+                "tags": [
+                    "device"
+                ]
             }
         },
         "/api/v1/devices/{device}/events": {
             "post": {
                 "description": "Publishes a normalized event for async rule processing. Known override attributes (animation, restore, duration, interrupt_mode) are validated synchronously before publishing.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "events"
-                ],
-                "summary": "Publish a generic event",
                 "parameters": [
                     {
-                        "type": "string",
                         "description": "Device ID",
-                        "name": "device",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Event payload",
-                        "name": "body",
-                        "in": "body",
+                        "name": "device",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/events.Event"
+                            "type": "string"
                         }
                     }
                 ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/events.Event",
+                                        "summary": "body",
+                                        "description": "Event payload"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Event payload",
+                    "required": true
+                },
                 "responses": {
                     "202": {
-                        "description": "Accepted",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.eventAccepted"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.eventAccepted"
+                                }
+                            }
+                        },
+                        "description": "Accepted"
                     },
                     "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Bad Request"
                     },
                     "404": {
-                        "description": "Unknown device",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown device"
                     },
                     "503": {
-                        "description": "Event bus backpressure timeout",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Event bus backpressure timeout"
                     }
-                }
+                },
+                "summary": "Publish a generic event",
+                "tags": [
+                    "events"
+                ]
             }
         },
         "/api/v1/devices/{device}/matrix/brightness": {
             "post": {
+                "description": "Sets global brightness (0–255). Changes take effect immediately.",
+                "parameters": [
+                    {
+                        "description": "Device ID",
+                        "in": "path",
+                        "name": "device",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/httpapi.brightnessRequest",
+                                        "summary": "body",
+                                        "description": "Brightness value"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Brightness value",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.statusOK"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Bad Request"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown device"
+                    },
+                    "502": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Matrix firmware error"
+                    }
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Sets global brightness (0–255). Changes take effect immediately.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
+                "summary": "Set display brightness",
                 "tags": [
                     "device"
-                ],
-                "summary": "Set display brightness",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Device ID",
-                        "name": "device",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Brightness value",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.brightnessRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.statusOK"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Unknown device",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "502": {
-                        "description": "Matrix firmware error",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    }
-                }
+                ]
             }
         },
         "/api/v1/devices/{device}/matrix/clear": {
             "post": {
+                "description": "Sets all pixels to black. If restore_on_idle is enabled, the idle background will be reapplied afterward.",
+                "parameters": [
+                    {
+                        "description": "Device ID",
+                        "in": "path",
+                        "name": "device",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.statusOK"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown device"
+                    },
+                    "502": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Matrix firmware error"
+                    },
+                    "503": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Service Unavailable"
+                    }
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Sets all pixels to black. If restore_on_idle is enabled, the idle background will be reapplied afterward.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
+                "summary": "Clear the display",
                 "tags": [
                     "device"
-                ],
-                "summary": "Clear the display",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Device ID",
-                        "name": "device",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.statusOK"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Unknown device",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "502": {
-                        "description": "Matrix firmware error",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Service Unavailable",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    }
-                }
+                ]
             }
         },
         "/api/v1/devices/{device}/matrix/fill": {
             "post": {
+                "description": "Sets every pixel to a single RGB color immediately.",
+                "parameters": [
+                    {
+                        "description": "Device ID",
+                        "in": "path",
+                        "name": "device",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/httpapi.colorRequest",
+                                        "summary": "body",
+                                        "description": "RGB color"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "RGB color",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.statusOK"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Bad Request"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown device"
+                    },
+                    "502": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Matrix firmware error"
+                    }
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Sets every pixel to a single RGB color immediately.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
+                "summary": "Fill display with a solid colour",
                 "tags": [
                     "device"
-                ],
-                "summary": "Fill display with a solid colour",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Device ID",
-                        "name": "device",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "RGB color",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.colorRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.statusOK"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Unknown device",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "502": {
-                        "description": "Matrix firmware error",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    }
-                }
+                ]
             }
         },
         "/api/v1/devices/{device}/matrix/preset": {
             "post": {
+                "description": "Starts a built-in firmware animation effect with custom interval and color. Use effect_id=0 to stop the current effect.",
+                "parameters": [
+                    {
+                        "description": "Device ID",
+                        "in": "path",
+                        "name": "device",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/httpapi.presetRequest",
+                                        "summary": "body",
+                                        "description": "Preset parameters"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Preset parameters",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.statusOK"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid interval or effect_id"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown device"
+                    },
+                    "502": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Matrix firmware error"
+                    }
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Starts a built-in firmware animation effect with custom interval and color. Use effect_id=0 to stop the current effect.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
+                "summary": "Apply a firmware effect preset",
                 "tags": [
                     "device"
-                ],
-                "summary": "Apply a firmware effect preset",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Device ID",
-                        "name": "device",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Preset parameters",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.presetRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.statusOK"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid interval or effect_id",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Unknown device",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "502": {
-                        "description": "Matrix firmware error",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    }
-                }
+                ]
             }
         },
         "/api/v1/devices/{device}/notify": {
             "post": {
                 "description": "Publishes an event with source=http and type=notify. Rules matching that source/type decide which animation plays.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "events"
-                ],
-                "summary": "Send a notification",
                 "parameters": [
                     {
-                        "type": "string",
                         "description": "Device ID",
-                        "name": "device",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Notification",
-                        "name": "body",
-                        "in": "body",
+                        "name": "device",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/httpapi.notifyRequest"
+                            "type": "string"
                         }
                     }
                 ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/httpapi.notifyRequest",
+                                        "summary": "body",
+                                        "description": "Notification"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Notification",
+                    "required": true
+                },
                 "responses": {
                     "202": {
-                        "description": "Accepted",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.eventAccepted"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.eventAccepted"
+                                }
+                            }
+                        },
+                        "description": "Accepted"
                     },
                     "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Bad Request"
                     },
                     "404": {
-                        "description": "Unknown device",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown device"
                     },
                     "503": {
-                        "description": "Event bus backpressure timeout",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Event bus backpressure timeout"
                     }
-                }
+                },
+                "summary": "Send a notification",
+                "tags": [
+                    "events"
+                ]
             }
         },
         "/api/v1/devices/{device}/play": {
             "post": {
+                "description": "Directly enqueues a generated/frame animation on the device scheduler. Does not accept firmware preset IDs; use /preset/{animation} for those.",
+                "parameters": [
+                    {
+                        "description": "Device ID",
+                        "in": "path",
+                        "name": "device",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/httpapi.playRequest",
+                                        "summary": "body",
+                                        "description": "Play request"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Play request",
+                    "required": true
+                },
+                "responses": {
+                    "202": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.requestAccepted"
+                                }
+                            }
+                        },
+                        "description": "Accepted"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown, non-playable animation, or invalid parameters"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown device"
+                    }
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Directly enqueues a generated/frame animation on the device scheduler. Does not accept firmware preset IDs; use /preset/{animation} for those.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
+                "summary": "Enqueue a renderable animation",
                 "tags": [
                     "device"
-                ],
-                "summary": "Enqueue a renderable animation",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Device ID",
-                        "name": "device",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Play request",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.playRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "202": {
-                        "description": "Accepted",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.requestAccepted"
-                        }
-                    },
-                    "400": {
-                        "description": "Unknown, non-playable animation, or invalid parameters",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Unknown device",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    }
-                }
+                ]
             }
         },
         "/api/v1/devices/{device}/preset/{animation}": {
             "post": {
+                "description": "Looks up a registered firmware_preset animation and sends its effect_id, interval, and color to the device. The idle background is restored afterward if restore_on_idle is enabled. Use GET /api/v1/animations/catalog to discover preset IDs.",
+                "parameters": [
+                    {
+                        "description": "Device ID",
+                        "in": "path",
+                        "name": "device",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Firmware preset animation ID (e.g. matrix_rain_background)",
+                        "in": "path",
+                        "name": "animation",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.statusOKPreset"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Animation exists but is not a firmware preset"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown animation ID or device"
+                    },
+                    "502": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Matrix firmware error"
+                    },
+                    "503": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Scheduler stopped or control canceled"
+                    }
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Looks up a registered firmware_preset animation and sends its effect_id, interval, and color to the device. The idle background is restored afterward if restore_on_idle is enabled. Use GET /api/v1/animations/catalog to discover preset IDs.",
-                "produces": [
-                    "application/json"
-                ],
+                "summary": "Play a firmware preset by animation ID",
                 "tags": [
                     "device"
-                ],
-                "summary": "Play a firmware preset by animation ID",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Device ID",
-                        "name": "device",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Firmware preset animation ID (e.g. matrix_rain_background)",
-                        "name": "animation",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.statusOKPreset"
-                        }
-                    },
-                    "400": {
-                        "description": "Animation exists but is not a firmware preset",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "404": {
-                        "description": "Unknown animation ID or device",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "502": {
-                        "description": "Matrix firmware error",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    },
-                    "503": {
-                        "description": "Scheduler stopped or control canceled",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
-                    }
-                }
+                ]
             }
         },
         "/api/v1/devices/{device}/queue": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Returns current queue depth, scheduler state, and snapshot of queued items.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "device"
-                ],
-                "summary": "Inspect the play queue",
+            "delete": {
+                "description": "Removes all pending items from the queue. Returns the number of cleared items.",
                 "parameters": [
                     {
-                        "type": "string",
                         "description": "Device ID",
-                        "name": "device",
                         "in": "path",
-                        "required": true
+                        "name": "device",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.queueResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.queueClearResponse"
+                                }
+                            }
+                        },
+                        "description": "OK"
                     },
                     "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
                     },
                     "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Forbidden"
                     },
                     "404": {
-                        "description": "Unknown device",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown device"
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
-                "description": "Removes all pending items from the queue. Returns the number of cleared items.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "device"
                 ],
                 "summary": "Clear the play queue",
+                "tags": [
+                    "device"
+                ]
+            },
+            "get": {
+                "description": "Returns current queue depth, scheduler state, and snapshot of queued items.",
                 "parameters": [
                     {
-                        "type": "string",
                         "description": "Device ID",
-                        "name": "device",
                         "in": "path",
-                        "required": true
+                        "name": "device",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.queueClearResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.queueResponse"
+                                }
+                            }
+                        },
+                        "description": "OK"
                     },
                     "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
                     },
                     "403": {
-                        "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Forbidden"
                     },
                     "404": {
-                        "description": "Unknown device",
-                        "schema": {
-                            "$ref": "#/definitions/httpapi.errorResponse"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown device"
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Inspect the play queue",
+                "tags": [
+                    "device"
+                ]
             }
         }
     },
-    "definitions": {
-        "animations.PublicKind": {
-            "type": "string",
-            "enum": [
-                "generated",
-                "firmware_preset"
-            ],
-            "x-enum-varnames": [
-                "PublicKindGenerated",
-                "PublicKindFirmwarePreset"
-            ]
-        },
-        "animations.RGB": {
-            "type": "object",
-            "properties": {
-                "b": {
-                    "type": "integer"
-                },
-                "g": {
-                    "type": "integer"
-                },
-                "r": {
-                    "type": "integer"
-                }
-            }
-        },
-        "events.Event": {
-            "type": "object",
-            "properties": {
-                "actor": {
-                    "type": "string"
-                },
-                "attributes": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "channel": {
-                    "type": "string"
-                },
-                "dedup_key": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "priority": {
-                    "type": "integer"
-                },
-                "received_at": {
-                    "type": "string"
-                },
-                "source": {
-                    "$ref": "#/definitions/events.Source"
-                },
-                "target": {
-                    "description": "Target is the device ID this event is routed to. Set automatically from\nthe URL path parameter when submitted via /api/v1/devices/{device}/events.",
-                    "type": "string"
-                },
-                "text": {
-                    "type": "string"
-                },
-                "type": {
-                    "type": "string"
-                }
-            }
-        },
-        "events.Source": {
-            "type": "string",
-            "enum": [
-                "http",
-                "external",
-                "twitch",
-                "youtube",
-                "telegram",
-                "discord"
-            ],
-            "x-enum-varnames": [
-                "SourceHTTP",
-                "SourceExternal",
-                "SourceTwitch",
-                "SourceYouTube",
-                "SourceTelegram",
-                "SourceDiscord"
-            ]
-        },
-        "httpapi.animationCatalogEntry": {
-            "type": "object",
-            "properties": {
-                "color": {
-                    "$ref": "#/definitions/animations.RGB"
-                },
-                "effect_id": {
-                    "type": "integer"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "interval": {
-                    "type": "string"
-                },
-                "kind": {
-                    "$ref": "#/definitions/animations.PublicKind"
-                },
-                "playable": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "httpapi.animationCatalogResponse": {
-            "type": "object",
-            "properties": {
-                "animations": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/httpapi.animationCatalogEntry"
-                    }
-                }
-            }
-        },
-        "httpapi.animationListResponse": {
-            "type": "object",
-            "properties": {
-                "animations": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "httpapi.backgroundConfigRequest": {
-            "type": "object",
-            "properties": {
-                "animation": {
-                    "type": "string",
-                    "example": "matrix_rain_background"
-                },
-                "restore_on_idle": {
-                    "type": "boolean",
-                    "example": true
-                }
-            }
-        },
-        "httpapi.brightnessRequest": {
-            "type": "object",
-            "properties": {
-                "value": {
-                    "type": "integer",
-                    "example": 30
-                }
-            }
-        },
-        "httpapi.colorRequest": {
-            "type": "object",
-            "properties": {
-                "b": {
-                    "type": "integer",
-                    "example": 85
-                },
-                "g": {
-                    "type": "integer",
-                    "example": 255
-                },
-                "r": {
-                    "type": "integer",
-                    "example": 0
-                }
-            }
-        },
-        "httpapi.deviceListResponse": {
-            "type": "object",
-            "properties": {
-                "devices": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "httpapi.errorResponse": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "type": "string"
-                }
-            }
-        },
-        "httpapi.eventAccepted": {
-            "type": "object",
-            "properties": {
-                "event_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "httpapi.notifyRequest": {
-            "type": "object",
-            "properties": {
-                "animation": {
-                    "type": "string",
-                    "example": "alert_pulse"
-                },
-                "duration": {
-                    "type": "string",
-                    "example": "3s"
-                },
-                "level": {
-                    "type": "string",
-                    "example": "info"
-                },
-                "message": {
-                    "type": "string",
-                    "example": "v2.3.0 deployed to prod"
-                },
-                "params": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "priority": {
-                    "type": "integer",
-                    "example": 50
-                },
-                "restore": {
-                    "type": "string",
-                    "example": "background"
-                },
-                "title": {
-                    "type": "string",
-                    "example": "Deployment finished"
-                }
-            }
-        },
-        "httpapi.playRequest": {
-            "type": "object",
-            "properties": {
-                "animation": {
-                    "type": "string",
-                    "example": "alert_pulse"
-                },
-                "duration": {
-                    "type": "string",
-                    "example": "2s"
-                },
-                "interrupt_mode": {
-                    "type": "string",
-                    "example": "none"
-                },
-                "params": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "priority": {
-                    "type": "integer",
-                    "example": 50
-                },
-                "restore": {
-                    "type": "string",
-                    "example": "background"
-                }
-            }
-        },
-        "httpapi.presetRequest": {
-            "type": "object",
-            "properties": {
-                "b": {
-                    "type": "integer"
-                },
-                "color": {
-                    "$ref": "#/definitions/httpapi.colorRequest"
-                },
-                "effect_id": {
-                    "type": "integer",
-                    "example": 12
-                },
-                "g": {
-                    "type": "integer"
-                },
-                "interval": {
-                    "type": "string",
-                    "example": "90ms"
-                },
-                "r": {
-                    "type": "integer"
-                }
-            }
-        },
-        "httpapi.queueClearResponse": {
-            "type": "object",
-            "properties": {
-                "cleared": {
-                    "type": "integer"
-                }
-            }
-        },
-        "httpapi.queueResponse": {
-            "type": "object",
-            "properties": {
-                "depth": {
-                    "type": "integer"
-                },
-                "items": {
-                    "type": "array",
-                    "items": {}
-                },
-                "state": {
-                    "type": "string"
-                }
-            }
-        },
-        "httpapi.requestAccepted": {
-            "type": "object",
-            "properties": {
-                "request_id": {
-                    "type": "string"
-                }
-            }
-        },
-        "httpapi.statusOK": {
-            "type": "object",
-            "properties": {
-                "status": {
-                    "type": "string",
-                    "example": "ok"
-                }
-            }
-        },
-        "httpapi.statusOKPreset": {
-            "type": "object",
-            "properties": {
-                "animation": {
-                    "type": "string",
-                    "example": "matrix_rain_background"
-                },
-                "status": {
-                    "type": "string",
-                    "example": "ok"
-                }
-            }
+    "openapi": "3.1.0",
+    "servers": [
+        {
+            "url": "localhost:8080/"
         }
-    },
-    "securityDefinitions": {
-        "BearerAuth": {
-            "description": "Required when server.addr is not a loopback address. Set MATRIX_PROXY_ADMIN_TOKEN.",
-            "type": "apiKey",
-            "name": "Authorization",
-            "in": "header"
-        }
-    }
+    ]
 }
