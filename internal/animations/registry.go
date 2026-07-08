@@ -34,15 +34,15 @@ const (
 	PublicKindFirmwarePreset PublicKind = "firmware_preset"
 )
 
+var publicKindMap = map[string]PublicKind{
+	string(EntryGenerated):      PublicKindGenerated,
+	"renderable":               PublicKindGenerated,
+	string(EntryFirmwarePreset): PublicKindFirmwarePreset,
+}
+
 func ProjectPublicKind(kind string) (PublicKind, bool) {
-	switch kind {
-	case string(EntryGenerated), "renderable":
-		return PublicKindGenerated, true
-	case string(EntryFirmwarePreset):
-		return PublicKindFirmwarePreset, true
-	default:
-		return "", false
-	}
+	projected, ok := publicKindMap[kind]
+	return projected, ok
 }
 
 type Entry struct {
@@ -163,7 +163,7 @@ func (r *Registry) FirmwarePreset(id string) (FirmwarePreset, bool) {
 	return *entry.FirmwarePreset, true
 }
 
-func (r *Registry) MustGet(id string) (Animation, error) {
+func (r *Registry) GetByID(id string) (Animation, error) {
 	animation, ok := r.Get(id)
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrAnimationNotFound, id)

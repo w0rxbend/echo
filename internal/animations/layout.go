@@ -10,6 +10,30 @@ const WiringHorizontalTopLeft = "h-tl"
 // Positive values rotate content clockwise; negative values rotate CCW.
 var ValidRotations = []int{-90, 0, 90, 180}
 
+var validRotationSet = map[int]struct{}{
+	-90: {},
+	0:   {},
+	90:  {},
+	180: {},
+}
+
+type rotateFn func(x, y, width, height int) (int, int)
+
+var rotationTransforms = map[int]rotateFn{
+	90: func(x, y, width, height int) (int, int) {
+		return width - 1 - y, x
+	},
+	-90: func(x, y, width, height int) (int, int) {
+		return y, height - 1 - x
+	},
+	180: func(x, y, width, height int) (int, int) {
+		return width - 1 - x, height - 1 - y
+	},
+	0: func(x, y, width, height int) (int, int) {
+		return x, y
+	},
+}
+
 type Layout struct {
 	Width             int
 	Height            int
@@ -56,35 +80,26 @@ func (l Layout) Validate() error {
 	if l.Wiring != WiringHorizontalTopLeft {
 		return fmt.Errorf("unsupported matrix wiring %q", l.Wiring)
 	}
-	if !validRotation(l.Rotation) {
+	if !IsValidRotation(l.Rotation) {
 		return fmt.Errorf("layout rotation must be one of -90, 0, 90, 180: got %d", l.Rotation)
 	}
 	return nil
 }
 
-func validRotation(r int) bool {
-	for _, v := range ValidRotations {
-		if v == r {
-			return true
-		}
-	}
-	return false
+func IsValidRotation(rotation int) bool {
+	_, ok := validRotationSet[rotation]
+	return ok
 }
 
 // rotatePoint maps a source frame coordinate (x, y) to the display coordinate
 // it should appear at after clockwise rotation by degrees. This matches the
 // Python client's rotate_point function in tools/matrix_client.py.
 func rotatePoint(x, y, rotation, width, height int) (int, int) {
-	switch rotation {
-	case 90:
-		return width - 1 - y, x
-	case -90:
-		return y, height - 1 - x
-	case 180:
-		return width - 1 - x, height - 1 - y
-	default:
+	transform, ok := rotationTransforms[rotation]
+	if !ok {
 		return x, y
 	}
+	return transform(x, y, width, height)
 }
 
 func (l Layout) DisplayToServerPoint(x, y int) (int, int, error) {
@@ -139,13 +154,16 @@ func (p LayoutPacker) Pack(frame Frame) PackedFrame {
 	var packed PackedFrame
 	for srcY := 0; srcY < layout.Height; srcY++ {
 		for srcX := 0; srcX < layout.Width; srcX++ {
+			srcIndex := srcY*layout.Width + srcX
+			if srcIndex >= len(frame) {
+				continue
+			}
 			// Rotate the source frame coordinate to its display position.
 			dispX, dispY := rotatePoint(srcX, srcY, layout.Rotation, layout.Width, layout.Height)
 			physicalIndex, err := layout.DisplayPointToPhysicalIndex(dispX, dispY)
 			if err != nil {
-				panic(err)
+				continue
 			}
-			srcIndex := srcY*layout.Width + srcX
 			offset := physicalIndex * 3
 			pixel := frame.Pixels[srcIndex]
 			packed[offset] = pixel.R

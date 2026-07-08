@@ -23,6 +23,7 @@ type Server struct {
 	bus        *events.Bus
 	schedulers map[string]*matrix.Scheduler
 	registry   *animations.Registry
+	openapiSpec openAPISpec
 
 	adminToken  string
 	requireAuth bool
@@ -59,6 +60,7 @@ func New(options Options) (*Server, error) {
 		bus:         options.Bus,
 		schedulers:  schedulers,
 		registry:    options.Registry,
+		openapiSpec: loadOpenAPISpec(),
 		adminToken:  auth.Token,
 		requireAuth: auth.Required,
 	}, nil
@@ -145,7 +147,6 @@ func (s *Server) requireKnownDevice(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
 
 func (s *Server) adminOnly(next http.Handler) http.Handler {
 	if !s.requireAuth {

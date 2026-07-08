@@ -182,8 +182,7 @@ func (d DeviceConfig) Validate(id string) error {
 	if d.Layout.Wiring == "" {
 		return fmt.Errorf("%s: layout.wiring is required", prefix)
 	}
-	validRotations := map[int]bool{-90: true, 0: true, 90: true, 180: true}
-	if !validRotations[d.Layout.Rotation] {
+	if !animations.IsValidRotation(d.Layout.Rotation) {
 		return fmt.Errorf("%s: layout.rotation must be one of -90, 0, 90, 180: got %d", prefix, d.Layout.Rotation)
 	}
 	return nil

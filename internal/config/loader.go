@@ -91,6 +91,84 @@ type schemaFrame struct {
 	Rows  []string        `yaml:"rows"`
 }
 
+type animationFieldValidator func(id string, node *yaml.Node, path string) error
+type animationRegistrar func(registry *animations.Registry, id string, entry schemaAnimation) error
+type animationFieldPresenter func(entry schemaAnimation) bool
+
+var animationEntryFieldValidators = map[string]animationFieldValidator{
+	"type":      nil,
+	"generator": nil,
+	"effect_id": nil,
+	"interval":  nil,
+	"color":     validateAnimationColorSchema,
+	"palette":   validateAnimationPaletteSchema,
+	"frames":    validateAnimationFramesSchema,
+}
+
+var frameFieldValidators = map[string]struct{}{
+	"delay": {},
+	"rows":  {},
+}
+
+var colorFieldValidators = map[string]struct{}{
+	"r": {},
+	"g": {},
+	"b": {},
+}
+
+var animationTypeRegistrars = map[string]animationRegistrar{
+	string(animations.EntryGenerated): func(registry *animations.Registry, id string, entry schemaAnimation) error {
+		if err := rejectAnimationFields(entry.Type, entry, "effect_id", "interval", "color", "palette", "frames"); err != nil {
+			return err
+		}
+		if entry.Generator == nil || *entry.Generator == "" {
+			return errors.New("generator is required for generated animation")
+		}
+		animation, err := animations.NewGeneratedAnimation(*entry.Generator)
+		if err != nil {
+			return err
+		}
+		return registry.RegisterGenerated(id, *entry.Generator, animation)
+	},
+	string(animations.EntryFirmwarePreset): func(registry *animations.Registry, id string, entry schemaAnimation) error {
+		if err := rejectAnimationFields(entry.Type, entry, "generator", "palette", "frames"); err != nil {
+			return err
+		}
+		if entry.EffectID == nil {
+			return errors.New("effect_id is required for firmware_preset animation")
+		}
+		if *entry.EffectID < 0 || *entry.EffectID > 255 {
+			return fmt.Errorf("effect_id must be between 0 and 255: %d", *entry.EffectID)
+		}
+		if entry.Interval == nil {
+			return errors.New("interval is required for firmware_preset animation")
+		}
+		preset := animations.FirmwarePreset{
+			EffectID: byte(*entry.EffectID),
+			Interval: entry.Interval.Duration,
+		}
+		if entry.Color != nil {
+			preset.Color = entry.Color.RGB
+		}
+		return registry.RegisterFirmwarePreset(id, preset)
+	},
+	"frames": func(registry *animations.Registry, id string, entry schemaAnimation) error {
+		if err := rejectAnimationFields(entry.Type, entry, "generator", "effect_id", "interval", "color"); err != nil {
+			return err
+		}
+		return registerConfiguredFrameAnimation(registry, id, entry)
+	},
+}
+
+var animationFieldPresenters = map[string]animationFieldPresenter{
+	"generator": func(entry schemaAnimation) bool { return entry.Generator != nil },
+	"effect_id":  func(entry schemaAnimation) bool { return entry.EffectID != nil },
+	"interval":   func(entry schemaAnimation) bool { return entry.Interval != nil },
+	"color":      func(entry schemaAnimation) bool { return entry.Color != nil },
+	"palette":    func(entry schemaAnimation) bool { return entry.Palette != nil },
+	"frames":     func(entry schemaAnimation) bool { return entry.Frames != nil },
+}
+
 func (a *schemaAnimation) UnmarshalYAML(node *yaml.Node) error {
 	type rawSchemaAnimation schemaAnimation
 	var raw rawSchemaAnimation
@@ -269,22 +347,14 @@ func validateAnimationEntrySchema(id string, node *yaml.Node) error {
 			return fmt.Errorf("animation %q: field at animation %s must be a scalar", id, id)
 		}
 		path := animationFieldPath(id, key.Value)
-		switch key.Value {
-		case "type", "generator", "effect_id", "interval":
-		case "color":
-			if err := validateAnimationColorSchema(id, value, path); err != nil {
-				return err
-			}
-		case "palette":
-			if err := validateAnimationPaletteSchema(id, value, path); err != nil {
-				return err
-			}
-		case "frames":
-			if err := validateAnimationFramesSchema(id, value, path); err != nil {
-				return err
-			}
-		default:
+		validate, ok := animationEntryFieldValidators[key.Value]
+		if !ok {
 			return fmt.Errorf("animation %q: unknown field %q at %s", id, key.Value, path)
+		}
+		if validate != nil {
+			if err := validate(id, value, path); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -307,9 +377,7 @@ func validateAnimationFramesSchema(id string, node *yaml.Node, path string) erro
 			if key.Kind != yaml.ScalarNode {
 				return fmt.Errorf("animation %q: frame field at %s must be a scalar", id, framePath)
 			}
-			switch key.Value {
-			case "delay", "rows":
-			default:
+			if _, ok := frameFieldValidators[key.Value]; !ok {
 				return fmt.Errorf("animation %q: unknown field %q at %s.%s", id, key.Value, framePath, key.Value)
 			}
 		}
@@ -349,9 +417,7 @@ func validateAnimationColorSchema(id string, node *yaml.Node, path string) error
 		if key.Kind != yaml.ScalarNode {
 			return fmt.Errorf("animation %q: color field at %s must be a scalar", id, path)
 		}
-		switch key.Value {
-		case "r", "g", "b":
-		default:
+		if _, ok := colorFieldValidators[key.Value]; !ok {
 			return fmt.Errorf("animation %q: unknown field %q at %s.%s", id, key.Value, path, key.Value)
 		}
 	}
@@ -444,50 +510,14 @@ func resolveReferencedPath(configPath, referencedPath string) string {
 }
 
 func registerConfiguredAnimation(registry *animations.Registry, id string, entry schemaAnimation) error {
-	switch entry.Type {
-	case string(animations.EntryGenerated):
-		if err := rejectAnimationFields(entry.Type, entry, "effect_id", "interval", "color", "palette", "frames"); err != nil {
-			return err
+	registrar, ok := animationTypeRegistrars[entry.Type]
+	if !ok {
+		if entry.Type == "" {
+			return errors.New("type is required")
 		}
-		if entry.Generator == nil || *entry.Generator == "" {
-			return errors.New("generator is required for generated animation")
-		}
-		animation, err := animations.NewGeneratedAnimation(*entry.Generator)
-		if err != nil {
-			return err
-		}
-		return registry.RegisterGenerated(id, *entry.Generator, animation)
-	case string(animations.EntryFirmwarePreset):
-		if err := rejectAnimationFields(entry.Type, entry, "generator", "palette", "frames"); err != nil {
-			return err
-		}
-		if entry.EffectID == nil {
-			return errors.New("effect_id is required for firmware_preset animation")
-		}
-		if *entry.EffectID < 0 || *entry.EffectID > 255 {
-			return fmt.Errorf("effect_id must be between 0 and 255: %d", *entry.EffectID)
-		}
-		if entry.Interval == nil {
-			return errors.New("interval is required for firmware_preset animation")
-		}
-		preset := animations.FirmwarePreset{
-			EffectID: byte(*entry.EffectID),
-			Interval: entry.Interval.Duration,
-		}
-		if entry.Color != nil {
-			preset.Color = entry.Color.RGB
-		}
-		return registry.RegisterFirmwarePreset(id, preset)
-	case "frames":
-		if err := rejectAnimationFields(entry.Type, entry, "generator", "effect_id", "interval", "color"); err != nil {
-			return err
-		}
-		return registerConfiguredFrameAnimation(registry, id, entry)
-	case "":
-		return errors.New("type is required")
-	default:
 		return fmt.Errorf("unknown animation type %q", entry.Type)
 	}
+	return registrar(registry, id, entry)
 }
 
 func rejectAnimationFields(animationType string, entry schemaAnimation, fields ...string) error {
@@ -501,25 +531,11 @@ func rejectAnimationFields(animationType string, entry schemaAnimation, fields .
 }
 
 func animationFieldPresent(entry schemaAnimation, field string) bool {
-	if _, ok := entry.presentFields[field]; ok {
-		return true
-	}
-	switch field {
-	case "generator":
-		return entry.Generator != nil
-	case "effect_id":
-		return entry.EffectID != nil
-	case "interval":
-		return entry.Interval != nil
-	case "color":
-		return entry.Color != nil
-	case "palette":
-		return entry.Palette != nil
-	case "frames":
-		return entry.Frames != nil
-	default:
+	presenter, ok := animationFieldPresenters[field]
+	if !ok {
 		return false
 	}
+	return presenter(entry)
 }
 
 func registerConfiguredFrameAnimation(registry *animations.Registry, id string, entry schemaAnimation) error {
@@ -612,15 +628,35 @@ func parseHexByte(text string) (byte, bool) {
 	return high<<4 | low, true
 }
 
+var hexNibbleValues = map[byte]byte{
+	'0': 0,
+	'1': 1,
+	'2': 2,
+	'3': 3,
+	'4': 4,
+	'5': 5,
+	'6': 6,
+	'7': 7,
+	'8': 8,
+	'9': 9,
+	'a': 10,
+	'b': 11,
+	'c': 12,
+	'd': 13,
+	'e': 14,
+	'f': 15,
+	'A': 10,
+	'B': 11,
+	'C': 12,
+	'D': 13,
+	'E': 14,
+	'F': 15,
+}
+
 func hexNibble(b byte) (byte, bool) {
-	switch {
-	case b >= '0' && b <= '9':
-		return b - '0', true
-	case b >= 'a' && b <= 'f':
-		return b - 'a' + 10, true
-	case b >= 'A' && b <= 'F':
-		return b - 'A' + 10, true
-	default:
+	v, ok := hexNibbleValues[b]
+	if !ok {
 		return 0, false
 	}
+	return v, true
 }

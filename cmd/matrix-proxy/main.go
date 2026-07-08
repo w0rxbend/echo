@@ -36,7 +36,20 @@ import (
 	"github.com/worxbend/echo/internal/config"
 )
 
+var logLevelParsers = map[string]slog.Leveler{
+	"debug": slog.LevelDebug,
+	"info":  slog.LevelInfo,
+	"warn":  slog.LevelWarn,
+	"error": slog.LevelError,
+}
+
 func main() {
+	if run() != nil {
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	configPath := flag.String("config", config.DefaultPath, "path to YAML configuration file")
 	logLevel := flag.String("log-level", "info", "log level: debug, info, warn, error")
 	flag.Parse()
@@ -48,7 +61,7 @@ func main() {
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		logger.Error("load config", "error", err, "path", *configPath)
-		os.Exit(1)
+		return err
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -57,24 +70,19 @@ func main() {
 	application, err := app.New(cfg, logger)
 	if err != nil {
 		logger.Error("initialize app", "error", err)
-		os.Exit(1)
+		return err
 	}
 
 	if err := application.Run(ctx); err != nil {
 		logger.Error("run app", "error", err)
-		os.Exit(1)
+		return err
 	}
+	return nil
 }
 
 func parseLogLevel(value string) slog.Leveler {
-	switch value {
-	case "debug":
-		return slog.LevelDebug
-	case "warn":
-		return slog.LevelWarn
-	case "error":
-		return slog.LevelError
-	default:
-		return slog.LevelInfo
+	if level, ok := logLevelParsers[value]; ok {
+		return level
 	}
+	return slog.LevelInfo
 }

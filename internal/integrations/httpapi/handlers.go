@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -100,6 +101,20 @@ type queueClearResponse struct {
 	Cleared int `json:"cleared"`
 }
 
+var validRestorePolicySet = map[animations.RestorePolicy]struct{}{
+	animations.RestoreClear:          {},
+	animations.RestoreBlank:          {},
+	animations.RestorePreviousFrame:   {},
+	animations.RestoreBackground:      {},
+	animations.RestoreLeave:          {},
+}
+
+var validInterruptModeSet = map[animations.InterruptMode]struct{}{
+	animations.InterruptNone:          {},
+	animations.InterruptHigherPriority: {},
+	animations.InterruptCritical:      {},
+}
+
 // ── Event endpoints ───────────────────────────────────────────────────────────
 
 // @Summary		Publish a generic event
@@ -172,8 +187,8 @@ func (s *Server) handleNotify(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.Restore != "" && !validRestorePolicy(animations.RestorePolicy(req.Restore)) {
-		writeError(w, http.StatusBadRequest, "invalid restore policy")
+	if _, err := s.parseRestorePolicy(req.Restore, ""); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if req.Animation != "" {
@@ -219,7 +234,7 @@ func (s *Server) handleNotify(w http.ResponseWriter, r *http.Request) {
 // @Accept		json
 // @Produce		json
 // @Security	BearerAuth
-// @Param		device	path	string		true	"Device ID"
+// @Param		device	path	string		true		"Device ID"
 // @Param		body	body	playRequest	true	"Play request"
 // @Success		202		{object}	requestAccepted
 // @Failure		400		{object}	errorResponse	"Unknown, non-playable animation, or invalid parameters"
@@ -249,20 +264,14 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	restore := animations.RestorePolicy(req.Restore)
-	if restore == "" {
-		restore = animations.RestoreBackground
-	}
-	if !validRestorePolicy(restore) {
-		writeError(w, http.StatusBadRequest, "invalid restore policy")
+	restore, err := s.parseRestorePolicy(req.Restore, animations.RestoreBackground)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	interruptMode := animations.InterruptMode(req.InterruptMode)
-	if interruptMode == "" {
-		interruptMode = animations.InterruptNone
-	}
-	if !validInterruptMode(interruptMode) {
-		writeError(w, http.StatusBadRequest, "invalid interrupt_mode")
+	interruptMode, err := s.parseInterruptMode(req.InterruptMode, animations.InterruptNone)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -320,6 +329,131 @@ func (s *Server) handlePlayPreset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, statusOKPreset{Status: "ok", Animation: animationID})
+}
+
+func (s *Server) parseRestorePolicy(raw string, defaultPolicy animations.RestorePolicy) (animations.RestorePolicy, error) {
+	if raw == "" {
+		return defaultPolicy, nil
+	}
+	if !validRestorePolicy(animations.RestorePolicy(raw)) {
+		return "", errors.New("invalid restore policy")
+	}
+	return animations.RestorePolicy(raw), nil
+}
+
+func (s *Server) parseInterruptMode(raw string, defaultMode animations.InterruptMode) (animations.InterruptMode, error) {
+	if raw == "" {
+		return defaultMode, nil
+	}
+	if !validInterruptMode(animations.InterruptMode(raw)) {
+		return "", errors.New("invalid interrupt_mode")
+	}
+	return animations.InterruptMode(raw), nil
+}
+
+func (s *Server) validateEventOverrides(attrs map[string]string) error {
+	if animationID := attrs["animation"]; animationID != "" {
+		if err := s.validatePlayableAnimation(animationID); err != nil {
+			return err
+		}
+	}
+	if _, err := s.parseRestorePolicy(attrs["restore"], ""); err != nil {
+		return err
+	}
+	if _, err := parseOptionalDuration(attrs["duration"]); err != nil {
+		return err
+	}
+	if _, err := s.parseInterruptMode(attrs["interrupt_mode"], ""); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeMatrixControlError(w http.ResponseWriter, r *http.Request, err error) {
+	writeError(w, matrixControlStatus(r, err), err.Error())
+}
+
+func matrixControlStatus(r *http.Request, err error) int {
+	if err == nil {
+		return http.StatusOK
+	}
+	if errors.Is(err, matrix.ErrInvalidControl) ||
+		errors.Is(err, matrix.ErrInvalidDuration) ||
+		errors.Is(err, matrix.ErrPayloadTooLarge) {
+		return http.StatusBadRequest
+	}
+	if errors.Is(err, matrix.ErrProtocol) {
+		return http.StatusBadGateway
+	}
+	var statusErr *matrix.StatusError
+	if errors.As(err, &statusErr) {
+		return http.StatusBadGateway
+	}
+	if errors.Is(err, context.DeadlineExceeded) && r.Context().Err() == context.DeadlineExceeded {
+		return http.StatusGatewayTimeout
+	}
+	if errors.Is(err, matrix.ErrSchedulerStopped) ||
+		errors.Is(err, matrix.ErrControlQueueCleared) ||
+		errors.Is(err, matrix.ErrControlDropped) ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		matrix.IsRetryableError(r.Context(), err) {
+		return http.StatusServiceUnavailable
+	}
+	return http.StatusServiceUnavailable
+}
+
+func decodeJSON(r *http.Request, target any) error {
+	defer r.Body.Close()
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if decoder.Decode(&struct{}{}) == nil {
+		return errors.New("request body must contain a single JSON value")
+	}
+	return nil
+}
+
+func parseOptionalDuration(value string) (time.Duration, error) {
+	if value == "" {
+		return 0, nil
+	}
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration: %w", err)
+	}
+	if duration < 0 {
+		return 0, errors.New("duration cannot be negative")
+	}
+	return duration, nil
+}
+
+func validRestorePolicy(policy animations.RestorePolicy) bool {
+	_, ok := validRestorePolicySet[policy]
+	return ok
+}
+
+func validInterruptMode(mode animations.InterruptMode) bool {
+	_, ok := validInterruptModeSet[mode]
+	return ok
+}
+
+func addAttr(attrs map[string]string, key, value string) {
+	if value != "" {
+		attrs[key] = value
+	}
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, errorResponse{Error: message})
 }
 
 // ── Queue endpoints ───────────────────────────────────────────────────────────
@@ -479,6 +613,7 @@ func (s *Server) handleDeviceList(w http.ResponseWriter, _ *http.Request) {
 	for id := range s.schedulers {
 		ids = append(ids, id)
 	}
+	sort.Strings(ids)
 	writeJSON(w, http.StatusOK, deviceListResponse{Devices: ids})
 }
 
@@ -629,117 +764,4 @@ func (s *Server) validatePlayableAnimation(id string) error {
 		return fmt.Errorf("animation %q is not renderable/playable", id)
 	}
 	return nil
-}
-
-func (s *Server) validateEventOverrides(attrs map[string]string) error {
-	if animationID := attrs["animation"]; animationID != "" {
-		if err := s.validatePlayableAnimation(animationID); err != nil {
-			return err
-		}
-	}
-	if restore := attrs["restore"]; restore != "" && !validRestorePolicy(animations.RestorePolicy(restore)) {
-		return errors.New("invalid restore policy")
-	}
-	if _, err := parseOptionalDuration(attrs["duration"]); err != nil {
-		return err
-	}
-	if interruptMode := attrs["interrupt_mode"]; interruptMode != "" && !validInterruptMode(animations.InterruptMode(interruptMode)) {
-		return errors.New("invalid interrupt_mode")
-	}
-	return nil
-}
-
-func writeMatrixControlError(w http.ResponseWriter, r *http.Request, err error) {
-	writeError(w, matrixControlStatus(r, err), err.Error())
-}
-
-func matrixControlStatus(r *http.Request, err error) int {
-	if err == nil {
-		return http.StatusOK
-	}
-	if errors.Is(err, matrix.ErrInvalidControl) ||
-		errors.Is(err, matrix.ErrInvalidDuration) ||
-		errors.Is(err, matrix.ErrPayloadTooLarge) {
-		return http.StatusBadRequest
-	}
-	if errors.Is(err, matrix.ErrProtocol) {
-		return http.StatusBadGateway
-	}
-	var statusErr *matrix.StatusError
-	if errors.As(err, &statusErr) {
-		return http.StatusBadGateway
-	}
-	if errors.Is(err, context.DeadlineExceeded) && r.Context().Err() == context.DeadlineExceeded {
-		return http.StatusGatewayTimeout
-	}
-	if errors.Is(err, matrix.ErrSchedulerStopped) ||
-		errors.Is(err, matrix.ErrControlQueueCleared) ||
-		errors.Is(err, matrix.ErrControlDropped) ||
-		errors.Is(err, context.Canceled) ||
-		errors.Is(err, context.DeadlineExceeded) ||
-		matrix.IsRetryableError(r.Context(), err) {
-		return http.StatusServiceUnavailable
-	}
-	return http.StatusServiceUnavailable
-}
-
-func decodeJSON(r *http.Request, target any) error {
-	defer r.Body.Close()
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return err
-	}
-	if decoder.Decode(&struct{}{}) == nil {
-		return errors.New("request body must contain a single JSON value")
-	}
-	return nil
-}
-
-func parseOptionalDuration(value string) (time.Duration, error) {
-	if value == "" {
-		return 0, nil
-	}
-	duration, err := time.ParseDuration(value)
-	if err != nil {
-		return 0, fmt.Errorf("invalid duration: %w", err)
-	}
-	if duration < 0 {
-		return 0, errors.New("duration cannot be negative")
-	}
-	return duration, nil
-}
-
-func validRestorePolicy(policy animations.RestorePolicy) bool {
-	switch policy {
-	case animations.RestoreClear, animations.RestoreBlank, animations.RestorePreviousFrame, animations.RestoreBackground, animations.RestoreLeave:
-		return true
-	default:
-		return false
-	}
-}
-
-func validInterruptMode(mode animations.InterruptMode) bool {
-	switch mode {
-	case animations.InterruptNone, animations.InterruptHigherPriority, animations.InterruptCritical:
-		return true
-	default:
-		return false
-	}
-}
-
-func addAttr(attrs map[string]string, key, value string) {
-	if value != "" {
-		attrs[key] = value
-	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(body)
-}
-
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, errorResponse{Error: message})
 }

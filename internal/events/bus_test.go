@@ -8,8 +8,17 @@ import (
 	"time"
 )
 
+func newTestBus(t *testing.T, capacity int) *Bus {
+	t.Helper()
+	bus, err := NewBus(capacity)
+	if err != nil {
+		t.Fatalf("NewBus(%d) error = %v", capacity, err)
+	}
+	return bus
+}
+
 func TestSubscriptionDepthTracksPublishAndReceiveBacklogOnlyNoInflightCount(t *testing.T) {
-	bus := MustNewBus(3)
+	bus := newTestBus(t, 3)
 	depths := newDepthRecorder(t)
 	ch, unsubscribe := bus.SubscribeWithOptions(nil, SubscriptionOptions{
 		OnDepthChange: depths.record,
@@ -33,7 +42,7 @@ func TestSubscriptionDepthTracksPublishAndReceiveBacklogOnlyNoInflightCount(t *t
 }
 
 func TestSubscriptionDepthResetsOnUnsubscribe(t *testing.T) {
-	bus := MustNewBus(3)
+	bus := newTestBus(t, 3)
 	depths := newDepthRecorder(t)
 	ch, unsubscribe := bus.SubscribeWithOptions(nil, SubscriptionOptions{
 		OnDepthChange: depths.record,
@@ -54,7 +63,7 @@ func TestSubscriptionDepthResetsOnUnsubscribe(t *testing.T) {
 }
 
 func TestDepthCallbackDoesNotPublishLateNonzeroAfterUnsubscribeReturns(t *testing.T) {
-	bus := MustNewBus(2)
+	bus := newTestBus(t, 2)
 	depths := newDepthRecorder(t)
 	nonzeroStarted := make(chan struct{})
 	releaseNonzero := make(chan struct{})
@@ -117,7 +126,7 @@ func TestDepthCallbackDoesNotPublishLateNonzeroAfterUnsubscribeReturns(t *testin
 }
 
 func TestSubscriptionDepthResetsWhenSubscriptionContextCloses(t *testing.T) {
-	bus := MustNewBus(3)
+	bus := newTestBus(t, 3)
 	ctx, cancel := context.WithCancel(context.Background())
 	depths := newDepthRecorder(t)
 	ch, unsubscribe := bus.SubscribeWithOptions(ctx, SubscriptionOptions{
@@ -136,7 +145,7 @@ func TestSubscriptionDepthResetsWhenSubscriptionContextCloses(t *testing.T) {
 }
 
 func TestSubscriptionDepthResetsOnBusClose(t *testing.T) {
-	bus := MustNewBus(3)
+	bus := newTestBus(t, 3)
 	depths := newDepthRecorder(t)
 	ch, unsubscribe := bus.SubscribeWithOptions(nil, SubscriptionOptions{
 		OnDepthChange: depths.record,
@@ -160,7 +169,7 @@ func TestSubscriptionDepthResetsOnBusClose(t *testing.T) {
 }
 
 func TestDepthCallbackDoesNotPublishLateNonzeroAfterCloseReturns(t *testing.T) {
-	bus := MustNewBus(2)
+	bus := newTestBus(t, 2)
 	depths := newDepthRecorder(t)
 	nonzeroStarted := make(chan struct{})
 	releaseNonzero := make(chan struct{})
@@ -226,7 +235,7 @@ func TestDepthCallbackDoesNotPublishLateNonzeroAfterCloseReturns(t *testing.T) {
 }
 
 func TestClosedBusSubscriptionReportsZeroDepth(t *testing.T) {
-	bus := MustNewBus(1)
+	bus := newTestBus(t, 1)
 	if err := bus.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
@@ -242,7 +251,7 @@ func TestClosedBusSubscriptionReportsZeroDepth(t *testing.T) {
 }
 
 func TestDepthCallbackPanicRecoveredOnPublish(t *testing.T) {
-	bus := MustNewBus(1)
+	bus := newTestBus(t, 1)
 	ch, unsubscribe := bus.SubscribeWithOptions(nil, SubscriptionOptions{
 		OnDepthChange: func(int) {
 			panic("depth callback failed")
@@ -257,7 +266,7 @@ func TestDepthCallbackPanicRecoveredOnPublish(t *testing.T) {
 }
 
 func TestDepthCallbackPanicRecoveredOnClose(t *testing.T) {
-	bus := MustNewBus(1)
+	bus := newTestBus(t, 1)
 	ch, unsubscribe := bus.SubscribeWithOptions(nil, SubscriptionOptions{
 		OnDepthChange: func(int) {
 			panic("depth callback failed")
@@ -274,7 +283,7 @@ func TestDepthCallbackPanicRecoveredOnClose(t *testing.T) {
 }
 
 func TestDepthCallbackPanicRecoveredOnUnsubscribe(t *testing.T) {
-	bus := MustNewBus(1)
+	bus := newTestBus(t, 1)
 	ch, unsubscribe := bus.SubscribeWithOptions(nil, SubscriptionOptions{
 		OnDepthChange: func(int) {
 			panic("depth callback failed")
@@ -286,7 +295,7 @@ func TestDepthCallbackPanicRecoveredOnUnsubscribe(t *testing.T) {
 }
 
 func TestDepthCallbackPanicRecoveredOnSubscriptionContextCancel(t *testing.T) {
-	bus := MustNewBus(1)
+	bus := newTestBus(t, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	ch, unsubscribe := bus.SubscribeWithOptions(ctx, SubscriptionOptions{
 		OnDepthChange: func(int) {
@@ -300,7 +309,7 @@ func TestDepthCallbackPanicRecoveredOnSubscriptionContextCancel(t *testing.T) {
 }
 
 func TestDepthCallbackPanicRecoveredOnClosedBusSubscribe(t *testing.T) {
-	bus := MustNewBus(1)
+	bus := newTestBus(t, 1)
 	if err := bus.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
 	}
@@ -319,7 +328,7 @@ func TestDepthCallbackPanicRecoveredOnClosedBusSubscribe(t *testing.T) {
 }
 
 func TestDepthCallbackPanicDoesNotStopOtherDepthObservers(t *testing.T) {
-	bus := MustNewBus(2)
+	bus := newTestBus(t, 2)
 	panickingCh, unsubscribePanicking := bus.SubscribeWithOptions(nil, SubscriptionOptions{
 		OnDepthChange: func(int) {
 			panic("depth callback failed")
@@ -341,7 +350,7 @@ func TestDepthCallbackPanicDoesNotStopOtherDepthObservers(t *testing.T) {
 }
 
 func TestPublishBlocksUntilFullSubscriberReceivesEvent(t *testing.T) {
-	bus := MustNewBus(1)
+	bus := newTestBus(t, 1)
 	ch, unsubscribe := bus.Subscribe(nil)
 	defer unsubscribe()
 
@@ -402,7 +411,7 @@ func TestPublishRecordsBackpressureWaitWhenFullSubscriberReceivesEvent(t *testin
 }
 
 func TestPublishReturnsContextErrorWhenBlockedBehindFullSubscriber(t *testing.T) {
-	bus := MustNewBus(1)
+	bus := newTestBus(t, 1)
 	ch, unsubscribe := bus.Subscribe(nil)
 	defer unsubscribe()
 
@@ -431,7 +440,7 @@ func TestPublishReturnsContextErrorWhenBlockedBehindFullSubscriber(t *testing.T)
 }
 
 func TestUnsubscribeWaitsForBlockedPublishContextCancellation(t *testing.T) {
-	bus := MustNewBus(1)
+	bus := newTestBus(t, 1)
 	earlierCh, unsubscribeEarlier := bus.Subscribe(nil)
 	defer unsubscribeEarlier()
 	laterCh, unsubscribeLater := bus.Subscribe(nil)
@@ -474,7 +483,7 @@ func TestUnsubscribeWaitsForBlockedPublishContextCancellation(t *testing.T) {
 }
 
 func TestUnsubscribeWaitsForBlockedPublishUntilFullSubscriberReceives(t *testing.T) {
-	bus := MustNewBus(1)
+	bus := newTestBus(t, 1)
 	earlierCh, unsubscribeEarlier := bus.Subscribe(nil)
 	defer unsubscribeEarlier()
 	laterCh, unsubscribeLater := bus.Subscribe(nil)
@@ -519,7 +528,7 @@ func TestUnsubscribeWaitsForBlockedPublishUntilFullSubscriberReceives(t *testing
 }
 
 func TestCloseWaitsForBlockedPublishUntilFullSubscriberReceives(t *testing.T) {
-	bus := MustNewBus(1)
+	bus := newTestBus(t, 1)
 	earlierCh, _ := bus.Subscribe(nil)
 	laterCh, _ := bus.Subscribe(nil)
 
@@ -567,7 +576,7 @@ func TestCloseWaitsForBlockedPublishUntilFullSubscriberReceives(t *testing.T) {
 }
 
 func TestCloseWaitsForBlockedPublishContextCancellation(t *testing.T) {
-	bus := MustNewBus(1)
+	bus := newTestBus(t, 1)
 	earlierCh, _ := bus.Subscribe(nil)
 	laterCh, _ := bus.Subscribe(nil)
 
@@ -617,7 +626,7 @@ func TestCloseWaitsForBlockedPublishContextCancellation(t *testing.T) {
 }
 
 func TestCloseWaitsForBlockedPublishContextDeadline(t *testing.T) {
-	bus := MustNewBus(1)
+	bus := newTestBus(t, 1)
 	earlierCh, _ := bus.Subscribe(nil)
 	laterCh, _ := bus.Subscribe(nil)
 
@@ -663,7 +672,7 @@ func TestCloseWaitsForBlockedPublishContextDeadline(t *testing.T) {
 }
 
 func TestPublishCanPartiallyDeliverBeforeContextErrorBehindLaterFullSubscriber(t *testing.T) {
-	bus := MustNewBus(1)
+	bus := newTestBus(t, 1)
 	earlierCh, unsubscribeEarlier := bus.Subscribe(nil)
 	defer unsubscribeEarlier()
 	laterCh, unsubscribeLater := bus.Subscribe(nil)

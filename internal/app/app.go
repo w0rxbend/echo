@@ -35,15 +35,16 @@ type appDevice struct {
 }
 
 type App struct {
-	cfg       config.Config
-	logger    *slog.Logger
-	metrics   *metrics.Registry
-	bus       *events.Bus
-	rules     eventMapper
-	registry  *animations.Registry
-	devices   []*appDevice // ordered by device ID for deterministic iteration
-	httpAPI   *httpapi.Server
-	lifecycle appLifecycle
+	cfg         config.Config
+	logger      *slog.Logger
+	metrics     *metrics.Registry
+	bus         *events.Bus
+	rules       eventMapper
+	registry    *animations.Registry
+	devices     []*appDevice // ordered by device ID for deterministic iteration
+	devicesByID map[string]*appDevice
+	httpAPI     *httpapi.Server
+	lifecycle   appLifecycle
 
 	eventWorker eventWorkerDiagnostics
 }
@@ -54,6 +55,7 @@ type eventMapper interface {
 
 type matrixClientCloser interface {
 	matrix.Client
+	matrixObservabilityPanicCounter
 	Close() error
 }
 
@@ -104,9 +106,10 @@ func newWithOptions(cfg config.Config, logger *slog.Logger, options ...appNewOpt
 		return nil, err
 	}
 	partial = &App{
-		cfg:     cfg,
-		logger:  logger,
-		metrics: registry,
+		cfg:         cfg,
+		logger:      logger,
+		metrics:     registry,
+		devicesByID: make(map[string]*appDevice, len(cfg.Devices)),
 	}
 
 	bus, err := events.NewBusWithOptions(cfg.Queue.EventsBuffer, events.BusOptions{
@@ -148,153 +151,24 @@ func newWithOptions(cfg config.Config, logger *slog.Logger, options ...appNewOpt
 
 	for _, id := range deviceIDs {
 		devCfg := cfg.Devices[id]
-
-		layout, err := animations.NewLayout(
-			devCfg.Layout.Width,
-			devCfg.Layout.Height,
-			devCfg.Layout.Wiring,
-			devCfg.Layout.OddRowDisplayFlip,
-			devCfg.Layout.Rotation,
+		if devCfg == nil {
+			return nil, fmt.Errorf("invalid device %q configuration", id)
+		}
+		device, err := newAppDevice(
+			logger,
+			registry,
+			animationRegistry,
+			id,
+			devCfg,
+			cfg.Queue.PlayBuffer,
+			newOptions.wrapReliableOutcomeSink,
 		)
 		if err != nil {
 			return nil, err
 		}
-		packer, err := animations.NewPacker(layout)
-		if err != nil {
-			return nil, err
-		}
-
-		tcpLogs := newTCPReconnectLogDispatcher(logger, 64)
-
-		deviceID := id // capture for closures
-		matrixClient, err := matrix.NewTCPClient(matrix.ClientOptions{
-			Host:            devCfg.Host,
-			Port:            devCfg.Port,
-			ConnectTimeout:  devCfg.ConnectTimeout,
-			ResponseTimeout: devCfg.ResponseTimeout,
-			OnCommandDone: func(result matrix.CommandResult) {
-				registry.MatrixCommandsTotal.WithLabelValues(deviceID, result.Command, result.Status).Inc()
-				registry.MatrixCommandDuration.WithLabelValues(deviceID, result.Command).Observe(result.Duration.Seconds())
-			},
-			OnReconnectAttempt: func(attempt matrix.ReconnectAttempt) {
-				recordReconnectAttempt(registry, deviceID, attempt, false)
-				tcpLogs.LogReconnectAttempt(attempt)
-			},
-			OnReconnectRecovered: func(recovery matrix.ReconnectRecovery) {
-				recordReconnectRecovery(registry, deviceID, recovery)
-				tcpLogs.LogReconnectRecovered(recovery)
-			},
-			OnReconnectFailure: func(failure matrix.ReconnectFailure) {
-				recordReconnectFailure(registry, deviceID, failure)
-				tcpLogs.LogReconnectFailure(failure)
-			},
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		recordReliableOutcome := func(report matrix.OutcomeReport) {
-			recordItemOutcomeMetric(registry, deviceID, report)
-		}
-		if newOptions.wrapReliableOutcomeSink != nil {
-			if wrapped := newOptions.wrapReliableOutcomeSink(recordReliableOutcome); wrapped != nil {
-				recordReliableOutcome = wrapped
-			}
-		}
-
-		scheduler, err := matrix.NewSchedulerWithReliableAppOutcomeRecorder(matrix.SchedulerOptions{
-			Client:            matrixClient,
-			Registry:          animationRegistry,
-			Packer:            packer,
-			QueueCapacity:     cfg.Queue.PlayBuffer,
-			Background:        backgroundConfig(*devCfg),
-			ReconnectMinDelay: devCfg.ReconnectMinDelay,
-			ReconnectMaxDelay: devCfg.ReconnectMaxDelay,
-			HeartbeatInterval: devCfg.HeartbeatInterval,
-			ProbeTimeout:      devCfg.ProbeTimeout,
-			OnReconnectDelay: func(attempt matrix.ReconnectAttempt) {
-				recordReconnectAttempt(registry, deviceID, attempt, true)
-				logReconnectAttempt(logger, deviceID, attempt)
-			},
-			OnReconnectRecovered: func(recovery matrix.ReconnectRecovery) {
-				recordReconnectRecovery(registry, deviceID, recovery)
-				logReconnectRecovered(logger, deviceID, recovery)
-			},
-			OnReconnectFailure: func(failure matrix.ReconnectFailure) {
-				recordReconnectFailure(registry, deviceID, failure)
-				logReconnectFailure(logger, deviceID, failure)
-			},
-			OnProbeFailure: func(failure matrix.ProbeFailure) {
-				recordProbeFailure(registry, deviceID, failure)
-				logProbeFailure(logger, deviceID, failure)
-			},
-			OnMatrixConnectedChange: func(connected bool) {
-				setMatrixConnectedMetric(registry, deviceID, connected)
-			},
-			OnAnimationRendered: func(result matrix.AnimationRenderResult) {
-				registry.AnimationRenderDuration.WithLabelValues(deviceID, result.AnimationID).Observe(result.Duration.Seconds())
-			},
-			OnBackgroundRestore: func(event matrix.BackgroundRestoreEvent) {
-				recordBackgroundRestoreMetric(registry, deviceID, event)
-				logBackgroundRestore(logger, deviceID, event)
-			},
-			OnItemOutcome: func(report matrix.OutcomeReport) {
-				logItemOutcome(logger, deviceID, report)
-			},
-			OnQueueDepthChange: func(depth int) {
-				registry.PlayQueueDepth.WithLabelValues(deviceID).Set(float64(depth))
-			},
-		}, recordReliableOutcome)
-		if err != nil {
-			return nil, err
-		}
-
-		// Initialize per-device gauge series so they appear in /metrics from the start.
-		registry.PlayQueueDepth.WithLabelValues(id).Set(0)
-		setMatrixConnectedMetric(registry, id, false)
-
-		if err := registry.RegisterPlayItemOutcomesDropped(id, func() float64 {
-			return float64(scheduler.OutcomeReportsDropped())
-		}); err != nil {
-			return nil, err
-		}
-		if err := registry.RegisterPlayItemOutcomeRecordingPanics(id, func() float64 {
-			return float64(scheduler.OutcomeRecordingPanics())
-		}); err != nil {
-			return nil, err
-		}
-		if err := registry.RegisterTCPReconnectLogEventsDropped(id, func() float64 {
-			return float64(tcpLogs.EventsDropped())
-		}); err != nil {
-			return nil, err
-		}
-		for _, cb := range schedulerObservabilityCallbackNames() {
-			cb := cb
-			if err := registry.RegisterMatrixObservabilityCallbackPanics(id, string(matrix.ReconnectSourceSchedulerBackoff), cb, func() float64 {
-				return float64(scheduler.ObservabilityCallbackPanicCounts()[cb])
-			}); err != nil {
-				return nil, err
-			}
-		}
-		for _, cb := range tcpObservabilityCallbackNames() {
-			cb := cb
-			if err := registry.RegisterMatrixObservabilityCallbackPanics(id, string(matrix.ReconnectSourceTCPImmediate), cb, func() float64 {
-				return float64(
-					observabilityCallbackPanicCount(matrixClient, cb) +
-						observabilityCallbackPanicCount(tcpLogs, cb),
-				)
-			}); err != nil {
-				return nil, err
-			}
-		}
-
-		partial.devices = append(partial.devices, &appDevice{
-			id:        id,
-			client:    matrixClient,
-			scheduler: scheduler,
-			tcpLogs:   tcpLogs,
-		})
-		schedulers[id] = scheduler
+		partial.devices = append(partial.devices, device)
+		partial.devicesByID[id] = device
+		schedulers[id] = device.scheduler
 	}
 
 	httpAPI, err := httpapi.New(httpapi.Options{
@@ -354,10 +228,11 @@ func (a *App) mapAndEnqueue(ctx context.Context, event events.Event) error {
 }
 
 func (a *App) deviceByID(id string) *appDevice {
-	for _, d := range a.devices {
-		if d.id == id {
-			return d
-		}
+	if a == nil {
+		return nil
+	}
+	if d := a.devicesByID[id]; d != nil {
+		return d
 	}
 	return nil
 }
@@ -402,6 +277,158 @@ func backgroundConfig(devCfg config.DeviceConfig) matrix.BackgroundConfig {
 	return matrix.BackgroundConfig{AnimationID: devCfg.Background.Animation}
 }
 
+func newAppDevice(
+	logger *slog.Logger,
+	registry *metrics.Registry,
+	animationRegistry *animations.Registry,
+	deviceID string,
+	devCfg *config.DeviceConfig,
+	playQueueCapacity int,
+	wrapReliableOutcomeSink func(func(matrix.OutcomeReport)) func(matrix.OutcomeReport),
+) (*appDevice, error) {
+	layout, err := animations.NewLayout(
+		devCfg.Layout.Width,
+		devCfg.Layout.Height,
+		devCfg.Layout.Wiring,
+		devCfg.Layout.OddRowDisplayFlip,
+		devCfg.Layout.Rotation,
+	)
+	if err != nil {
+		return nil, err
+	}
+	packer, err := animations.NewPacker(layout)
+	if err != nil {
+		return nil, err
+	}
+
+	tcpLogs := newTCPReconnectLogDispatcher(logger, 64)
+
+	matrixClient, err := matrix.NewTCPClient(matrix.ClientOptions{
+		Host:            devCfg.Host,
+		Port:            devCfg.Port,
+		ConnectTimeout:  devCfg.ConnectTimeout,
+		ResponseTimeout: devCfg.ResponseTimeout,
+		OnCommandDone: func(result matrix.CommandResult) {
+			registry.MatrixCommandsTotal.WithLabelValues(deviceID, result.Command, result.Status).Inc()
+			registry.MatrixCommandDuration.WithLabelValues(deviceID, result.Command).Observe(result.Duration.Seconds())
+		},
+		OnReconnectAttempt: func(attempt matrix.ReconnectAttempt) {
+			recordReconnectAttempt(registry, deviceID, attempt, false)
+			tcpLogs.LogReconnectAttempt(attempt)
+		},
+		OnReconnectRecovered: func(recovery matrix.ReconnectRecovery) {
+			recordReconnectRecovery(registry, deviceID, recovery)
+			tcpLogs.LogReconnectRecovered(recovery)
+		},
+		OnReconnectFailure: func(failure matrix.ReconnectFailure) {
+			recordReconnectFailure(registry, deviceID, failure)
+			tcpLogs.LogReconnectFailure(failure)
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	recordReliableOutcome := func(report matrix.OutcomeReport) {
+		recordItemOutcomeMetric(registry, deviceID, report)
+	}
+	if wrapReliableOutcomeSink != nil {
+		if wrapped := wrapReliableOutcomeSink(recordReliableOutcome); wrapped != nil {
+			recordReliableOutcome = wrapped
+		}
+	}
+
+	scheduler, err := matrix.NewSchedulerWithReliableAppOutcomeRecorder(matrix.SchedulerOptions{
+		Client:            matrixClient,
+		Registry:          animationRegistry,
+		Packer:            packer,
+		QueueCapacity:     playQueueCapacity,
+		Background:        backgroundConfig(devCfg),
+		ReconnectMinDelay: devCfg.ReconnectMinDelay,
+		ReconnectMaxDelay: devCfg.ReconnectMaxDelay,
+		HeartbeatInterval: devCfg.HeartbeatInterval,
+		ProbeTimeout:      devCfg.ProbeTimeout,
+		OnReconnectDelay: func(attempt matrix.ReconnectAttempt) {
+			recordReconnectAttempt(registry, deviceID, attempt, true)
+			logReconnectAttempt(logger, deviceID, attempt)
+		},
+		OnReconnectRecovered: func(recovery matrix.ReconnectRecovery) {
+			recordReconnectRecovery(registry, deviceID, recovery)
+			logReconnectRecovered(logger, deviceID, recovery)
+		},
+		OnReconnectFailure: func(failure matrix.ReconnectFailure) {
+			recordReconnectFailure(registry, deviceID, failure)
+			logReconnectFailure(logger, deviceID, failure)
+		},
+		OnProbeFailure: func(failure matrix.ProbeFailure) {
+			recordProbeFailure(registry, deviceID, failure)
+			logProbeFailure(logger, deviceID, failure)
+		},
+		OnMatrixConnectedChange: func(connected bool) {
+			setMatrixConnectedMetric(registry, deviceID, connected)
+		},
+		OnAnimationRendered: func(result matrix.AnimationRenderResult) {
+			registry.AnimationRenderDuration.WithLabelValues(deviceID, result.AnimationID).Observe(result.Duration.Seconds())
+		},
+		OnBackgroundRestore: func(event matrix.BackgroundRestoreEvent) {
+			recordBackgroundRestoreMetric(registry, deviceID, event)
+			logBackgroundRestore(logger, deviceID, event)
+		},
+		OnItemOutcome: func(report matrix.OutcomeReport) {
+			logItemOutcome(logger, deviceID, report)
+		},
+		OnQueueDepthChange: func(depth int) {
+			registry.PlayQueueDepth.WithLabelValues(deviceID).Set(float64(depth))
+		},
+	}, recordReliableOutcome)
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize per-device gauge series so they appear in /metrics from the start.
+	registry.PlayQueueDepth.WithLabelValues(deviceID).Set(0)
+	setMatrixConnectedMetric(registry, deviceID, false)
+
+	if err := registry.RegisterPlayItemOutcomesDropped(deviceID, func() float64 {
+		return float64(scheduler.OutcomeReportsDropped())
+	}); err != nil {
+		return nil, err
+	}
+	if err := registry.RegisterPlayItemOutcomeRecordingPanics(deviceID, func() float64 {
+		return float64(scheduler.OutcomeRecordingPanics())
+	}); err != nil {
+		return nil, err
+	}
+	if err := registry.RegisterTCPReconnectLogEventsDropped(deviceID, func() float64 {
+		return float64(tcpLogs.EventsDropped())
+	}); err != nil {
+		return nil, err
+	}
+	for _, cb := range schedulerObservabilityCallbackNames() {
+		cb := cb
+		if err := registry.RegisterMatrixObservabilityCallbackPanics(deviceID, string(matrix.ReconnectSourceSchedulerBackoff), cb, func() float64 {
+			return float64(scheduler.ObservabilityCallbackPanicCounts()[cb])
+		}); err != nil {
+			return nil, err
+		}
+	}
+	for _, cb := range tcpObservabilityCallbackNames() {
+		cb := cb
+		if err := registry.RegisterMatrixObservabilityCallbackPanics(deviceID, string(matrix.ReconnectSourceTCPImmediate), cb, func() float64 {
+			return float64(observabilityCallbackPanicCount(matrixClient, cb) + observabilityCallbackPanicCount(tcpLogs, cb))
+		}); err != nil {
+			return nil, err
+		}
+	}
+
+	return &appDevice{
+		id:        deviceID,
+		client:    matrixClient,
+		scheduler: scheduler,
+		tcpLogs:   tcpLogs,
+	}, nil
+}
+
 func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -426,16 +453,16 @@ func (a *App) isReady() bool {
 }
 
 type readyResponse struct {
-	Status         string                       `json:"status"`
-	WorkersRunning bool                         `json:"workers_running"`
-	Draining       bool                         `json:"draining"`
-	EventWorker    eventWorkerReady             `json:"event_worker"`
-	Devices        map[string]deviceReadyEntry  `json:"devices"`
+	Status         string                      `json:"status"`
+	WorkersRunning bool                        `json:"workers_running"`
+	Draining       bool                        `json:"draining"`
+	EventWorker    eventWorkerReady            `json:"event_worker"`
+	Devices        map[string]deviceReadyEntry `json:"devices"`
 	// Aggregate fields retained for observability convenience.
-	OutcomesDropped             uint64            `json:"outcome_reports_dropped"`
-	OutcomeRecordingPanics      uint64            `json:"outcome_recording_panics"`
-	TCPReconnectLogEventsDropped uint64           `json:"tcp_reconnect_log_events_dropped"`
-	ObservabilityCallbackPanics  uint64           `json:"observability_callback_panics"`
+	OutcomesDropped              uint64            `json:"outcome_reports_dropped"`
+	OutcomeRecordingPanics       uint64            `json:"outcome_recording_panics"`
+	TCPReconnectLogEventsDropped uint64            `json:"tcp_reconnect_log_events_dropped"`
+	ObservabilityCallbackPanics  uint64            `json:"observability_callback_panics"`
 	ObservabilityCallbackCounts  map[string]uint64 `json:"observability_callback_panic_counts,omitempty"`
 }
 
@@ -523,11 +550,11 @@ func (a *App) readiness() (readyResponse, bool) {
 		status = "ready"
 	}
 	return readyResponse{
-		Status:         status,
-		WorkersRunning: workersRunning,
-		Draining:       draining,
-		EventWorker:    a.eventWorker.snapshot(now),
-		Devices:        deviceEntries,
+		Status:                       status,
+		WorkersRunning:               workersRunning,
+		Draining:                     draining,
+		EventWorker:                  a.eventWorker.snapshot(now),
+		Devices:                      deviceEntries,
 		OutcomesDropped:              totalOutcomesDropped,
 		OutcomeRecordingPanics:       totalOutcomeRecordingPanics,
 		TCPReconnectLogEventsDropped: totalTCPLogEventsDropped,
@@ -543,34 +570,34 @@ func tcpReconnectLogEventsDropped(dispatcher *tcpReconnectLogDispatcher) uint64 
 	return dispatcher.EventsDropped()
 }
 
-func observabilityCallbackPanics(counter any) uint64 {
-	if counter, ok := counter.(matrixObservabilityPanicCounter); ok {
-		return counter.ObservabilityCallbackPanics()
+func observabilityCallbackPanics(counter matrixObservabilityPanicCounter) uint64 {
+	if counter == nil {
+		return 0
 	}
-	return 0
+	return counter.ObservabilityCallbackPanics()
 }
 
-func observabilityCallbackPanicCount(counter any, callback string) uint64 {
-	if counter, ok := counter.(matrixObservabilityPanicCounter); ok {
-		return counter.ObservabilityCallbackPanicCounts()[callback]
+func observabilityCallbackPanicCount(counter matrixObservabilityPanicCounter, callback string) uint64 {
+	if counter == nil {
+		return 0
 	}
-	return 0
+	return counter.ObservabilityCallbackPanicCounts()[callback]
 }
 
 func applicationObservabilityCallbackPanicCounts(
 	scheduler *matrix.Scheduler,
-	matrixClient any,
-	tcpReconnectLogs any,
+	matrixClient matrixObservabilityPanicCounter,
+	tcpReconnectLogs matrixObservabilityPanicCounter,
 ) map[string]uint64 {
 	var counts map[string]uint64
 	if scheduler != nil {
 		counts = mergeObservabilityCallbackPanicCounts(counts, scheduler.ObservabilityCallbackPanicCounts())
 	}
-	if counter, ok := matrixClient.(matrixObservabilityPanicCounter); ok {
-		counts = mergeObservabilityCallbackPanicCounts(counts, counter.ObservabilityCallbackPanicCounts())
+	if matrixClient != nil {
+		counts = mergeObservabilityCallbackPanicCounts(counts, matrixClient.ObservabilityCallbackPanicCounts())
 	}
-	if counter, ok := tcpReconnectLogs.(matrixObservabilityPanicCounter); ok {
-		counts = mergeObservabilityCallbackPanicCounts(counts, counter.ObservabilityCallbackPanicCounts())
+	if tcpReconnectLogs != nil {
+		counts = mergeObservabilityCallbackPanicCounts(counts, tcpReconnectLogs.ObservabilityCallbackPanicCounts())
 	}
 	return counts
 }
@@ -652,12 +679,21 @@ func recordBackgroundRestoreMetric(registry *metrics.Registry, deviceID string, 
 	if !ok {
 		return
 	}
-	switch event.State {
-	case matrix.BackgroundConvergenceAttempting:
-		registry.BackgroundRestoreAttemptsTotal.WithLabelValues(deviceID, kind).Inc()
-	case matrix.BackgroundConvergenceFailed, matrix.BackgroundConvergenceRetrying:
-		registry.BackgroundRestoreFailuresTotal.WithLabelValues(deviceID, kind, string(event.ErrorKind)).Inc()
+	if fn, ok := backgroundRestoreMetricHandlers[event.State]; ok {
+		fn(registry, deviceID, kind, event)
 	}
+}
+
+var backgroundRestoreMetricHandlers = map[matrix.BackgroundConvergenceState]func(*metrics.Registry, string, string, matrix.BackgroundRestoreEvent){
+	matrix.BackgroundConvergenceAttempting: func(registry *metrics.Registry, deviceID string, kind string, _ matrix.BackgroundRestoreEvent) {
+		registry.BackgroundRestoreAttemptsTotal.WithLabelValues(deviceID, kind).Inc()
+	},
+	matrix.BackgroundConvergenceFailed: func(registry *metrics.Registry, deviceID string, kind string, event matrix.BackgroundRestoreEvent) {
+		registry.BackgroundRestoreFailuresTotal.WithLabelValues(deviceID, kind, string(event.ErrorKind)).Inc()
+	},
+	matrix.BackgroundConvergenceRetrying: func(registry *metrics.Registry, deviceID string, kind string, event matrix.BackgroundRestoreEvent) {
+		registry.BackgroundRestoreFailuresTotal.WithLabelValues(deviceID, kind, string(event.ErrorKind)).Inc()
+	},
 }
 
 func (a *App) refreshBackgroundStateMetrics() {

@@ -1465,7 +1465,7 @@ func TestEventsAnimationOverrideValidatesPlayableAnimationBeforePublish(t *testi
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bus := events.MustNewBus(4)
+			bus := newTestBus(t, 4)
 			ctx, cancel := context.WithCancel(context.Background())
 			t.Cleanup(cancel)
 			ch, unsubscribe := bus.Subscribe(ctx)
@@ -1557,7 +1557,7 @@ func TestEventsOverrideValidationRejectsInvalidRestoreAndDurationBeforePublish(t
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bus := events.MustNewBus(4)
+			bus := newTestBus(t, 4)
 			ctx, cancel := context.WithCancel(context.Background())
 			t.Cleanup(cancel)
 			ch, unsubscribe := bus.Subscribe(ctx)
@@ -1612,7 +1612,7 @@ func TestEventsOverrideValidationRejectsInvalidRestoreAndDurationBeforePublish(t
 }
 
 func TestEventsOverrideValidationAllowsCustomAttributesBeforePublish(t *testing.T) {
-	bus := events.MustNewBus(4)
+	bus := newTestBus(t, 4)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	ch, unsubscribe := bus.Subscribe(ctx)
@@ -1747,7 +1747,7 @@ func TestPlayInterruptModeInvalidRejected(t *testing.T) {
 }
 
 func TestEventsInvalidInterruptModeRejectedAtIngress(t *testing.T) {
-	bus := events.MustNewBus(4)
+	bus := newTestBus(t, 4)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	ch, unsubscribe := bus.Subscribe(ctx)
@@ -1795,7 +1795,7 @@ func TestEventsInvalidInterruptModeRejectedAtIngress(t *testing.T) {
 }
 
 func TestEventsValidInterruptModePassesIngress(t *testing.T) {
-	bus := events.MustNewBus(4)
+	bus := newTestBus(t, 4)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	ch, unsubscribe := bus.Subscribe(ctx)
@@ -1843,7 +1843,7 @@ func TestEventsValidInterruptModePassesIngress(t *testing.T) {
 }
 
 func TestEventsSchemaAgnosticAttributesPassInterruptValidation(t *testing.T) {
-	bus := events.MustNewBus(4)
+	bus := newTestBus(t, 4)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	ch, unsubscribe := bus.Subscribe(ctx)
@@ -2705,6 +2705,15 @@ func newAdminAuthTestConfig(t *testing.T) config.Config {
 	cfg.Queue.PlayBuffer = 16
 	cfg.RulesFile = writeRulesFile(t)
 	return cfg
+}
+
+func newTestBus(t *testing.T, capacity int) *events.Bus {
+	t.Helper()
+	bus, err := events.NewBus(capacity)
+	if err != nil {
+		t.Fatalf("events.NewBus(%d) error = %v", capacity, err)
+	}
+	return bus
 }
 
 func newHTTPMatrixTestConfig(t *testing.T, matrixAddr string) config.Config {

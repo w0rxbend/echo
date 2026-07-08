@@ -32,33 +32,25 @@ const (
 	commandStopEffect
 )
 
+var commandStrings = map[command]string{
+	commandPing:            "ping",
+	commandClear:           "clear",
+	commandSetBrightness:   "set_brightness",
+	commandFill:            "fill",
+	commandSetPixel:        "set_pixel",
+	commandSetFrame:        "set_frame",
+	commandSetPanelEnabled: "set_panel_enabled",
+	commandSetStaticColor:  "set_static_color",
+	commandSetPresetEffect: "set_preset_effect",
+	commandUploadCustomFrame:"upload_custom_frame",
+	commandStopEffect:      "stop_effect",
+}
+
 func (c command) String() string {
-	switch c {
-	case commandPing:
-		return "ping"
-	case commandClear:
-		return "clear"
-	case commandSetBrightness:
-		return "set_brightness"
-	case commandFill:
-		return "fill"
-	case commandSetPixel:
-		return "set_pixel"
-	case commandSetFrame:
-		return "set_frame"
-	case commandSetPanelEnabled:
-		return "set_panel_enabled"
-	case commandSetStaticColor:
-		return "set_static_color"
-	case commandSetPresetEffect:
-		return "set_preset_effect"
-	case commandUploadCustomFrame:
-		return "upload_custom_frame"
-	case commandStopEffect:
-		return "stop_effect"
-	default:
-		return fmt.Sprintf("unknown_0x%02x", byte(c))
+	if value, ok := commandStrings[c]; ok {
+		return value
 	}
+	return fmt.Sprintf("unknown_0x%02x", byte(c))
 }
 
 type Status byte
@@ -125,6 +117,32 @@ func (e *ProtocolError) Unwrap() error {
 	return ErrProtocol
 }
 
+var statusErrors = map[Status]error{
+	StatusBadMagic:           ErrStatusBadMagic,
+	StatusUnsupportedVersion:  ErrStatusUnsupportedVersion,
+	StatusUnknownCommand:      ErrStatusUnknownCommand,
+	StatusInvalidLength:       ErrStatusInvalidLength,
+	StatusChecksumMismatch:    ErrStatusChecksumMismatch,
+}
+
+var statusToString = map[Status]string{
+	StatusOK:               "ok",
+	StatusBadMagic:         "bad magic",
+	StatusUnsupportedVersion: "unsupported version",
+	StatusUnknownCommand:    "unknown command",
+	StatusInvalidLength:     "invalid length",
+	StatusChecksumMismatch:  "checksum mismatch",
+}
+
+var statusToLabel = map[Status]string{
+	StatusOK:                "ok",
+	StatusBadMagic:          "bad_magic",
+	StatusUnsupportedVersion: "unsupported_version",
+	StatusUnknownCommand:     "unknown_command",
+	StatusInvalidLength:      "invalid_length",
+	StatusChecksumMismatch:   "checksum_mismatch",
+}
+
 type StatusError struct {
 	Status Status
 }
@@ -134,58 +152,24 @@ func (e *StatusError) Error() string {
 }
 
 func (e *StatusError) Unwrap() error {
-	switch e.Status {
-	case StatusBadMagic:
-		return ErrStatusBadMagic
-	case StatusUnsupportedVersion:
-		return ErrStatusUnsupportedVersion
-	case StatusUnknownCommand:
-		return ErrStatusUnknownCommand
-	case StatusInvalidLength:
-		return ErrStatusInvalidLength
-	case StatusChecksumMismatch:
-		return ErrStatusChecksumMismatch
-	default:
-		return ErrStatusUnknown
+	if err, ok := statusErrors[e.Status]; ok {
+		return err
 	}
+	return ErrStatusUnknown
 }
 
 func (s Status) String() string {
-	switch s {
-	case StatusOK:
-		return "ok"
-	case StatusBadMagic:
-		return "bad magic"
-	case StatusUnsupportedVersion:
-		return "unsupported version"
-	case StatusUnknownCommand:
-		return "unknown command"
-	case StatusInvalidLength:
-		return "invalid length"
-	case StatusChecksumMismatch:
-		return "checksum mismatch"
-	default:
-		return "unknown"
+	if value, ok := statusToString[s]; ok {
+		return value
 	}
+	return "unknown"
 }
 
 func (s Status) Label() string {
-	switch s {
-	case StatusOK:
-		return "ok"
-	case StatusBadMagic:
-		return "bad_magic"
-	case StatusUnsupportedVersion:
-		return "unsupported_version"
-	case StatusUnknownCommand:
-		return "unknown_command"
-	case StatusInvalidLength:
-		return "invalid_length"
-	case StatusChecksumMismatch:
-		return "checksum_mismatch"
-	default:
-		return "unknown"
+	if value, ok := statusToLabel[s]; ok {
+		return value
 	}
+	return "unknown"
 }
 
 func statusError(status Status) error {

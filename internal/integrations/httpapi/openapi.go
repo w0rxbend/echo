@@ -7,28 +7,56 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 )
 
 //go:embed swaggerdocs/swagger.json
 var rawSpec []byte
 
-// openapiSpec is the embedded spec with the server URL stripped so it is
-// injected dynamically per-request from the actual Host header.
-var openapiSpec map[string]any
+// openAPISpec holds embedded OpenAPI data with startup parse status.
+type openAPISpec struct {
+	doc map[string]any
+	err error
+}
 
-func init() {
-	if err := json.Unmarshal(rawSpec, &openapiSpec); err != nil {
-		panic("httpapi: failed to parse embedded OpenAPI spec: " + err.Error())
+func loadOpenAPISpec() openAPISpec {
+	var doc map[string]any
+	if err := json.Unmarshal(rawSpec, &doc); err != nil {
+		return openAPISpec{err: fmt.Errorf("httpapi: failed to parse embedded OpenAPI spec: %w", err)}
 	}
 	// Remove pre-generated servers block — HandleOpenAPI injects it per-request.
-	delete(openapiSpec, "servers")
+	delete(doc, "servers")
+	return openAPISpec{doc: doc}
+}
+
+func (o openAPISpec) resolve() (map[string]any, error) {
+	if o.doc == nil {
+		if o.err != nil {
+			return nil, o.err
+		}
+		return nil, fmt.Errorf("httpapi: embedded OpenAPI spec is unavailable")
+	}
+	return o.doc, nil
+}
+
+func logOpenAPISpecError(logger *slog.Logger, err error) {
+	if logger == nil {
+		return
+	}
+	logger.Error("httpapi: failed to initialize embedded OpenAPI spec", "error", err)
 }
 
 // HandleOpenAPI serves the OpenAPI 3.1 spec with the server URL reflecting the
 // actual request origin (scheme + host).
 func (s *Server) HandleOpenAPI(w http.ResponseWriter, r *http.Request) {
-	doc := cloneTopLevel(openapiSpec)
+	docBase, err := s.openapiSpec.resolve()
+	if err != nil {
+		logOpenAPISpecError(s.logger, err)
+		writeError(w, http.StatusInternalServerError, "openapi specification is unavailable")
+		return
+	}
+	doc := cloneTopLevel(docBase)
 	doc["servers"] = []any{
 		map[string]any{"url": fmt.Sprintf("%s://%s", scheme(r), r.Host)},
 	}

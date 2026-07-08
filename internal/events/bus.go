@@ -102,14 +102,6 @@ func NewBusWithOptions(capacity int, options BusOptions) (*Bus, error) {
 	}, nil
 }
 
-func MustNewBus(capacity int) *Bus {
-	bus, err := NewBus(capacity)
-	if err != nil {
-		panic(err)
-	}
-	return bus
-}
-
 func (b *Bus) Subscribe(ctx context.Context) (<-chan Event, func()) {
 	return b.SubscribeWithOptions(ctx, SubscriptionOptions{})
 }

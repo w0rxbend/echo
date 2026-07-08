@@ -59,6 +59,177 @@ type clientReconnectRecoveryCounter interface {
 	reconnectRecoveryCount() uint64
 }
 
+type controlSpec struct {
+	validateRequest      func(ControlRequest) error
+	run                 func(context.Context, *Scheduler, *ControlItem) error
+	rememberState       func(*Scheduler, *ControlItem)
+	marksBackgroundDirty bool
+}
+
+type restorePolicySpec func(context.Context, *Scheduler, displayState) error
+type displayStateRestoreSpec func(context.Context, *Scheduler, displayState) error
+
+var displayStateRestoreSpecs = map[displayStateKind]displayStateRestoreSpec{
+	displayStateFrame: func(ctx context.Context, s *Scheduler, state displayState) error {
+		return s.retryMatrix(ctx, func() error {
+			return s.client.SetFrame(ctx, state.Frame)
+		})
+	},
+	displayStateFill: func(ctx context.Context, s *Scheduler, state displayState) error {
+		return s.retryMatrix(ctx, func() error {
+			return s.client.Fill(ctx, state.Color)
+		})
+	},
+	displayStateClear: func(ctx context.Context, s *Scheduler, state displayState) error {
+		return s.retryMatrix(ctx, func() error {
+			return s.client.Clear(ctx)
+		})
+	},
+	displayStatePreset: func(ctx context.Context, s *Scheduler, state displayState) error {
+		return s.retryMatrix(ctx, func() error {
+			return s.client.SetPreset(ctx, state.EffectID, state.Interval, state.Color)
+		})
+	},
+}
+
+var controlSpecs = map[ControlKind]controlSpec{
+	ControlClear: {
+		run: func(ctx context.Context, scheduler *Scheduler, _ *ControlItem) error {
+			return scheduler.client.Clear(ctx)
+		},
+		rememberState: func(scheduler *Scheduler, _ *ControlItem) {
+			scheduler.rememberDisplayState(displayState{Kind: displayStateClear})
+		},
+		marksBackgroundDirty: true,
+	},
+	ControlSetBrightness: {
+		run: func(ctx context.Context, scheduler *Scheduler, control *ControlItem) error {
+			return scheduler.client.SetBrightness(ctx, control.Brightness)
+		},
+	},
+	ControlSetPreset: {
+		validateRequest: func(request ControlRequest) error {
+			_, err := durationMilliseconds(request.Interval, "preset interval")
+			return err
+		},
+		run: func(ctx context.Context, scheduler *Scheduler, control *ControlItem) error {
+			return scheduler.client.SetPreset(ctx, control.EffectID, control.Interval, control.Color)
+		},
+		rememberState: func(scheduler *Scheduler, control *ControlItem) {
+			scheduler.rememberDisplayState(displayState{
+				Kind:     displayStatePreset,
+				EffectID: control.EffectID,
+				Interval: control.Interval,
+				Color:    control.Color,
+			})
+		},
+		marksBackgroundDirty: true,
+	},
+	ControlFill: {
+		run: func(ctx context.Context, scheduler *Scheduler, control *ControlItem) error {
+			return scheduler.client.Fill(ctx, control.Color)
+		},
+		rememberState: func(scheduler *Scheduler, control *ControlItem) {
+			scheduler.rememberDisplayState(displayState{
+				Kind:  displayStateFill,
+				Color: control.Color,
+			})
+		},
+		marksBackgroundDirty: true,
+	},
+}
+
+type playItemLoop func(context.Context, *Scheduler, PlayItem) error
+
+var playItemLoopStrategies = map[animations.LoopPolicy]playItemLoop{
+	animations.LoopForever: func(ctx context.Context, s *Scheduler, item PlayItem) error {
+		for {
+			if err := s.playFrames(ctx, item.Frames, item.Deadline); err != nil {
+				return err
+			}
+			if !item.Deadline.IsZero() && !s.now().Before(item.Deadline) {
+				return nil
+			}
+		}
+	},
+	animations.LoopUntil: func(ctx context.Context, s *Scheduler, item PlayItem) error {
+		for item.Deadline.IsZero() || s.now().Before(item.Deadline) {
+			if err := s.playFrames(ctx, item.Frames, item.Deadline); err != nil {
+				return err
+			}
+		}
+		return nil
+	},
+	animations.LoopNone: func(ctx context.Context, s *Scheduler, item PlayItem) error {
+		return s.playFrames(ctx, item.Frames, item.Deadline)
+	},
+}
+
+type matrixErrorRecoveryPolicy func(*Scheduler, context.Context, time.Time, error) error
+
+var matrixRetryPolicies = map[ErrorKind]matrixErrorRecoveryPolicy{
+	ErrorKindRetryable: func(s *Scheduler, ctx context.Context, deadline time.Time, _ error) error {
+		s.markMatrixFailure(StateDisconnected)
+		return s.waitReady(ctx, deadline)
+	},
+	ErrorKindPermanent: func(_ *Scheduler, _ context.Context, _ time.Time, err error) error {
+		return err
+	},
+}
+
+var probeRetryableKinds = map[ErrorKind]struct{}{
+	ErrorKindRetryable: {},
+}
+
+var restorePolicySpecs = map[animations.RestorePolicy]restorePolicySpec{
+	"": func(ctx context.Context, s *Scheduler, _ displayState) error {
+		return nil
+	},
+	animations.RestoreLeave: func(ctx context.Context, _ *Scheduler, _ displayState) error {
+		return nil
+	},
+	animations.RestoreClear: func(ctx context.Context, s *Scheduler, _ displayState) error {
+		err := s.retryMatrix(ctx, func() error {
+			return s.client.Clear(ctx)
+		})
+		if err == nil {
+			s.rememberDisplayState(displayState{Kind: displayStateClear})
+		}
+		return err
+	},
+	animations.RestoreBlank: func(ctx context.Context, s *Scheduler, _ displayState) error {
+		blank := RGB{}
+		err := s.retryMatrix(ctx, func() error {
+			return s.client.Fill(ctx, blank)
+		})
+		if err == nil {
+			s.rememberDisplayState(displayState{
+				Kind:  displayStateFill,
+				Color: blank,
+			})
+		}
+		return err
+	},
+	animations.RestorePreviousFrame: func(ctx context.Context, s *Scheduler, previous displayState) error {
+		if !previous.known() {
+			return nil
+		}
+		err := s.restoreDisplayState(ctx, previous)
+		if err == nil && s.displayStateMatchesConfiguredBackground(previous) {
+			s.markDesiredBackgroundConverged()
+		}
+		return err
+	},
+	animations.RestoreBackground: func(ctx context.Context, s *Scheduler, _ displayState) error {
+		return s.applyDesiredBackground(ctx, true)
+	},
+}
+
+func resolveControlSpec(kind ControlKind) (controlSpec, bool) {
+	spec, ok := controlSpecs[kind]
+	return spec, ok
+}
+
 type BackgroundConfig struct {
 	AnimationID string
 	Params      animations.Params
@@ -561,16 +732,17 @@ func (s *Scheduler) ResolveControl(ctx context.Context, request ControlRequest) 
 	if err := ctx.Err(); err != nil {
 		return ScheduledItem{}, err
 	}
-	switch request.Kind {
-	case ControlClear, ControlSetBrightness, ControlFill:
-	case ControlSetPreset:
-		if _, err := durationMilliseconds(request.Interval, "preset interval"); err != nil {
+	if request.Kind == "" {
+		return ScheduledItem{}, fmt.Errorf("%w: control kind is required", ErrInvalidControl)
+	}
+	spec, ok := resolveControlSpec(request.Kind)
+	if !ok {
+		return ScheduledItem{}, fmt.Errorf("%w: unsupported control kind %q", ErrInvalidControl, request.Kind)
+	}
+	if spec.validateRequest != nil {
+		if err := spec.validateRequest(request); err != nil {
 			return ScheduledItem{}, err
 		}
-	case "":
-		return ScheduledItem{}, fmt.Errorf("%w: control kind is required", ErrInvalidControl)
-	default:
-		return ScheduledItem{}, fmt.Errorf("%w: unsupported control kind %q", ErrInvalidControl, request.Kind)
 	}
 
 	createdAt := request.CreatedAt
@@ -911,35 +1083,35 @@ func (s *Scheduler) playItem(ctx context.Context, item PlayItem) error {
 			return err
 		}
 	}
-
-	switch item.Loop {
-	case animations.LoopForever:
-		for {
-			if err := s.playFrames(ctx, item.Frames, item.Deadline); err != nil {
-				return err
-			}
-			if !item.Deadline.IsZero() && !s.now().Before(item.Deadline) {
-				return s.finish(ctx, item)
-			}
-		}
-	case animations.LoopUntil:
-		for item.Deadline.IsZero() || s.now().Before(item.Deadline) {
-			if err := s.playFrames(ctx, item.Frames, item.Deadline); err != nil {
-				return err
-			}
-		}
-	default:
-		if err := s.playFrames(ctx, item.Frames, item.Deadline); err != nil {
-			return err
-		}
+	runner, ok := playItemLoopStrategies[item.Loop]
+	if !ok {
+		runner = playItemLoopStrategies[animations.LoopNone]
+	}
+	if err := runner(ctx, s, item); err != nil {
+		return err
 	}
 
 	return s.finish(ctx, item)
 }
 
+func (s *Scheduler) retryMatrixError(ctx context.Context, readyDeadline time.Time, err error, classify func(context.Context, error) ErrorKind) error {
+	recovery, ok := matrixRetryPolicies[classify(ctx, err)]
+	if !ok {
+		return err
+	}
+	return recovery(s, ctx, readyDeadline, err)
+}
+
 func (s *Scheduler) executeControl(ctx context.Context, control *ControlItem) error {
 	if control == nil {
 		return nil
+	}
+	spec, ok := resolveControlSpec(control.Kind)
+	if !ok {
+		return fmt.Errorf("%w: unsupported control kind %q", ErrInvalidControl, control.Kind)
+	}
+	if spec.run == nil {
+		return fmt.Errorf("%w: unsupported control kind %q", ErrInvalidControl, control.Kind)
 	}
 	controlCtx := control.ctx
 	if controlCtx == nil {
@@ -947,28 +1119,6 @@ func (s *Scheduler) executeControl(ctx context.Context, control *ControlItem) er
 	}
 	if err := controlCtx.Err(); err != nil {
 		return err
-	}
-
-	var run func(context.Context) error
-	switch control.Kind {
-	case ControlClear:
-		run = func(ctx context.Context) error {
-			return s.client.Clear(ctx)
-		}
-	case ControlSetBrightness:
-		run = func(ctx context.Context) error {
-			return s.client.SetBrightness(ctx, control.Brightness)
-		}
-	case ControlSetPreset:
-		run = func(ctx context.Context) error {
-			return s.client.SetPreset(ctx, control.EffectID, control.Interval, control.Color)
-		}
-	case ControlFill:
-		run = func(ctx context.Context) error {
-			return s.client.Fill(ctx, control.Color)
-		}
-	default:
-		return fmt.Errorf("%w: unsupported control kind %q", ErrInvalidControl, control.Kind)
 	}
 
 	var execCtx context.Context
@@ -985,7 +1135,7 @@ func (s *Scheduler) executeControl(ctx context.Context, control *ControlItem) er
 	}()
 
 	err := s.retryControlMatrix(execCtx, control, func() error {
-		return run(execCtx)
+		return spec.run(execCtx, s, control)
 	})
 	if err != nil && ctx.Err() == nil {
 		if controlErr := controlCtx.Err(); controlErr != nil {
@@ -1460,46 +1610,14 @@ func (s *Scheduler) playFrames(ctx context.Context, frames []Frame, deadline tim
 }
 
 func (s *Scheduler) restore(ctx context.Context, policy animations.RestorePolicy, previous displayState) error {
-	switch policy {
-	case "", animations.RestoreLeave:
-		return nil
-	case animations.RestoreClear:
-		err := s.retryMatrix(ctx, func() error {
-			return s.client.Clear(ctx)
-		})
-		if err == nil {
-			s.rememberDisplayState(displayState{Kind: displayStateClear})
-		}
-		return err
-	case animations.RestoreBlank:
-		blank := RGB{}
-		err := s.retryMatrix(ctx, func() error {
-			return s.client.Fill(ctx, blank)
-		})
-		if err == nil {
-			s.rememberDisplayState(displayState{
-				Kind:  displayStateFill,
-				Color: blank,
-			})
-		}
-		return err
-	case animations.RestorePreviousFrame:
-		if !previous.known() {
-			return nil
-		}
-		err := s.restoreDisplayState(ctx, previous)
-		if err == nil && s.displayStateMatchesConfiguredBackground(previous) {
-			s.markDesiredBackgroundConverged()
-		}
-		return err
-	case animations.RestoreBackground:
-		// restore: background is the only playback restore policy that applies
-		// the scheduler-owned desired background immediately instead of waiting
-		// for the next idle convergence pass.
-		return s.applyDesiredBackground(ctx, true)
-	default:
+	if policy == "" {
+		policy = animations.RestoreLeave
+	}
+	spec, ok := restorePolicySpecs[policy]
+	if !ok {
 		return fmt.Errorf("unsupported restore policy %q", policy)
 	}
+	return spec(ctx, s, previous)
 }
 
 func (s *Scheduler) applyDesiredBackground(ctx context.Context, force bool) error {
@@ -1580,71 +1698,36 @@ func (s *Scheduler) displayStateMatchesConfiguredBackground(state displayState) 
 }
 
 func (s *Scheduler) retryBackgroundMatrix(ctx context.Context, fn func() error) error {
-	if err := fn(); err != nil {
-		switch ClassifyError(ctx, err) {
-		case ErrorKindPermanent:
-			return err
-		case ErrorKindRetryable:
-			s.markMatrixFailure(StateDisconnected)
-			if waitErr := s.waitReady(ctx, time.Time{}); waitErr != nil {
-				return waitErr
-			}
-			return err
-		default:
-			return err
-		}
-	}
-	s.markMatrixSuccess(s.State())
-	return nil
-}
-
-func (s *Scheduler) restoreDisplayState(ctx context.Context, state displayState) error {
-	var err error
-	switch state.Kind {
-	case displayStateFrame:
-		err = s.retryMatrix(ctx, func() error {
-			return s.client.SetFrame(ctx, state.Frame)
-		})
-	case displayStateFill:
-		err = s.retryMatrix(ctx, func() error {
-			return s.client.Fill(ctx, state.Color)
-		})
-	case displayStateClear:
-		err = s.retryMatrix(ctx, func() error {
-			return s.client.Clear(ctx)
-		})
-	case displayStatePreset:
-		err = s.retryMatrix(ctx, func() error {
-			return s.client.SetPreset(ctx, state.EffectID, state.Interval, state.Color)
-		})
-	default:
-		return nil
-	}
-	if err == nil {
-		s.rememberDisplayState(state)
-	}
-	return err
+	return s.retryMatrixUntilReady(ctx, fn)
 }
 
 func (s *Scheduler) retryMatrix(ctx context.Context, fn func() error) error {
+	return s.retryMatrixUntilReady(ctx, fn)
+}
+
+func (s *Scheduler) retryMatrixUntilReady(ctx context.Context, fn func() error) error {
 	for {
 		if err := fn(); err != nil {
-			switch ClassifyError(ctx, err) {
-			case ErrorKindPermanent:
-				return err
-			case ErrorKindRetryable:
-				s.markMatrixFailure(StateDisconnected)
-				if waitErr := s.waitReady(ctx, time.Time{}); waitErr != nil {
-					return waitErr
-				}
-				continue
-			default:
+			if err := s.retryMatrixError(ctx, time.Time{}, err, ClassifyError); err != nil {
 				return err
 			}
+			continue
 		}
 		s.markMatrixSuccess(s.State())
 		return nil
 	}
+}
+
+func (s *Scheduler) restoreDisplayState(ctx context.Context, state displayState) error {
+	restoreDisplayState, ok := displayStateRestoreSpecs[state.Kind]
+	if !ok {
+		return nil
+	}
+	err := restoreDisplayState(ctx, s, state)
+	if err == nil {
+		s.rememberDisplayState(state)
+	}
+	return err
 }
 
 func (s *Scheduler) retryControlMatrix(ctx context.Context, control *ControlItem, fn func() error) error {
@@ -1656,22 +1739,14 @@ func (s *Scheduler) retryControlMatrix(ctx context.Context, control *ControlItem
 			if control != nil && !control.Deadline.IsZero() && !s.now().Before(control.Deadline) {
 				return ErrPlayItemExpired
 			}
-			switch ClassifyError(ctx, err) {
-			case ErrorKindPermanent:
-				return err
-			case ErrorKindRetryable:
-				s.markMatrixFailure(StateDisconnected)
-				deadline := time.Time{}
-				if control != nil {
-					deadline = control.Deadline
-				}
-				if waitErr := s.waitReady(ctx, deadline); waitErr != nil {
-					return waitErr
-				}
-				continue
-			default:
+			deadline := time.Time{}
+			if control != nil {
+				deadline = control.Deadline
+			}
+			if err := s.retryMatrixError(ctx, deadline, err, ClassifyError); err != nil {
 				return err
 			}
+			continue
 		}
 		s.markMatrixSuccess(s.State())
 		return nil
@@ -1700,11 +1775,7 @@ func (s *Scheduler) waitReady(ctx context.Context, deadline time.Time) error {
 				s.reportReconnectFailure(ReconnectFailureDeadlineExceeded, ErrPlayItemExpired)
 				return ErrPlayItemExpired
 			}
-			switch s.classifyProbeError(ctx, err) {
-			case ErrorKindPermanent:
-				return err
-			case ErrorKindRetryable:
-			default:
+			if _, ok := probeRetryableKinds[s.classifyProbeError(ctx, err)]; !ok {
 				return err
 			}
 		}
@@ -1913,22 +1984,11 @@ func (s *Scheduler) rememberControlDisplayState(control *ControlItem) {
 	if control == nil {
 		return
 	}
-	switch control.Kind {
-	case ControlClear:
-		s.rememberDisplayState(displayState{Kind: displayStateClear})
-	case ControlSetPreset:
-		s.rememberDisplayState(displayState{
-			Kind:     displayStatePreset,
-			EffectID: control.EffectID,
-			Interval: control.Interval,
-			Color:    control.Color,
-		})
-	case ControlFill:
-		s.rememberDisplayState(displayState{
-			Kind:  displayStateFill,
-			Color: control.Color,
-		})
+	spec, ok := resolveControlSpec(control.Kind)
+	if !ok || spec.rememberState == nil {
+		return
 	}
+	spec.rememberState(s, control)
 }
 
 func (s *Scheduler) rememberDisplayState(state displayState) {
@@ -1967,12 +2027,13 @@ func (s *Scheduler) markDesiredBackgroundDirtyAfterControl(control *ControlItem)
 	if control == nil {
 		return
 	}
-	switch control.Kind {
-	case ControlClear, ControlSetPreset, ControlFill:
-		s.mu.Lock()
-		defer s.mu.Unlock()
-		s.markDesiredBackgroundDirtyLocked(true)
+	spec, ok := resolveControlSpec(control.Kind)
+	if !ok || !spec.marksBackgroundDirty {
+		return
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.markDesiredBackgroundDirtyLocked(true)
 }
 
 func (s *Scheduler) markDesiredBackgroundDirtyLocked(resetRetry bool) {
