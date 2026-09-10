@@ -4,12 +4,14 @@
             "animations.PublicKind": {
                 "enum": [
                     "generated",
-                    "firmware_preset"
+                    "firmware_preset",
+                    "static_color"
                 ],
                 "type": "string",
                 "x-enum-varnames": [
                     "PublicKindGenerated",
-                    "PublicKindFirmwarePreset"
+                    "PublicKindFirmwarePreset",
+                    "PublicKindStaticColor"
                 ]
             },
             "animations.RGB": {
@@ -122,6 +124,22 @@
                 },
                 "type": "object"
             },
+            "httpapi.animationFrameRequest": {
+                "properties": {
+                    "delay": {
+                        "example": "80ms",
+                        "type": "string"
+                    },
+                    "rows": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    }
+                },
+                "type": "object"
+            },
             "httpapi.animationListResponse": {
                 "properties": {
                     "animations": {
@@ -130,6 +148,24 @@
                         },
                         "type": "array",
                         "uniqueItems": false
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.animationUploadRequest": {
+                "properties": {
+                    "frames": {
+                        "items": {
+                            "$ref": "#/components/schemas/httpapi.animationFrameRequest"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "palette": {
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "type": "object"
                     }
                 },
                 "type": "object"
@@ -236,6 +272,40 @@
                     "title": {
                         "example": "Deployment finished",
                         "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.panelRequest": {
+                "properties": {
+                    "enabled": {
+                        "example": false,
+                        "type": "boolean"
+                    }
+                },
+                "type": "object"
+            },
+            "httpapi.pixelRequest": {
+                "properties": {
+                    "b": {
+                        "example": 85,
+                        "type": "integer"
+                    },
+                    "g": {
+                        "example": 0,
+                        "type": "integer"
+                    },
+                    "r": {
+                        "example": 255,
+                        "type": "integer"
+                    },
+                    "x": {
+                        "example": 3,
+                        "type": "integer"
+                    },
+                    "y": {
+                        "example": 4,
+                        "type": "integer"
                     }
                 },
                 "type": "object"
@@ -702,6 +772,113 @@
                 ]
             }
         },
+        "/api/v1/devices/{device}/matrix/animation": {
+            "post": {
+                "description": "Stores up to 8 frames in the firmware's animation slot and lets the device loop them locally, with no network round-trip per frame. Frames use the same palette-and-rows form as config-authored animations: each row is 8 characters and every character must appear in the palette.",
+                "parameters": [
+                    {
+                        "description": "Device ID",
+                        "in": "path",
+                        "name": "device",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/httpapi.animationUploadRequest",
+                                        "summary": "body",
+                                        "description": "Palette and frames"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Palette and frames",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.statusOK"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Invalid palette, rows, delay, or more than 8 frames"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown device"
+                    },
+                    "502": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Matrix firmware error"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Upload an animation to the device",
+                "tags": [
+                    "device"
+                ]
+            }
+        },
         "/api/v1/devices/{device}/matrix/brightness": {
             "post": {
                 "description": "Sets global brightness (0–255). Changes take effect immediately.",
@@ -1012,6 +1189,220 @@
                 ]
             }
         },
+        "/api/v1/devices/{device}/matrix/panel": {
+            "post": {
+                "description": "Turns visible output off or on. Blanking keeps the frame the firmware is holding, so re-enabling restores the same image rather than a blank display. Use matrix/clear to actually discard the image.",
+                "parameters": [
+                    {
+                        "description": "Device ID",
+                        "in": "path",
+                        "name": "device",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/httpapi.panelRequest",
+                                        "summary": "body",
+                                        "description": "Panel visibility"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Panel visibility",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.statusOK"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Missing enabled field"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown device"
+                    },
+                    "502": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Matrix firmware error"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Blank or restore the panel",
+                "tags": [
+                    "device"
+                ]
+            }
+        },
+        "/api/v1/devices/{device}/matrix/pixel": {
+            "post": {
+                "description": "Sets one pixel in display space (x and y are 0–7). The server maps the coordinate to the panel's physical LED order, so callers do not need to know the wiring.",
+                "parameters": [
+                    {
+                        "description": "Device ID",
+                        "in": "path",
+                        "name": "device",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/httpapi.pixelRequest",
+                                        "summary": "body",
+                                        "description": "Pixel coordinate and colour"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Pixel coordinate and colour",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.statusOK"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Coordinate outside the 8x8 matrix"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown device"
+                    },
+                    "502": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Matrix firmware error"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Set a single pixel",
+                "tags": [
+                    "device"
+                ]
+            }
+        },
         "/api/v1/devices/{device}/matrix/preset": {
             "post": {
                 "description": "Starts a built-in firmware animation effect with custom interval and color. Use effect_id=0 to stop the current effect.",
@@ -1114,6 +1505,113 @@
                     }
                 ],
                 "summary": "Apply a firmware effect preset",
+                "tags": [
+                    "device"
+                ]
+            }
+        },
+        "/api/v1/devices/{device}/matrix/static": {
+            "post": {
+                "description": "Puts the firmware into static-colour mode, which keeps asserting the colour until another mode change. Unlike matrix/fill, this survives as a steady display state, which is what makes it usable as an idle background.",
+                "parameters": [
+                    {
+                        "description": "Device ID",
+                        "in": "path",
+                        "name": "device",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/httpapi.colorRequest",
+                                        "summary": "body",
+                                        "description": "RGB colour"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "RGB colour",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.statusOK"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Bad Request"
+                    },
+                    "401": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unauthorized"
+                    },
+                    "403": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Forbidden"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Unknown device"
+                    },
+                    "502": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Matrix firmware error"
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "summary": "Hold a fixed colour",
                 "tags": [
                     "device"
                 ]

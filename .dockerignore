@@ -1,0 +1,8 @@
+# The Dockerfile does `COPY . .`, so anything here is shipped into the build
+# context. Keep build outputs and local state out of it.
+.git
+.github
+matrix-proxy
+/bin/
+*.test
+.env

@@ -33,17 +33,17 @@ const (
 )
 
 var commandStrings = map[command]string{
-	commandPing:            "ping",
-	commandClear:           "clear",
-	commandSetBrightness:   "set_brightness",
-	commandFill:            "fill",
-	commandSetPixel:        "set_pixel",
-	commandSetFrame:        "set_frame",
-	commandSetPanelEnabled: "set_panel_enabled",
-	commandSetStaticColor:  "set_static_color",
-	commandSetPresetEffect: "set_preset_effect",
-	commandUploadCustomFrame:"upload_custom_frame",
-	commandStopEffect:      "stop_effect",
+	commandPing:              "ping",
+	commandClear:             "clear",
+	commandSetBrightness:     "set_brightness",
+	commandFill:              "fill",
+	commandSetPixel:          "set_pixel",
+	commandSetFrame:          "set_frame",
+	commandSetPanelEnabled:   "set_panel_enabled",
+	commandSetStaticColor:    "set_static_color",
+	commandSetPresetEffect:   "set_preset_effect",
+	commandUploadCustomFrame: "upload_custom_frame",
+	commandStopEffect:        "stop_effect",
 }
 
 func (c command) String() string {
@@ -119,24 +119,24 @@ func (e *ProtocolError) Unwrap() error {
 
 var statusErrors = map[Status]error{
 	StatusBadMagic:           ErrStatusBadMagic,
-	StatusUnsupportedVersion:  ErrStatusUnsupportedVersion,
-	StatusUnknownCommand:      ErrStatusUnknownCommand,
-	StatusInvalidLength:       ErrStatusInvalidLength,
-	StatusChecksumMismatch:    ErrStatusChecksumMismatch,
+	StatusUnsupportedVersion: ErrStatusUnsupportedVersion,
+	StatusUnknownCommand:     ErrStatusUnknownCommand,
+	StatusInvalidLength:      ErrStatusInvalidLength,
+	StatusChecksumMismatch:   ErrStatusChecksumMismatch,
 }
 
 var statusToString = map[Status]string{
-	StatusOK:               "ok",
-	StatusBadMagic:         "bad magic",
+	StatusOK:                 "ok",
+	StatusBadMagic:           "bad magic",
 	StatusUnsupportedVersion: "unsupported version",
-	StatusUnknownCommand:    "unknown command",
-	StatusInvalidLength:     "invalid length",
-	StatusChecksumMismatch:  "checksum mismatch",
+	StatusUnknownCommand:     "unknown command",
+	StatusInvalidLength:      "invalid length",
+	StatusChecksumMismatch:   "checksum mismatch",
 }
 
 var statusToLabel = map[Status]string{
-	StatusOK:                "ok",
-	StatusBadMagic:          "bad_magic",
+	StatusOK:                 "ok",
+	StatusBadMagic:           "bad_magic",
 	StatusUnsupportedVersion: "unsupported_version",
 	StatusUnknownCommand:     "unknown_command",
 	StatusInvalidLength:      "invalid_length",

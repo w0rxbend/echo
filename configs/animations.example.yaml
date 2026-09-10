@@ -31,11 +31,16 @@ animations:
     interval: 120ms
     color: "#FF8800"
 
-  # Static green fill — useful for hardware validation.
+  # ── Static colours ────────────────────────────────────────────────────────
+  # Backed by the firmware's static-colour command (0x07). The device keeps
+  # re-asserting the colour, which is what makes it usable as an idle
+  # background — unlike a one-shot fill. Do not use firmware_preset with
+  # effect_id 0 for this: 0 is the "stop effect" sentinel and discards the
+  # colour, leaving the panel dark.
+
+  # Static green — useful for hardware validation.
   static_green_background:
-    type: firmware_preset
-    effect_id: 0
-    interval: 0ms
+    type: static_color
     color: "#004400"
 
   # ── Frame animations ──────────────────────────────────────────────────────

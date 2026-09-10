@@ -155,7 +155,7 @@ func (p LayoutPacker) Pack(frame Frame) PackedFrame {
 	for srcY := 0; srcY < layout.Height; srcY++ {
 		for srcX := 0; srcX < layout.Width; srcX++ {
 			srcIndex := srcY*layout.Width + srcX
-			if srcIndex >= len(frame) {
+			if srcIndex >= len(frame.Pixels) {
 				continue
 			}
 			// Rotate the source frame coordinate to its display position.

@@ -882,7 +882,30 @@ animations:
     effect_id: 256
     interval: 90ms
 `,
-			wantErr: "effect_id must be between 0 and 255: 256",
+			wantErr: "effect_id must be between 0 and 22: 256",
+		},
+		{
+			name: "effect just above firmware maximum",
+			animation: `
+animations:
+  rain:
+    type: firmware_preset
+    effect_id: 23
+    interval: 90ms
+`,
+			wantErr: "effect_id must be between 0 and 22: 23",
+		},
+		{
+			name: "stop sentinel with color",
+			animation: `
+animations:
+  rain:
+    type: firmware_preset
+    effect_id: 0
+    interval: 0ms
+    color: "#004400"
+`,
+			wantErr: "use type: static_color for a fixed colour",
 		},
 		{
 			name: "negative interval",

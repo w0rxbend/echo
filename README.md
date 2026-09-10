@@ -2,7 +2,7 @@
 
 > **LED Matrix Proxy** — turn any event into a light show on your ESP8266 matrix display.
 
-[![Go](https://img.shields.io/badge/Go-1.23-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![Docker](https://img.shields.io/badge/Docker-ghcr.io%2Fw0rxbend%2Fecho-2496ED?logo=docker&logoColor=white)](https://github.com/w0rxbend/echo/pkgs/container/echo)
 [![CI](https://github.com/w0rxbend/echo/actions/workflows/docker.yml/badge.svg)](https://github.com/w0rxbend/echo/actions/workflows/docker.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -30,6 +30,8 @@
 - **Idle background** — set a per-device animation that the scheduler restores whenever the display goes idle
 - **Config-authored animations** — write 8×8 pixel art in YAML, no code required
 - **22 firmware presets** — trigger built-in ESP8266 effects (`matrix_rain`, `fire`, `rainbow`, `heartbeat` …) via API
+- **Device-side animation** — upload up to 8 frames and let the panel loop them locally, with no network round-trip per frame
+- **Full display control** — pixel, panel blanking, static colour, fill, brightness and clear all reachable over HTTP
 - **Auto-reconnect** — robust TCP reconnect with exponential backoff and heartbeat probing
 - **Prometheus metrics** — per-device counters, gauges, and histograms out of the box
 - **Swagger UI** — interactive API explorer at `/docs`
@@ -124,7 +126,7 @@ See [`configs/config.example.yaml`](configs/config.example.yaml) for all options
 
 ## Animations
 
-Drop YAML into `configs/animations.yaml`. Three authoring styles:
+Drop YAML into `configs/animations.yaml`. Four authoring styles:
 
 **Pixel art frames** — draw your own 8×8 art with a palette:
 
@@ -149,7 +151,7 @@ animations:
           - "........"
 ```
 
-**Firmware presets** — trigger built-in ESP8266 effects (`matrix_rain`, `fire`, `rainbow`, `heartbeat`, and 18 more):
+**Firmware presets** — trigger built-in ESP8266 effects (`matrix_rain`, `fire`, `rainbow`, `heartbeat`, and 18 more). `effect_id` runs 1–22; `0` is the firmware's "stop effect" sentinel and is rejected here when combined with a colour, because it discards the colour and leaves the panel dark:
 
 ```yaml
 animations:
@@ -158,6 +160,15 @@ animations:
     effect_id: 12
     interval: 90ms
     color: "#00FF55"
+```
+
+**Static colours** — a fixed colour the firmware keeps asserting. Unlike a one-shot fill this survives as a display state, which is what makes it usable as an idle background:
+
+```yaml
+animations:
+  static_green_background:
+    type: static_color
+    color: "#004400"
 ```
 
 **Generated** — aliases for built-in app renderers:
@@ -202,7 +213,14 @@ All device-specific endpoints are namespaced by device ID:
 | `/api/v1/devices/{device}/preset/{id}` | POST ¹ | Play a firmware preset by animation ID |
 | `/api/v1/devices/{device}/background` | GET / PUT ¹ | Read or change the idle animation |
 | `/api/v1/devices/{device}/queue` | GET / DELETE ¹ | Inspect or clear the play queue |
-| `/api/v1/devices/{device}/matrix/*` | POST ¹ | Direct display controls |
+| `/api/v1/devices/{device}/matrix/clear` | POST ¹ | Discard the image and go dark |
+| `/api/v1/devices/{device}/matrix/brightness` | POST ¹ | Set global brightness (0–255) |
+| `/api/v1/devices/{device}/matrix/fill` | POST ¹ | Fill every pixel with one colour |
+| `/api/v1/devices/{device}/matrix/static` | POST ¹ | Hold a fixed colour (survives as display state) |
+| `/api/v1/devices/{device}/matrix/pixel` | POST ¹ | Set one pixel in display space |
+| `/api/v1/devices/{device}/matrix/panel` | POST ¹ | Blank or restore output, keeping the image |
+| `/api/v1/devices/{device}/matrix/preset` | POST ¹ | Run a firmware effect by ID |
+| `/api/v1/devices/{device}/matrix/animation` | POST ¹ | Upload up to 8 frames for the device to loop |
 | `/api/v1/animations` | GET | List playable animation IDs |
 | `/api/v1/animations/catalog` | GET | Full animation catalog |
 | `/api/v1/devices` | GET ¹ | List configured device IDs |
@@ -212,6 +230,25 @@ All device-specific endpoints are namespaced by device ID:
 | `/healthz` | GET | Liveness |
 
 ¹ Requires `Authorization: Bearer <token>` when bound to a non-loopback address.
+
+### Upload an animation the device loops itself
+
+Frames use the same palette-and-rows form as config-authored animations. The
+firmware holds up to 8 frames and cycles them on-device, so the animation keeps
+running without a TCP round-trip per frame:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/devices/living-room/matrix/animation \
+  -H "Authorization: Bearer your-secret" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "palette": {".": "#000000", "G": "#00FF55"},
+        "frames": [
+          {"delay": "80ms", "rows": ["GGGGGGGG","........","........","........","........","........","........","........"]},
+          {"delay": "80ms", "rows": ["........","GGGGGGGG","........","........","........","........","........","........"]}
+        ]
+      }'
+```
 
 ### Change the idle background at runtime
 

@@ -56,7 +56,7 @@ type LayoutConfig struct {
 	// Rotation is the clockwise degrees to rotate all frame content before
 	// physical LED mapping. Use 0 (default) for the standard mounting
 	// orientation. Valid values: -90, 0, 90, 180.
-	Rotation          int    `yaml:"rotation"`
+	Rotation int `yaml:"rotation"`
 }
 
 type QueueConfig struct {

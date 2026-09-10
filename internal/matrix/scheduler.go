@@ -53,6 +53,7 @@ var (
 type AnimationRegistry interface {
 	Get(id string) (animations.Animation, bool)
 	FirmwarePreset(id string) (animations.FirmwarePreset, bool)
+	StaticColor(id string) (animations.RGB, bool)
 }
 
 type clientReconnectRecoveryCounter interface {
@@ -61,8 +62,8 @@ type clientReconnectRecoveryCounter interface {
 
 type controlSpec struct {
 	validateRequest      func(ControlRequest) error
-	run                 func(context.Context, *Scheduler, *ControlItem) error
-	rememberState       func(*Scheduler, *ControlItem)
+	run                  func(context.Context, *Scheduler, *ControlItem) error
+	rememberState        func(*Scheduler, *ControlItem)
 	marksBackgroundDirty bool
 }
 
@@ -90,6 +91,35 @@ var displayStateRestoreSpecs = map[displayStateKind]displayStateRestoreSpec{
 			return s.client.SetPreset(ctx, state.EffectID, state.Interval, state.Color)
 		})
 	},
+	displayStateStatic: func(ctx context.Context, s *Scheduler, state displayState) error {
+		return s.retryMatrix(ctx, func() error {
+			return s.client.SetStaticColor(ctx, state.Color)
+		})
+	},
+	displayStateAnimation: func(ctx context.Context, s *Scheduler, state displayState) error {
+		return s.retryMatrix(ctx, func() error {
+			return uploadAnimation(ctx, s.client, state.Animation)
+		})
+	},
+}
+
+// uploadAnimation pushes a firmware-resident custom animation one frame at a time.
+// The device starts looping once it has received every frame of the declared count,
+// so the frames must be sent in order with a stable count.
+func uploadAnimation(ctx context.Context, client Client, frames []AnimationFrame) error {
+	if len(frames) == 0 {
+		return fmt.Errorf("%w: custom animation requires at least one frame", ErrInvalidControl)
+	}
+	if len(frames) > MaxAnimationFrames {
+		return fmt.Errorf("%w: custom animation supports at most %d frames: got %d", ErrInvalidControl, MaxAnimationFrames, len(frames))
+	}
+	count := byte(len(frames))
+	for index, frame := range frames {
+		if err := client.UploadCustomFrame(ctx, byte(index), count, frame.Delay, frame.Frame); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 var controlSpecs = map[ControlKind]controlSpec{
@@ -109,6 +139,12 @@ var controlSpecs = map[ControlKind]controlSpec{
 	},
 	ControlSetPreset: {
 		validateRequest: func(request ControlRequest) error {
+			// The firmware implements effects 1..22 and treats 0 as "stop effect";
+			// anything higher comes back as status 0x04. Rejecting it here turns a
+			// confusing 502 from the panel into a 400 at the boundary.
+			if request.EffectID > animations.MaxFirmwareEffectID {
+				return fmt.Errorf("%w: effect_id must be between 0 and %d: %d", ErrInvalidControl, animations.MaxFirmwareEffectID, request.EffectID)
+			}
 			_, err := durationMilliseconds(request.Interval, "preset interval")
 			return err
 		},
@@ -137,6 +173,76 @@ var controlSpecs = map[ControlKind]controlSpec{
 		},
 		marksBackgroundDirty: true,
 	},
+	ControlSetPixel: {
+		validateRequest: func(request ControlRequest) error {
+			return validatePixelCoordinate(request.X, request.Y)
+		},
+		run: func(ctx context.Context, scheduler *Scheduler, control *ControlItem) error {
+			return scheduler.client.SetPixel(ctx, control.X, control.Y, control.Color)
+		},
+		// Deliberately no rememberState: a single pixel mutates whatever frame the
+		// panel already held, so the resulting display cannot be reconstructed from
+		// this command alone. Leaving the remembered state untouched is honest —
+		// restore: previous_frame keeps the last state we can actually reproduce.
+		marksBackgroundDirty: true,
+	},
+	ControlSetPanel: {
+		run: func(ctx context.Context, scheduler *Scheduler, control *ControlItem) error {
+			return scheduler.client.SetPanelEnabled(ctx, control.Enabled)
+		},
+		// Panel enable is a visibility flag: the firmware keeps the stored frame and
+		// restores it on re-enable, so the desired background is still satisfied and
+		// must not be marked dirty.
+	},
+	ControlSetStaticColor: {
+		run: func(ctx context.Context, scheduler *Scheduler, control *ControlItem) error {
+			return scheduler.client.SetStaticColor(ctx, control.Color)
+		},
+		rememberState: func(scheduler *Scheduler, control *ControlItem) {
+			scheduler.rememberDisplayState(displayState{
+				Kind:  displayStateStatic,
+				Color: control.Color,
+			})
+		},
+		marksBackgroundDirty: true,
+	},
+	ControlUploadAnimation: {
+		validateRequest: func(request ControlRequest) error {
+			return validateAnimationFrames(request.Animation)
+		},
+		run: func(ctx context.Context, scheduler *Scheduler, control *ControlItem) error {
+			return uploadAnimation(ctx, scheduler.client, control.Animation)
+		},
+		rememberState: func(scheduler *Scheduler, control *ControlItem) {
+			scheduler.rememberDisplayState(displayState{
+				Kind:      displayStateAnimation,
+				Animation: control.Animation,
+			})
+		},
+		marksBackgroundDirty: true,
+	},
+}
+
+func validatePixelCoordinate(x, y byte) error {
+	if int(x) >= animations.CanvasWidth || int(y) >= animations.CanvasHeight {
+		return fmt.Errorf("%w: pixel (%d,%d) outside %dx%d matrix", ErrInvalidControl, x, y, animations.CanvasWidth, animations.CanvasHeight)
+	}
+	return nil
+}
+
+func validateAnimationFrames(frames []AnimationFrame) error {
+	if len(frames) == 0 {
+		return fmt.Errorf("%w: custom animation requires at least one frame", ErrInvalidControl)
+	}
+	if len(frames) > MaxAnimationFrames {
+		return fmt.Errorf("%w: custom animation supports at most %d frames: got %d", ErrInvalidControl, MaxAnimationFrames, len(frames))
+	}
+	for index, frame := range frames {
+		if _, err := durationMilliseconds(frame.Delay, fmt.Sprintf("animation frame %d delay", index)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type playItemLoop func(context.Context, *Scheduler, PlayItem) error
@@ -480,6 +586,9 @@ func validateBackgroundConfig(background BackgroundConfig, registry AnimationReg
 		}
 		return nil
 	}
+	if _, ok := registry.StaticColor(background.AnimationID); ok {
+		return nil
+	}
 	if _, ok := registry.Get(background.AnimationID); !ok {
 		return fmt.Errorf("%w: %s", ErrMissingAnimation, background.AnimationID)
 	}
@@ -492,6 +601,9 @@ func backgroundKindFor(background BackgroundConfig, registry AnimationRegistry) 
 	}
 	if _, ok := registry.FirmwarePreset(background.AnimationID); ok {
 		return BackgroundKindFirmwarePreset
+	}
+	if _, ok := registry.StaticColor(background.AnimationID); ok {
+		return BackgroundKindStaticColor
 	}
 	return BackgroundKindRenderable
 }
@@ -687,6 +799,60 @@ func (s *Scheduler) SetPreset(ctx context.Context, effectID byte, interval time.
 	})
 }
 
+// SetPixel sets one logical x/y pixel. Coordinates are display-space; the client
+// maps them to the firmware's physical serpentine order.
+func (s *Scheduler) SetPixel(ctx context.Context, x, y byte, color RGB) error {
+	return s.EnqueueControl(ctx, ControlRequest{
+		Kind:  ControlSetPixel,
+		X:     x,
+		Y:     y,
+		Color: color,
+	})
+}
+
+// SetPanelEnabled blanks or restores visible output without discarding the frame
+// the firmware is holding.
+func (s *Scheduler) SetPanelEnabled(ctx context.Context, enabled bool) error {
+	return s.EnqueueControl(ctx, ControlRequest{
+		Kind:    ControlSetPanel,
+		Enabled: enabled,
+	})
+}
+
+// SetStaticColor puts the firmware into static-colour mode, which keeps asserting
+// the colour until another mode change. Prefer this over Fill for anything that
+// needs to survive as a steady display state.
+func (s *Scheduler) SetStaticColor(ctx context.Context, color RGB) error {
+	return s.EnqueueControl(ctx, ControlRequest{
+		Kind:  ControlSetStaticColor,
+		Color: color,
+	})
+}
+
+// UploadAnimation stores an animation in the firmware's custom slot and lets the
+// device loop it locally, with no per-frame TCP round-trip. Frames arrive in
+// display space and are packed to the device's physical LED order here, so callers
+// never need to know the panel's wiring.
+func (s *Scheduler) UploadAnimation(ctx context.Context, frames []Frame) error {
+	if len(frames) == 0 {
+		return fmt.Errorf("%w: custom animation requires at least one frame", ErrInvalidControl)
+	}
+	if len(frames) > MaxAnimationFrames {
+		return fmt.Errorf("%w: custom animation supports at most %d frames: got %d", ErrInvalidControl, MaxAnimationFrames, len(frames))
+	}
+	packed := make([]AnimationFrame, 0, len(frames))
+	for _, frame := range frames {
+		packed = append(packed, AnimationFrame{
+			Frame: s.packer.Pack(frame),
+			Delay: frame.Delay,
+		})
+	}
+	return s.EnqueueControl(ctx, ControlRequest{
+		Kind:      ControlUploadAnimation,
+		Animation: packed,
+	})
+}
+
 func (s *Scheduler) Fill(ctx context.Context, color RGB) error {
 	return s.EnqueueControl(ctx, ControlRequest{
 		Kind:  ControlFill,
@@ -762,6 +928,10 @@ func (s *Scheduler) ResolveControl(ctx context.Context, request ControlRequest) 
 		EffectID:   request.EffectID,
 		Interval:   request.Interval,
 		Color:      request.Color,
+		X:          request.X,
+		Y:          request.Y,
+		Enabled:    request.Enabled,
+		Animation:  request.Animation,
 		CreatedAt:  createdAt,
 		Deadline:   request.Deadline,
 		ctx:        ctx,
@@ -1178,10 +1348,6 @@ func (s *Scheduler) completeQueueClearedItemWithOutcome(item ScheduledItem, queu
 		return
 	}
 	s.reportOutcome(queueClearedOutcomeReport(item, queueDepthBeforeClear, s.now().UTC()))
-}
-
-func (s *Scheduler) completeClearedQueueItem(item ScheduledItem) {
-	s.completeQueueClearedItemWithOutcome(item, 0)
 }
 
 func (s *Scheduler) completeClearedAnimation(item ScheduledItem) bool {
@@ -1627,15 +1793,46 @@ func (s *Scheduler) applyDesiredBackground(ctx context.Context, force bool) erro
 	s.setState(StateRestoringBackground)
 	s.markBackgroundRestoreAttempt()
 	var err error
-	if preset, ok := s.registry.FirmwarePreset(s.background.AnimationID); ok {
-		err = s.restoreFirmwarePreset(ctx, preset)
-	} else {
+	switch preset, color := s.backgroundPreset(); {
+	case preset != nil:
+		err = s.restoreFirmwarePreset(ctx, *preset)
+	case color != nil:
+		err = s.restoreStaticColorBackground(ctx, *color)
+	default:
 		err = s.restoreRenderableBackground(ctx)
 	}
 	if err == nil {
 		s.markDesiredBackgroundClean()
 	} else {
 		s.markBackgroundRestoreFailure(ctx, err)
+	}
+	return err
+}
+
+// backgroundPreset resolves the configured background to whichever firmware-side
+// representation backs it. Exactly one of the returns is non-nil; both nil means
+// the background is a renderable animation driven frame-by-frame from here.
+func (s *Scheduler) backgroundPreset() (*animations.FirmwarePreset, *animations.RGB) {
+	if preset, ok := s.registry.FirmwarePreset(s.background.AnimationID); ok {
+		return &preset, nil
+	}
+	if color, ok := s.registry.StaticColor(s.background.AnimationID); ok {
+		return nil, &color
+	}
+	return nil, nil
+}
+
+func (s *Scheduler) restoreStaticColorBackground(ctx context.Context, color animations.RGB) error {
+	rgb := RGB{R: color.R, G: color.G, B: color.B}
+	err := s.retryBackgroundMatrix(ctx, func() error {
+		return s.client.SetStaticColor(ctx, rgb)
+	})
+	if err == nil {
+		s.rememberDisplayState(displayState{
+			Kind:         displayStateStatic,
+			Color:        rgb,
+			BackgroundID: s.background.AnimationID,
+		})
 	}
 	return err
 }
@@ -1694,11 +1891,34 @@ func (s *Scheduler) displayStateMatchesConfiguredBackground(state displayState) 
 			state.Interval == preset.Interval &&
 			state.Color == preset.Color
 	}
+	if color, ok := s.registry.StaticColor(s.background.AnimationID); ok {
+		return state.Kind == displayStateStatic &&
+			state.Color == RGB{R: color.R, G: color.G, B: color.B}
+	}
 	return state.Kind == displayStateFrame && state.BackgroundID == s.background.AnimationID
 }
 
+// retryBackgroundMatrix makes exactly one attempt and reports failure upward.
+//
+// Background convergence owns its own retry ladder (scheduleBackgroundRetryLocked),
+// so on a retryable error this waits for the link to come back and then returns the
+// error, letting the caller mark the background dirty and schedule a backoff retry.
+// Looping until success here instead would converge inline and starve that ladder:
+// the background would report converged while the panel never received the command.
 func (s *Scheduler) retryBackgroundMatrix(ctx context.Context, fn func() error) error {
-	return s.retryMatrixUntilReady(ctx, fn)
+	err := fn()
+	if err == nil {
+		s.markMatrixSuccess(s.State())
+		return nil
+	}
+	if ClassifyError(ctx, err) != ErrorKindRetryable {
+		return err
+	}
+	s.markMatrixFailure(StateDisconnected)
+	if waitErr := s.waitReady(ctx, time.Time{}); waitErr != nil {
+		return waitErr
+	}
+	return err
 }
 
 func (s *Scheduler) retryMatrix(ctx context.Context, fn func() error) error {

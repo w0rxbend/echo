@@ -10,6 +10,11 @@ const (
 	framePayloadSize       = 192
 	customFramePayloadSize = 196
 	maxMilliseconds        = 65535
+
+	// MaxAnimationFrames mirrors AppConfig::kMaxCustomFrames in the firmware.
+	// The device holds this many frames in its custom-animation slot; uploading
+	// more would be rejected with Status::kInvalidLength.
+	MaxAnimationFrames = 8
 )
 
 func (c *TCPClient) Ping(ctx context.Context) error {

@@ -10,15 +10,15 @@ import (
 // It supports both the legacy single-device format (matrix: / background: top-level keys)
 // and the new multi-device format (devices: map). The two formats are mutually exclusive.
 type schemaConfig struct {
-	Server         schemaServerConfig                `yaml:"server"`
+	Server schemaServerConfig `yaml:"server"`
 	// Legacy single-device keys — still accepted for backward compatibility.
-	Matrix         *schemaDeviceConfig               `yaml:"matrix"`
-	Background     *schemaBackgroundConfig           `yaml:"background"`
+	Matrix     *schemaDeviceConfig     `yaml:"matrix"`
+	Background *schemaBackgroundConfig `yaml:"background"`
 	// New multi-device key.
-	Devices        map[string]*schemaDeviceConfig    `yaml:"devices"`
-	Queue          schemaQueueConfig                 `yaml:"queue"`
-	AnimationsFile *string                           `yaml:"animations_file"`
-	RulesFile      *string                           `yaml:"rules_file"`
+	Devices        map[string]*schemaDeviceConfig `yaml:"devices"`
+	Queue          schemaQueueConfig              `yaml:"queue"`
+	AnimationsFile *string                        `yaml:"animations_file"`
+	RulesFile      *string                        `yaml:"rules_file"`
 }
 
 type schemaServerConfig struct {
@@ -28,16 +28,16 @@ type schemaServerConfig struct {
 
 // schemaDeviceConfig is shared by both the legacy "matrix:" key and each entry in "devices:".
 type schemaDeviceConfig struct {
-	Host              *string               `yaml:"host"`
-	Port              *int                  `yaml:"port"`
-	ConnectTimeout    *schemaDuration       `yaml:"connect_timeout"`
-	ResponseTimeout   *schemaDuration       `yaml:"response_timeout"`
-	HeartbeatInterval *schemaDuration       `yaml:"heartbeat_interval"`
-	ProbeTimeout      *schemaDuration       `yaml:"probe_timeout"`
-	ReconnectMinDelay *schemaDuration       `yaml:"reconnect_min_delay"`
-	ReconnectMaxDelay *schemaDuration       `yaml:"reconnect_max_delay"`
-	Brightness        *uint8                `yaml:"brightness"`
-	Layout            schemaLayout          `yaml:"layout"`
+	Host              *string                 `yaml:"host"`
+	Port              *int                    `yaml:"port"`
+	ConnectTimeout    *schemaDuration         `yaml:"connect_timeout"`
+	ResponseTimeout   *schemaDuration         `yaml:"response_timeout"`
+	HeartbeatInterval *schemaDuration         `yaml:"heartbeat_interval"`
+	ProbeTimeout      *schemaDuration         `yaml:"probe_timeout"`
+	ReconnectMinDelay *schemaDuration         `yaml:"reconnect_min_delay"`
+	ReconnectMaxDelay *schemaDuration         `yaml:"reconnect_max_delay"`
+	Brightness        *uint8                  `yaml:"brightness"`
+	Layout            schemaLayout            `yaml:"layout"`
 	Background        *schemaBackgroundConfig `yaml:"background"`
 }
 

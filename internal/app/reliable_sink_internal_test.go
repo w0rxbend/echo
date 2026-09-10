@@ -9,12 +9,16 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/worxbend/echo/internal/animations"
+	"github.com/worxbend/echo/internal/config"
 	"github.com/worxbend/echo/internal/matrix"
+	"github.com/worxbend/echo/internal/metrics"
 )
 
 func TestReadyAndMetricsExposeNonzeroOutcomeRecordingPanics(t *testing.T) {
@@ -316,3 +320,141 @@ func getInternalMetrics(t *testing.T, baseURL string) string {
 	}
 	return string(data)
 }
+
+// ── tcpReconnectLogDispatcher regressions ────────────────────────────────────
+//
+// Both bugs below were silent: the goroutine leak only showed up as a slow drift
+// in goroutine count across failed constructions, and the lost shutdown logs were
+// not even counted as drops, because enqueue had already accepted them.
+
+// Close used to abandon every event still sitting in the buffer: run() selected on
+// a closed stop channel and returned, so up to 64 accepted reconnect log lines were
+// never written and never counted. A reconnect storm right before shutdown is
+// exactly when those lines matter.
+func TestTCPReconnectLogDispatcherFlushesAcceptedEventsOnClose(t *testing.T) {
+	var mu sync.Mutex
+	var logged int
+
+	// A handler that blocks until released, so events pile up in the buffer while
+	// the run goroutine is stuck on the first one.
+	release := make(chan struct{})
+	handler := &countingBlockingHandler{release: release, onHandle: func() {
+		mu.Lock()
+		logged++
+		mu.Unlock()
+	}}
+
+	dispatcher := newTCPReconnectLogDispatcher(slog.New(handler), 8)
+
+	const enqueued = 5
+	for i := 0; i < enqueued; i++ {
+		dispatcher.LogReconnectAttempt(matrix.ReconnectAttempt{Attempt: i + 1})
+	}
+	if got := dispatcher.EventsDropped(); got != 0 {
+		t.Fatalf("EventsDropped = %d, want 0; the buffer has room for all %d events", got, enqueued)
+	}
+
+	dispatcher.Close()
+	close(release)
+
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		mu.Lock()
+		seen := logged
+		mu.Unlock()
+		if seen == enqueued {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("logged %d of %d accepted events after Close; accepted events must be flushed, not discarded", seen, enqueued)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	if got := dispatcher.EventsDropped(); got != 0 {
+		t.Fatalf("EventsDropped = %d, want 0; flushed events are not drops", got)
+	}
+}
+
+// The dispatcher owns a goroutine from construction, but only a fully built device
+// reaches App.devices and therefore closeResources. Every error return in
+// newAppDevice after the dispatcher is created used to leak that goroutine.
+func TestNewAppDeviceDoesNotLeakReconnectLogGoroutineWhenConstructionFails(t *testing.T) {
+	registry, err := metrics.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	animationRegistry, err := animations.NewDefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// An unsupported wiring fails animations.NewLayout... so instead fail later:
+	// a background animation that is not in the registry fails the scheduler
+	// constructor, which sits after the dispatcher is created.
+	devCfg := &config.DeviceConfig{
+		Host:            "127.0.0.1",
+		Port:            7777,
+		ConnectTimeout:  time.Second,
+		ResponseTimeout: time.Second,
+		Layout: config.LayoutConfig{
+			Width:             8,
+			Height:            8,
+			Wiring:            "h-tl",
+			OddRowDisplayFlip: true,
+		},
+		Background: config.BackgroundConfig{
+			Animation:     "no-such-animation",
+			RestoreOnIdle: true,
+		},
+	}
+
+	before := runtime.NumGoroutine()
+	const attempts = 25
+	for i := 0; i < attempts; i++ {
+		device, err := newAppDevice(
+			slog.New(slog.NewTextHandler(io.Discard, nil)),
+			registry,
+			animationRegistry,
+			"leak-probe",
+			devCfg,
+			16,
+			nil,
+		)
+		if err == nil {
+			if device != nil && device.tcpLogs != nil {
+				device.tcpLogs.Close()
+			}
+			t.Fatalf("newAppDevice succeeded on attempt %d; this test needs a construction failure after the dispatcher is created", i)
+		}
+	}
+
+	// Closed dispatchers' goroutines exit asynchronously; allow them to drain.
+	deadline := time.Now().Add(3 * time.Second)
+	for runtime.NumGoroutine() > before+5 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if after := runtime.NumGoroutine(); after > before+5 {
+		t.Fatalf("goroutines grew from %d to %d across %d failed constructions; the reconnect log dispatcher leaked", before, after, attempts)
+	}
+}
+
+// countingBlockingHandler blocks every Handle call until release is closed.
+type countingBlockingHandler struct {
+	release  chan struct{}
+	onHandle func()
+}
+
+func (h *countingBlockingHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *countingBlockingHandler) Handle(_ context.Context, _ slog.Record) error {
+	<-h.release
+	if h.onHandle != nil {
+		h.onHandle()
+	}
+	return nil
+}
+
+func (h *countingBlockingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+
+func (h *countingBlockingHandler) WithGroup(string) slog.Handler { return h }

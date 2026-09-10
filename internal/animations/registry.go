@@ -25,6 +25,7 @@ type EntryKind string
 const (
 	EntryGenerated      EntryKind = "generated"
 	EntryFirmwarePreset EntryKind = "firmware_preset"
+	EntryStaticColor    EntryKind = "static_color"
 )
 
 type PublicKind string
@@ -32,12 +33,14 @@ type PublicKind string
 const (
 	PublicKindGenerated      PublicKind = "generated"
 	PublicKindFirmwarePreset PublicKind = "firmware_preset"
+	PublicKindStaticColor    PublicKind = "static_color"
 )
 
 var publicKindMap = map[string]PublicKind{
 	string(EntryGenerated):      PublicKindGenerated,
-	"renderable":               PublicKindGenerated,
+	"renderable":                PublicKindGenerated,
 	string(EntryFirmwarePreset): PublicKindFirmwarePreset,
+	string(EntryStaticColor):    PublicKindStaticColor,
 }
 
 func ProjectPublicKind(kind string) (PublicKind, bool) {
@@ -51,6 +54,7 @@ type Entry struct {
 	GeneratorID    string
 	Animation      Animation
 	FirmwarePreset *FirmwarePreset
+	StaticColor    *RGB
 }
 
 type CatalogEntry struct {
@@ -106,6 +110,32 @@ func (r *Registry) RegisterFirmwarePreset(id string, preset FirmwarePreset) erro
 		Kind:           EntryFirmwarePreset,
 		FirmwarePreset: &copied,
 	})
+}
+
+// RegisterStaticColor registers a fixed-colour entry backed by the firmware's
+// static-colour command (0x07). Unlike a fill, the firmware keeps re-asserting the
+// colour, which is what makes it usable as an idle background.
+func (r *Registry) RegisterStaticColor(id string, color RGB) error {
+	if id == "" {
+		return errors.New("animation id is required")
+	}
+	copied := color
+	return r.register(Entry{
+		ID:          id,
+		Kind:        EntryStaticColor,
+		StaticColor: &copied,
+	})
+}
+
+// StaticColor returns the colour registered for a static_color entry.
+func (r *Registry) StaticColor(id string) (RGB, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	entry, ok := r.entries[id]
+	if !ok || entry.StaticColor == nil {
+		return RGB{}, false
+	}
+	return *entry.StaticColor, true
 }
 
 func (r *Registry) register(entry Entry) error {
@@ -217,6 +247,10 @@ func (r *Registry) Catalog() []CatalogEntry {
 			item.Interval = &interval
 			item.Color = &color
 		}
+		if entry.StaticColor != nil {
+			color := *entry.StaticColor
+			item.Color = &color
+		}
 		catalog = append(catalog, item)
 	}
 	sort.Slice(catalog, func(i, j int) bool {
@@ -230,10 +264,23 @@ func cloneEntry(entry Entry) Entry {
 		preset := *entry.FirmwarePreset
 		entry.FirmwarePreset = &preset
 	}
+	if entry.StaticColor != nil {
+		color := *entry.StaticColor
+		entry.StaticColor = &color
+	}
 	return entry
 }
 
+// MaxFirmwareEffectID is the highest effect id the firmware implements.
+// TcpMatrixServer::applyCommand rejects anything above this with
+// Status::kInvalidLength, so reject it here instead of surfacing a 502 later.
+// Effect id 0 is the documented "stop effect" sentinel.
+const MaxFirmwareEffectID = 22
+
 func ValidateFirmwarePreset(preset FirmwarePreset) error {
+	if preset.EffectID > MaxFirmwareEffectID {
+		return fmt.Errorf("firmware preset effect_id must be between 0 and %d: %d", MaxFirmwareEffectID, preset.EffectID)
+	}
 	if preset.Interval < 0 {
 		return fmt.Errorf("firmware preset interval cannot be negative: %s", preset.Interval)
 	}

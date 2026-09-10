@@ -179,7 +179,7 @@ func TestAppRestoresConfiguredFirmwarePresetBackgroundThroughScheduler(t *testin
 	cfg.Devices["default"].Background.Animation = "matrix_rain_background"
 	cfg.Devices["default"].Background.RestoreOnIdle = true
 	cfg.AnimationRegistry = registryWithFirmwarePreset(t, "matrix_rain_background", animations.FirmwarePreset{
-		EffectID: 44,
+		EffectID: 20,
 		Interval: 123 * time.Millisecond,
 		Color:    animations.RGB{R: 1, G: 2, B: 3},
 	})
@@ -203,7 +203,7 @@ func TestAppRestoresConfiguredFirmwarePresetBackgroundThroughScheduler(t *testin
 	postJSON(t, httpServer.URL+"/api/v1/devices/default/play", `{"animation":"notification","duration":"1ms","restore":"background"}`, http.StatusAccepted)
 	waitForMatrixCommand(t, matrixServer, testCommandSetFrame)
 	preset := waitForMatrixCommand(t, matrixServer, testCommandSetPreset)
-	want := []byte{44, 123, 0, 1, 2, 3}
+	want := []byte{20, 123, 0, 1, 2, 3}
 	if !bytes.Equal(preset.Payload, want) {
 		t.Fatalf("background preset payload = %v, want configured registry payload %v", preset.Payload, want)
 	}
@@ -218,7 +218,7 @@ func TestReadyAndMetricsExposePreviousFrameBackgroundDedupeAsPlaybackRestoreConv
 	cfg.Devices["default"].Background.Animation = backgroundID
 	cfg.Devices["default"].Background.RestoreOnIdle = true
 	cfg.AnimationRegistry = registryWithFirmwarePreset(t, backgroundID, animations.FirmwarePreset{
-		EffectID: 44,
+		EffectID: 20,
 		Interval: 123 * time.Millisecond,
 		Color:    animations.RGB{R: 1, G: 2, B: 3},
 	})
@@ -254,7 +254,7 @@ func TestReadyAndMetricsExposePreviousFrameBackgroundDedupeAsPlaybackRestoreConv
 		t.Fatalf("background restore attempts after startup = %g, want 1", initialAttempts)
 	}
 	initialPreset := waitForMatrixCommand(t, matrixServer, testCommandSetPreset)
-	wantPresetPayload := []byte{44, 123, 0, 1, 2, 3}
+	wantPresetPayload := []byte{20, 123, 0, 1, 2, 3}
 	if !bytes.Equal(initialPreset.Payload, wantPresetPayload) {
 		t.Fatalf("startup background preset payload = %v, want %v", initialPreset.Payload, wantPresetPayload)
 	}
@@ -299,7 +299,7 @@ func TestReadyAndMetricsExposeFirmwarePresetBackgroundFailureAndRecoveryWithoutP
 	cfg.Devices["default"].Background.Animation = backgroundID
 	cfg.Devices["default"].Background.RestoreOnIdle = true
 	cfg.AnimationRegistry = registryWithFirmwarePreset(t, backgroundID, animations.FirmwarePreset{
-		EffectID: 44,
+		EffectID: 20,
 		Interval: 123 * time.Millisecond,
 		Color:    animations.RGB{R: 1, G: 2, B: 3},
 	})
@@ -427,7 +427,7 @@ func TestReadyAndMetricsExposeDueBackgroundRetryAsFailedWhilePlaybackActive(t *t
 	cfg.Devices["default"].Background.Animation = backgroundID
 	cfg.Devices["default"].Background.RestoreOnIdle = true
 	cfg.AnimationRegistry = registryWithFirmwarePreset(t, backgroundID, animations.FirmwarePreset{
-		EffectID: 44,
+		EffectID: 20,
 		Interval: 123 * time.Millisecond,
 		Color:    animations.RGB{R: 1, G: 2, B: 3},
 	})
@@ -3492,11 +3492,11 @@ func (r readyDetails) DefaultDevice() deviceReadyEntry {
 }
 
 type deviceReadyEntry struct {
-	SchedulerState  string        `json:"scheduler_state"`
-	MatrixConnected bool          `json:"matrix_connected"`
+	SchedulerState  string          `json:"scheduler_state"`
+	MatrixConnected bool            `json:"matrix_connected"`
 	Background      readyBackground `json:"background"`
-	LastSuccess     *time.Time    `json:"last_success"`
-	LastFailure     *time.Time    `json:"last_failure"`
+	LastSuccess     *time.Time      `json:"last_success"`
+	LastFailure     *time.Time      `json:"last_failure"`
 }
 
 type readyBackground struct {

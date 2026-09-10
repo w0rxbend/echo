@@ -3652,3 +3652,322 @@ func waitForResponses(t *testing.T, server *fakeESPServer, commandCount int) {
 	}
 	t.Fatalf("response writes = %d, commands = %d", server.ResponseWrites(), commandCount)
 }
+
+// ── New matrix command endpoints ──────────────────────────────────────────────
+//
+// These assert the bytes that actually reach the firmware, not just the HTTP
+// status, because the interesting part of each endpoint is the wire payload:
+// coordinate mapping for pixel, the 0x07/0x06 opcodes the proxy had never sent
+// before, and frame packing plus index/count sequencing for animation upload.
+
+const (
+	testCommandSetPixel    byte = 0x04
+	testCommandSetPanel    byte = 0x06
+	testCommandStaticColor byte = 0x07
+	testCommandUploadFrame byte = 0x09
+)
+
+// startMatrixTestApp boots an app wired to the fake ESP server and returns the
+// HTTP test server plus the fake firmware.
+func startMatrixTestApp(t *testing.T) (*httptest.Server, *fakeESPServer) {
+	t.Helper()
+	matrixServer := newFakeESPServer(t)
+	t.Cleanup(matrixServer.Close)
+
+	application, err := app.New(newHTTPMatrixTestConfig(t, matrixServer.Addr()), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := runAppWorkers(t, application)
+	t.Cleanup(func() {
+		shutdownAppWorkers(t, application, done)
+	})
+
+	httpServer := httptest.NewServer(application.Handler())
+	t.Cleanup(httpServer.Close)
+	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
+	return httpServer, matrixServer
+}
+
+func postMatrix(t *testing.T, httpServer *httptest.Server, path, body string, wantStatus int) {
+	t.Helper()
+	resp, err := http.Post(httpServer.URL+"/api/v1/devices/default"+path, "application/json", bytes.NewBufferString(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != wantStatus {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("POST %s status = %d, body = %s, want %d", path, resp.StatusCode, data, wantStatus)
+	}
+}
+
+// awaitCommandPayload drains recorded frames until one matches the command, then
+// returns its payload.
+func awaitCommandPayload(t *testing.T, matrixServer *fakeESPServer, command byte) []byte {
+	t.Helper()
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case frame := <-matrixServer.frames:
+			if frame.Command == command {
+				return frame.Payload
+			}
+		case <-deadline:
+			t.Fatalf("timed out waiting for command 0x%02x", command)
+		}
+	}
+}
+
+func TestMatrixPixelSendsDisplaySpaceCoordinate(t *testing.T) {
+	httpServer, matrixServer := startMatrixTestApp(t)
+
+	postMatrix(t, httpServer, "/matrix/pixel", `{"x":3,"y":4,"r":10,"g":20,"b":30}`, http.StatusOK)
+
+	got := awaitCommandPayload(t, matrixServer, testCommandSetPixel)
+	// The firmware maps logical x/y itself, so the proxy forwards the coordinate
+	// unchanged: x, y, r, g, b.
+	if want := []byte{3, 4, 10, 20, 30}; !bytes.Equal(got, want) {
+		t.Fatalf("pixel payload = %v, want %v", got, want)
+	}
+}
+
+func TestMatrixPixelRejectsCoordinateOutsideMatrix(t *testing.T) {
+	httpServer, matrixServer := startMatrixTestApp(t)
+
+	postMatrix(t, httpServer, "/matrix/pixel", `{"x":8,"y":0,"r":1,"g":2,"b":3}`, http.StatusBadRequest)
+	postMatrix(t, httpServer, "/matrix/pixel", `{"x":0,"y":9,"r":1,"g":2,"b":3}`, http.StatusBadRequest)
+
+	if got := matrixServer.CommandCount(testCommandSetPixel); got != 0 {
+		t.Fatalf("pixel command count = %d, want 0; invalid coordinates must not reach the firmware", got)
+	}
+}
+
+func TestMatrixPanelTogglesVisibility(t *testing.T) {
+	httpServer, matrixServer := startMatrixTestApp(t)
+
+	postMatrix(t, httpServer, "/matrix/panel", `{"enabled":false}`, http.StatusOK)
+	if got := awaitCommandPayload(t, matrixServer, testCommandSetPanel); !bytes.Equal(got, []byte{0}) {
+		t.Fatalf("panel off payload = %v, want [0]", got)
+	}
+
+	postMatrix(t, httpServer, "/matrix/panel", `{"enabled":true}`, http.StatusOK)
+	if got := awaitCommandPayload(t, matrixServer, testCommandSetPanel); !bytes.Equal(got, []byte{1}) {
+		t.Fatalf("panel on payload = %v, want [1]", got)
+	}
+}
+
+func TestMatrixPanelRequiresEnabledField(t *testing.T) {
+	httpServer, matrixServer := startMatrixTestApp(t)
+
+	postMatrix(t, httpServer, "/matrix/panel", `{}`, http.StatusBadRequest)
+
+	if got := matrixServer.CommandCount(testCommandSetPanel); got != 0 {
+		t.Fatalf("panel command count = %d, want 0", got)
+	}
+}
+
+func TestMatrixStaticColorUsesStaticColorCommand(t *testing.T) {
+	httpServer, matrixServer := startMatrixTestApp(t)
+
+	postMatrix(t, httpServer, "/matrix/static", `{"r":0,"g":68,"b":0}`, http.StatusOK)
+
+	got := awaitCommandPayload(t, matrixServer, testCommandStaticColor)
+	if want := []byte{0, 68, 0}; !bytes.Equal(got, want) {
+		t.Fatalf("static colour payload = %v, want %v", got, want)
+	}
+	// A static colour must not degrade into a one-shot fill: fill does not survive
+	// as a display state on the device.
+	if got := matrixServer.CommandCount(testCommandFill); got != 0 {
+		t.Fatalf("fill command count = %d, want 0", got)
+	}
+}
+
+func TestMatrixAnimationUploadsEveryFrameWithStableCount(t *testing.T) {
+	httpServer, matrixServer := startMatrixTestApp(t)
+
+	body := `{
+		"palette": {".": "#000000", "G": "#00FF55"},
+		"frames": [
+			{"delay": "80ms", "rows": ["GGGGGGGG","........","........","........","........","........","........","........"]},
+			{"delay": "90ms", "rows": ["........","GGGGGGGG","........","........","........","........","........","........"]}
+		]
+	}`
+	postMatrix(t, httpServer, "/matrix/animation", body, http.StatusOK)
+
+	first := awaitCommandPayload(t, matrixServer, testCommandUploadFrame)
+	second := awaitCommandPayload(t, matrixServer, testCommandUploadFrame)
+
+	// Payload layout: frame_index, frame_count, delay_lsb, delay_msb, then 192 RGB bytes.
+	for i, payload := range [][]byte{first, second} {
+		if len(payload) != 196 {
+			t.Fatalf("frame %d payload length = %d, want 196", i, len(payload))
+		}
+		if payload[0] != byte(i) {
+			t.Fatalf("frame %d index = %d, want %d", i, payload[0], i)
+		}
+		if payload[1] != 2 {
+			t.Fatalf("frame %d count = %d, want 2; the device only starts looping once it has the declared count", i, payload[1])
+		}
+	}
+	if delay := uint16(first[2]) | uint16(first[3])<<8; delay != 80 {
+		t.Fatalf("frame 0 delay = %dms, want 80ms", delay)
+	}
+	if delay := uint16(second[2]) | uint16(second[3])<<8; delay != 90 {
+		t.Fatalf("frame 1 delay = %dms, want 90ms", delay)
+	}
+
+	// Row 0 is lit green in frame 0. Physical index 0 is display (0,0) for the
+	// default h-tl layout, so the first pixel triple carries the palette colour.
+	if got := first[4:7]; !bytes.Equal(got, []byte{0x00, 0xFF, 0x55}) {
+		t.Fatalf("frame 0 first pixel = %v, want [0 255 85]", got)
+	}
+}
+
+func TestMatrixAnimationRejectsTooManyFrames(t *testing.T) {
+	httpServer, matrixServer := startMatrixTestApp(t)
+
+	blank := `{"delay":"50ms","rows":["........","........","........","........","........","........","........","........"]}`
+	frames := make([]string, 0, matrix.MaxAnimationFrames+1)
+	for i := 0; i <= matrix.MaxAnimationFrames; i++ {
+		frames = append(frames, blank)
+	}
+	body := `{"palette":{".":"#000000"},"frames":[` + strings.Join(frames, ",") + `]}`
+	postMatrix(t, httpServer, "/matrix/animation", body, http.StatusBadRequest)
+
+	if got := matrixServer.CommandCount(testCommandUploadFrame); got != 0 {
+		t.Fatalf("upload command count = %d, want 0; the firmware slot holds %d frames", got, matrix.MaxAnimationFrames)
+	}
+}
+
+func TestMatrixAnimationRejectsUnknownPaletteSymbol(t *testing.T) {
+	httpServer, matrixServer := startMatrixTestApp(t)
+
+	body := `{"palette":{".":"#000000"},"frames":[{"delay":"50ms","rows":["X.......","........","........","........","........","........","........","........"]}]}`
+	postMatrix(t, httpServer, "/matrix/animation", body, http.StatusBadRequest)
+
+	if got := matrixServer.CommandCount(testCommandUploadFrame); got != 0 {
+		t.Fatalf("upload command count = %d, want 0", got)
+	}
+}
+
+func registryWithStaticColor(t *testing.T, id string, color animations.RGB) *animations.Registry {
+	t.Helper()
+	registry, err := animations.NewDefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.RegisterStaticColor(id, color); err != nil {
+		t.Fatal(err)
+	}
+	return registry
+}
+
+// A static_color background must converge through the firmware's static-colour
+// command, not a fill. Fill writes the frame buffer once and is immediately lost
+// to the next effect, which is exactly why the old effect_id: 0 recipe left the
+// panel dark.
+func TestStaticColorBackgroundConvergesThroughStaticColorCommand(t *testing.T) {
+	matrixServer := newFakeESPServer(t)
+	defer matrixServer.Close()
+
+	const backgroundID = "static_green_background"
+	cfg := newHTTPMatrixTestConfig(t, matrixServer.Addr())
+	cfg.Devices["default"].Background.Animation = backgroundID
+	cfg.Devices["default"].Background.RestoreOnIdle = true
+	cfg.AnimationRegistry = registryWithStaticColor(t, backgroundID, animations.RGB{G: 68})
+
+	application, err := app.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := runAppWorkers(t, application)
+	defer func() {
+		shutdownAppWorkers(t, application, done)
+	}()
+
+	httpServer := httptest.NewServer(application.Handler())
+	defer httpServer.Close()
+	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
+
+	waitForMatrixCommandMatching(t, matrixServer, "initial static colour background", func(frame recordedFrame) bool {
+		return frame.Command == testCommandStaticColor && bytes.Equal(frame.Payload, []byte{0, 68, 0})
+	})
+
+	if got := matrixServer.CommandCount(testCommandFill); got != 0 {
+		t.Fatalf("fill command count = %d, want 0; a static colour background must not be applied as a fill", got)
+	}
+}
+
+// A static_color background is reported with its own kind in /readyz so an
+// operator can tell device-resident colour from a frame-streamed animation.
+func TestStaticColorBackgroundReportsStaticColorKind(t *testing.T) {
+	matrixServer := newFakeESPServer(t)
+	defer matrixServer.Close()
+
+	const backgroundID = "static_green_background"
+	cfg := newHTTPMatrixTestConfig(t, matrixServer.Addr())
+	cfg.Devices["default"].Background.Animation = backgroundID
+	cfg.Devices["default"].Background.RestoreOnIdle = true
+	cfg.AnimationRegistry = registryWithStaticColor(t, backgroundID, animations.RGB{G: 68})
+
+	application, err := app.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := runAppWorkers(t, application)
+	defer func() {
+		shutdownAppWorkers(t, application, done)
+	}()
+
+	httpServer := httptest.NewServer(application.Handler())
+	defer httpServer.Close()
+	waitForStatus(t, httpServer.URL+"/readyz", http.StatusOK)
+	waitForMatrixCommandMatching(t, matrixServer, "initial static colour background", func(frame recordedFrame) bool {
+		return frame.Command == testCommandStaticColor
+	})
+
+	resp, err := http.Get(httpServer.URL + "/readyz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Devices map[string]struct {
+			Background struct {
+				ConfiguredID string `json:"configured_id"`
+				Kind         string `json:"kind"`
+			} `json:"background"`
+		} `json:"devices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	device := body.Devices["default"]
+	if device.Background.ConfiguredID != backgroundID {
+		t.Fatalf("background configured_id = %q, want %q", device.Background.ConfiguredID, backgroundID)
+	}
+	if device.Background.Kind != "static_color" {
+		t.Fatalf("background kind = %q, want %q", device.Background.Kind, "static_color")
+	}
+}
+
+// The firmware only implements effects 1..22. Rejecting a higher id at the HTTP
+// boundary gives the caller a 400 that names the range, instead of a 502 carrying
+// an opaque firmware status.
+func TestMatrixPresetRejectsEffectIdAboveFirmwareRange(t *testing.T) {
+	httpServer, matrixServer := startMatrixTestApp(t)
+
+	postMatrix(t, httpServer, "/matrix/preset", `{"effect_id":23,"interval":"90ms","r":0,"g":255,"b":85}`, http.StatusBadRequest)
+	postMatrix(t, httpServer, "/matrix/preset", `{"effect_id":255,"interval":"90ms"}`, http.StatusBadRequest)
+
+	if got := matrixServer.CommandCount(testCommandSetPreset); got != 0 {
+		t.Fatalf("preset command count = %d, want 0; out-of-range effects must not reach the firmware", got)
+	}
+
+	// The top of the implemented range is still accepted.
+	postMatrix(t, httpServer, "/matrix/preset", `{"effect_id":22,"interval":"90ms","r":1,"g":2,"b":3}`, http.StatusOK)
+	if got := awaitCommandPayload(t, matrixServer, testCommandSetPreset); !bytes.Equal(got, []byte{22, 90, 0, 1, 2, 3}) {
+		t.Fatalf("preset payload = %v, want [22 90 0 1 2 3]", got)
+	}
+}

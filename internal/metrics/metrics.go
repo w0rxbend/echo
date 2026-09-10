@@ -35,8 +35,6 @@ type Registry struct {
 	AnimationRenderDuration        *prometheus.HistogramVec
 
 	// CounterFuncs registered per-device at wire-up time.
-	MatrixObservabilityPanicsTotal []prometheus.CounterFunc
-	perDeviceCounterFuncs          []prometheus.CounterFunc
 }
 
 func New() (*Registry, error) {
@@ -187,7 +185,6 @@ func (r *Registry) RegisterPlayItemOutcomesDropped(deviceID string, value func()
 	if err := r.registry.Register(counter); err != nil {
 		return err
 	}
-	r.perDeviceCounterFuncs = append(r.perDeviceCounterFuncs, counter)
 	return nil
 }
 
@@ -200,7 +197,6 @@ func (r *Registry) RegisterPlayItemOutcomeRecordingPanics(deviceID string, value
 	if err := r.registry.Register(counter); err != nil {
 		return err
 	}
-	r.perDeviceCounterFuncs = append(r.perDeviceCounterFuncs, counter)
 	return nil
 }
 
@@ -213,7 +209,6 @@ func (r *Registry) RegisterTCPReconnectLogEventsDropped(deviceID string, value f
 	if err := r.registry.Register(counter); err != nil {
 		return err
 	}
-	r.perDeviceCounterFuncs = append(r.perDeviceCounterFuncs, counter)
 	return nil
 }
 
@@ -226,6 +221,5 @@ func (r *Registry) RegisterMatrixObservabilityCallbackPanics(deviceID, source, c
 	if err := r.registry.Register(counter); err != nil {
 		return err
 	}
-	r.MatrixObservabilityPanicsTotal = append(r.MatrixObservabilityPanicsTotal, counter)
 	return nil
 }

@@ -19,10 +19,10 @@ import (
 )
 
 type Server struct {
-	logger     *slog.Logger
-	bus        *events.Bus
-	schedulers map[string]*matrix.Scheduler
-	registry   *animations.Registry
+	logger      *slog.Logger
+	bus         *events.Bus
+	schedulers  map[string]*matrix.Scheduler
+	registry    *animations.Registry
 	openapiSpec openAPISpec
 
 	adminToken  string
@@ -120,6 +120,10 @@ func (s *Server) Router() http.Handler {
 			r.Post("/brightness", s.handleMatrixBrightness)
 			r.Post("/preset", s.handleMatrixPreset)
 			r.Post("/fill", s.handleMatrixFill)
+			r.Post("/pixel", s.handleMatrixPixel)
+			r.Post("/panel", s.handleMatrixPanel)
+			r.Post("/static", s.handleMatrixStatic)
+			r.Post("/animation", s.handleMatrixAnimation)
 		})
 	})
 

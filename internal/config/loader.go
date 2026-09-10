@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/worxbend/echo/internal/animations"
 	"github.com/worxbend/echo/internal/rules"
@@ -93,7 +92,6 @@ type schemaFrame struct {
 
 type animationFieldValidator func(id string, node *yaml.Node, path string) error
 type animationRegistrar func(registry *animations.Registry, id string, entry schemaAnimation) error
-type animationFieldPresenter func(entry schemaAnimation) bool
 
 var animationEntryFieldValidators = map[string]animationFieldValidator{
 	"type":      nil,
@@ -137,8 +135,14 @@ var animationTypeRegistrars = map[string]animationRegistrar{
 		if entry.EffectID == nil {
 			return errors.New("effect_id is required for firmware_preset animation")
 		}
-		if *entry.EffectID < 0 || *entry.EffectID > 255 {
-			return fmt.Errorf("effect_id must be between 0 and 255: %d", *entry.EffectID)
+		if *entry.EffectID < 0 || *entry.EffectID > animations.MaxFirmwareEffectID {
+			return fmt.Errorf("effect_id must be between 0 and %d: %d", animations.MaxFirmwareEffectID, *entry.EffectID)
+		}
+		if *entry.EffectID == 0 && entry.Color != nil {
+			// Effect id 0 is the firmware's "stop effect" sentinel: it clears the
+			// running effect and discards the colour, so a coloured preset 0 blanks
+			// the panel instead of showing that colour.
+			return errors.New("effect_id 0 stops the running effect and ignores color; use type: static_color for a fixed colour")
 		}
 		if entry.Interval == nil {
 			return errors.New("interval is required for firmware_preset animation")
@@ -158,15 +162,15 @@ var animationTypeRegistrars = map[string]animationRegistrar{
 		}
 		return registerConfiguredFrameAnimation(registry, id, entry)
 	},
-}
-
-var animationFieldPresenters = map[string]animationFieldPresenter{
-	"generator": func(entry schemaAnimation) bool { return entry.Generator != nil },
-	"effect_id":  func(entry schemaAnimation) bool { return entry.EffectID != nil },
-	"interval":   func(entry schemaAnimation) bool { return entry.Interval != nil },
-	"color":      func(entry schemaAnimation) bool { return entry.Color != nil },
-	"palette":    func(entry schemaAnimation) bool { return entry.Palette != nil },
-	"frames":     func(entry schemaAnimation) bool { return entry.Frames != nil },
+	string(animations.EntryStaticColor): func(registry *animations.Registry, id string, entry schemaAnimation) error {
+		if err := rejectAnimationFields(entry.Type, entry, "generator", "effect_id", "interval", "palette", "frames"); err != nil {
+			return err
+		}
+		if entry.Color == nil {
+			return errors.New("color is required for static_color animation")
+		}
+		return registry.RegisterStaticColor(id, entry.Color.RGB)
+	},
 }
 
 func (a *schemaAnimation) UnmarshalYAML(node *yaml.Node) error {
@@ -192,7 +196,7 @@ func (a *schemaAnimation) UnmarshalYAML(node *yaml.Node) error {
 func (c *schemaRGB) UnmarshalYAML(unmarshal func(any) error) error {
 	var text string
 	if err := unmarshal(&text); err == nil {
-		rgb, err := parseHexRGB(text)
+		rgb, err := animations.ParseHexRGB(text)
 		if err != nil {
 			return err
 		}
@@ -530,12 +534,13 @@ func rejectAnimationFields(animationType string, entry schemaAnimation, fields .
 	return nil
 }
 
+// animationFieldPresent reports whether the key was written in the YAML document,
+// which is what makes a field "stray" — not whether it decoded to a value. A key
+// present with an empty value ("effect_id:") is still a stray field on a type that
+// forbids it, and decoding that to nil must not excuse it.
 func animationFieldPresent(entry schemaAnimation, field string) bool {
-	presenter, ok := animationFieldPresenters[field]
-	if !ok {
-		return false
-	}
-	return presenter(entry)
+	_, present := entry.presentFields[field]
+	return present
 }
 
 func registerConfiguredFrameAnimation(registry *animations.Registry, id string, entry schemaAnimation) error {
@@ -597,66 +602,4 @@ func validateBackgroundAnimationReference(cfg Config, registry *animations.Regis
 		}
 	}
 	return nil
-}
-
-func parseHexRGB(text string) (animations.RGB, error) {
-	text = strings.TrimSpace(text)
-	if len(text) != 7 || text[0] != '#' {
-		return animations.RGB{}, fmt.Errorf("color must be #RRGGBB: %q", text)
-	}
-	var values [3]byte
-	for i := 0; i < 3; i++ {
-		offset := 1 + i*2
-		value, ok := parseHexByte(text[offset : offset+2])
-		if !ok {
-			return animations.RGB{}, fmt.Errorf("color must be #RRGGBB: %q", text)
-		}
-		values[i] = value
-	}
-	return animations.RGB{R: values[0], G: values[1], B: values[2]}, nil
-}
-
-func parseHexByte(text string) (byte, bool) {
-	high, ok := hexNibble(text[0])
-	if !ok {
-		return 0, false
-	}
-	low, ok := hexNibble(text[1])
-	if !ok {
-		return 0, false
-	}
-	return high<<4 | low, true
-}
-
-var hexNibbleValues = map[byte]byte{
-	'0': 0,
-	'1': 1,
-	'2': 2,
-	'3': 3,
-	'4': 4,
-	'5': 5,
-	'6': 6,
-	'7': 7,
-	'8': 8,
-	'9': 9,
-	'a': 10,
-	'b': 11,
-	'c': 12,
-	'd': 13,
-	'e': 14,
-	'f': 15,
-	'A': 10,
-	'B': 11,
-	'C': 12,
-	'D': 13,
-	'E': 14,
-	'F': 15,
-}
-
-func hexNibble(b byte) (byte, bool) {
-	v, ok := hexNibbleValues[b]
-	if !ok {
-		return 0, false
-	}
-	return v, true
 }

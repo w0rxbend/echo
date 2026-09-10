@@ -16,7 +16,7 @@ env:
 
 jobs:
   test:
-    name: Test
+    name: Build & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +25,23 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      # Build and vet run before anything slower so a type error fails in seconds
+      # with a clear message, instead of surfacing as a confusing codegen failure.
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
 
       - name: Regenerate Swagger spec
         run: go generate ./cmd/matrix-proxy
@@ -37,7 +54,7 @@ jobs:
           fi
 
       - name: Test
-        run: go test ./...
+        run: go test -race ./...
 
   build:
     name: Build & Push

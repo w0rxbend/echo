@@ -57,6 +57,28 @@ type presetRequest struct {
 	B        byte          `json:"b,omitempty"`
 }
 
+type pixelRequest struct {
+	X byte `json:"x" example:"3"`
+	Y byte `json:"y" example:"4"`
+	R byte `json:"r" example:"255"`
+	G byte `json:"g" example:"0"`
+	B byte `json:"b" example:"85"`
+}
+
+type panelRequest struct {
+	Enabled *bool `json:"enabled" example:"false"`
+}
+
+type animationFrameRequest struct {
+	Delay string   `json:"delay" example:"80ms"`
+	Rows  []string `json:"rows"`
+}
+
+type animationUploadRequest struct {
+	Palette map[string]string       `json:"palette"`
+	Frames  []animationFrameRequest `json:"frames"`
+}
+
 type backgroundConfigRequest struct {
 	Animation     string `json:"animation"      example:"matrix_rain_background"`
 	RestoreOnIdle bool   `json:"restore_on_idle" example:"true"`
@@ -102,17 +124,17 @@ type queueClearResponse struct {
 }
 
 var validRestorePolicySet = map[animations.RestorePolicy]struct{}{
-	animations.RestoreClear:          {},
-	animations.RestoreBlank:          {},
-	animations.RestorePreviousFrame:   {},
-	animations.RestoreBackground:      {},
-	animations.RestoreLeave:          {},
+	animations.RestoreClear:         {},
+	animations.RestoreBlank:         {},
+	animations.RestorePreviousFrame: {},
+	animations.RestoreBackground:    {},
+	animations.RestoreLeave:         {},
 }
 
 var validInterruptModeSet = map[animations.InterruptMode]struct{}{
-	animations.InterruptNone:          {},
+	animations.InterruptNone:           {},
 	animations.InterruptHigherPriority: {},
-	animations.InterruptCritical:      {},
+	animations.InterruptCritical:       {},
 }
 
 // ── Event endpoints ───────────────────────────────────────────────────────────
@@ -736,6 +758,175 @@ func (s *Server) handleMatrixFill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, statusOK{Status: "ok"})
+}
+
+// @Summary		Set a single pixel
+// @Description	Sets one pixel in display space (x and y are 0–7). The server maps the coordinate to the panel's physical LED order, so callers do not need to know the wiring.
+// @Tags		device
+// @Accept		json
+// @Produce		json
+// @Security	BearerAuth
+// @Param		device	path	string			true	"Device ID"
+// @Param		body	body	pixelRequest	true	"Pixel coordinate and colour"
+// @Success		200		{object}	statusOK
+// @Failure		400		{object}	errorResponse	"Coordinate outside the 8x8 matrix"
+// @Failure		401		{object}	errorResponse
+// @Failure		403		{object}	errorResponse
+// @Failure		404		{object}	errorResponse	"Unknown device"
+// @Failure		502		{object}	errorResponse	"Matrix firmware error"
+// @Router		/api/v1/devices/{device}/matrix/pixel [post]
+func (s *Server) handleMatrixPixel(w http.ResponseWriter, r *http.Request) {
+	scheduler, _ := s.deviceFromRequest(r)
+	var req pixelRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := scheduler.SetPixel(r.Context(), req.X, req.Y, matrix.RGB{R: req.R, G: req.G, B: req.B}); err != nil {
+		writeMatrixControlError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, statusOK{Status: "ok"})
+}
+
+// @Summary		Blank or restore the panel
+// @Description	Turns visible output off or on. Blanking keeps the frame the firmware is holding, so re-enabling restores the same image rather than a blank display. Use matrix/clear to actually discard the image.
+// @Tags		device
+// @Accept		json
+// @Produce		json
+// @Security	BearerAuth
+// @Param		device	path	string			true	"Device ID"
+// @Param		body	body	panelRequest	true	"Panel visibility"
+// @Success		200		{object}	statusOK
+// @Failure		400		{object}	errorResponse	"Missing enabled field"
+// @Failure		401		{object}	errorResponse
+// @Failure		403		{object}	errorResponse
+// @Failure		404		{object}	errorResponse	"Unknown device"
+// @Failure		502		{object}	errorResponse	"Matrix firmware error"
+// @Router		/api/v1/devices/{device}/matrix/panel [post]
+func (s *Server) handleMatrixPanel(w http.ResponseWriter, r *http.Request) {
+	scheduler, _ := s.deviceFromRequest(r)
+	var req panelRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.Enabled == nil {
+		writeError(w, http.StatusBadRequest, "enabled is required")
+		return
+	}
+	if err := scheduler.SetPanelEnabled(r.Context(), *req.Enabled); err != nil {
+		writeMatrixControlError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, statusOK{Status: "ok"})
+}
+
+// @Summary		Hold a fixed colour
+// @Description	Puts the firmware into static-colour mode, which keeps asserting the colour until another mode change. Unlike matrix/fill, this survives as a steady display state, which is what makes it usable as an idle background.
+// @Tags		device
+// @Accept		json
+// @Produce		json
+// @Security	BearerAuth
+// @Param		device	path	string			true	"Device ID"
+// @Param		body	body	colorRequest	true	"RGB colour"
+// @Success		200		{object}	statusOK
+// @Failure		400		{object}	errorResponse
+// @Failure		401		{object}	errorResponse
+// @Failure		403		{object}	errorResponse
+// @Failure		404		{object}	errorResponse	"Unknown device"
+// @Failure		502		{object}	errorResponse	"Matrix firmware error"
+// @Router		/api/v1/devices/{device}/matrix/static [post]
+func (s *Server) handleMatrixStatic(w http.ResponseWriter, r *http.Request) {
+	scheduler, _ := s.deviceFromRequest(r)
+	var req colorRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := scheduler.SetStaticColor(r.Context(), matrix.RGB{R: req.R, G: req.G, B: req.B}); err != nil {
+		writeMatrixControlError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, statusOK{Status: "ok"})
+}
+
+// @Summary		Upload an animation to the device
+// @Description	Stores up to 8 frames in the firmware's animation slot and lets the device loop them locally, with no network round-trip per frame. Frames use the same palette-and-rows form as config-authored animations: each row is 8 characters and every character must appear in the palette.
+// @Tags		device
+// @Accept		json
+// @Produce		json
+// @Security	BearerAuth
+// @Param		device	path	string					true	"Device ID"
+// @Param		body	body	animationUploadRequest	true	"Palette and frames"
+// @Success		200		{object}	statusOK
+// @Failure		400		{object}	errorResponse	"Invalid palette, rows, delay, or more than 8 frames"
+// @Failure		401		{object}	errorResponse
+// @Failure		403		{object}	errorResponse
+// @Failure		404		{object}	errorResponse	"Unknown device"
+// @Failure		502		{object}	errorResponse	"Matrix firmware error"
+// @Router		/api/v1/devices/{device}/matrix/animation [post]
+func (s *Server) handleMatrixAnimation(w http.ResponseWriter, r *http.Request) {
+	scheduler, _ := s.deviceFromRequest(r)
+	var req animationUploadRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	frames, err := renderUploadedAnimation(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := scheduler.UploadAnimation(r.Context(), frames); err != nil {
+		writeMatrixControlError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, statusOK{Status: "ok"})
+}
+
+// renderUploadedAnimation turns the request's palette-and-rows form into rendered
+// frames, reusing the same builder that backs config-authored animations so both
+// paths accept exactly the same pixel-art vocabulary.
+func renderUploadedAnimation(req animationUploadRequest) ([]animations.Frame, error) {
+	if len(req.Frames) == 0 {
+		return nil, errors.New("frames is required and must contain at least one frame")
+	}
+	if len(req.Frames) > matrix.MaxAnimationFrames {
+		return nil, fmt.Errorf("animation supports at most %d frames: got %d", matrix.MaxAnimationFrames, len(req.Frames))
+	}
+	if len(req.Palette) == 0 {
+		return nil, errors.New("palette is required")
+	}
+
+	symbols := make([]string, 0, len(req.Palette))
+	for symbol := range req.Palette {
+		symbols = append(symbols, symbol)
+	}
+	sort.Strings(symbols)
+	palette := make([]animations.FramePaletteEntry, 0, len(symbols))
+	for _, symbol := range symbols {
+		color, err := animations.ParseHexRGB(req.Palette[symbol])
+		if err != nil {
+			return nil, fmt.Errorf("palette symbol %q: %w", symbol, err)
+		}
+		palette = append(palette, animations.FramePaletteEntry{Symbol: symbol, Color: color})
+	}
+
+	specs := make([]animations.FrameSpec, 0, len(req.Frames))
+	for index, frame := range req.Frames {
+		delay, err := time.ParseDuration(frame.Delay)
+		if err != nil {
+			return nil, fmt.Errorf("frame %d delay: %w", index, err)
+		}
+		specs = append(specs, animations.FrameSpec{Delay: delay, Rows: frame.Rows})
+	}
+
+	animation, err := animations.NewFrameAnimation(specs, palette)
+	if err != nil {
+		return nil, err
+	}
+	return animation.Render(context.Background(), nil)
 }
 
 // ── Catalog types ─────────────────────────────────────────────────────────────

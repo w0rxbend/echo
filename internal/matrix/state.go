@@ -43,6 +43,7 @@ type BackgroundKind string
 const (
 	BackgroundKindFirmwarePreset BackgroundKind = "firmware_preset"
 	BackgroundKindRenderable     BackgroundKind = "renderable"
+	BackgroundKindStaticColor    BackgroundKind = "static_color"
 )
 
 type BackgroundConvergenceState string
@@ -250,10 +251,14 @@ type QueueControlStatus struct {
 type ControlKind string
 
 const (
-	ControlClear         ControlKind = "clear"
-	ControlSetBrightness ControlKind = "brightness"
-	ControlSetPreset     ControlKind = "preset"
-	ControlFill          ControlKind = "fill"
+	ControlClear           ControlKind = "clear"
+	ControlSetBrightness   ControlKind = "brightness"
+	ControlSetPreset       ControlKind = "preset"
+	ControlFill            ControlKind = "fill"
+	ControlSetPixel        ControlKind = "pixel"
+	ControlSetPanel        ControlKind = "panel"
+	ControlSetStaticColor  ControlKind = "static"
+	ControlUploadAnimation ControlKind = "upload_animation"
 )
 
 type PlayItem struct {
@@ -270,27 +275,43 @@ type PlayItem struct {
 type Hook func(context.Context) error
 
 type ControlRequest struct {
-	ID         string        `json:"id,omitempty"`
-	Kind       ControlKind   `json:"kind"`
-	Priority   int           `json:"priority"`
-	Brightness byte          `json:"brightness,omitempty"`
-	EffectID   byte          `json:"effect_id,omitempty"`
-	Interval   time.Duration `json:"interval,omitempty"`
-	Color      RGB           `json:"color,omitempty"`
-	CreatedAt  time.Time     `json:"created_at,omitempty"`
-	Deadline   time.Time     `json:"deadline,omitempty"`
+	ID         string           `json:"id,omitempty"`
+	Kind       ControlKind      `json:"kind"`
+	Priority   int              `json:"priority"`
+	Brightness byte             `json:"brightness,omitempty"`
+	EffectID   byte             `json:"effect_id,omitempty"`
+	Interval   time.Duration    `json:"interval,omitempty"`
+	Color      RGB              `json:"color,omitempty"`
+	X          byte             `json:"x,omitempty"`
+	Y          byte             `json:"y,omitempty"`
+	Enabled    bool             `json:"enabled,omitempty"`
+	Animation  []AnimationFrame `json:"animation,omitempty"`
+	CreatedAt  time.Time        `json:"created_at,omitempty"`
+	Deadline   time.Time        `json:"deadline,omitempty"`
+}
+
+// AnimationFrame is one frame of a firmware-resident custom animation. The
+// firmware loops these on-device, so a config-authored animation can run without
+// a TCP round-trip per frame.
+type AnimationFrame struct {
+	Frame PackedFrame   `json:"-"`
+	Delay time.Duration `json:"delay"`
 }
 
 type ControlItem struct {
-	ID         string        `json:"id,omitempty"`
-	Kind       ControlKind   `json:"kind"`
-	Priority   int           `json:"priority"`
-	Brightness byte          `json:"brightness,omitempty"`
-	EffectID   byte          `json:"effect_id,omitempty"`
-	Interval   time.Duration `json:"interval,omitempty"`
-	Color      RGB           `json:"color,omitempty"`
-	CreatedAt  time.Time     `json:"created_at,omitempty"`
-	Deadline   time.Time     `json:"deadline,omitempty"`
+	ID         string           `json:"id,omitempty"`
+	Kind       ControlKind      `json:"kind"`
+	Priority   int              `json:"priority"`
+	Brightness byte             `json:"brightness,omitempty"`
+	EffectID   byte             `json:"effect_id,omitempty"`
+	Interval   time.Duration    `json:"interval,omitempty"`
+	Color      RGB              `json:"color,omitempty"`
+	X          byte             `json:"x,omitempty"`
+	Y          byte             `json:"y,omitempty"`
+	Enabled    bool             `json:"enabled,omitempty"`
+	Animation  []AnimationFrame `json:"animation,omitempty"`
+	CreatedAt  time.Time        `json:"created_at,omitempty"`
+	Deadline   time.Time        `json:"deadline,omitempty"`
 
 	ctx context.Context
 
@@ -303,11 +324,13 @@ type ControlItem struct {
 type displayStateKind string
 
 const (
-	displayStateUnknown displayStateKind = ""
-	displayStateFrame   displayStateKind = "frame"
-	displayStateFill    displayStateKind = "fill"
-	displayStateClear   displayStateKind = "clear"
-	displayStatePreset  displayStateKind = "preset"
+	displayStateUnknown   displayStateKind = ""
+	displayStateFrame     displayStateKind = "frame"
+	displayStateFill      displayStateKind = "fill"
+	displayStateClear     displayStateKind = "clear"
+	displayStatePreset    displayStateKind = "preset"
+	displayStateStatic    displayStateKind = "static"
+	displayStateAnimation displayStateKind = "animation"
 )
 
 type displayState struct {
@@ -316,6 +339,7 @@ type displayState struct {
 	Color        RGB
 	EffectID     byte
 	Interval     time.Duration
+	Animation    []AnimationFrame
 	BackgroundID string
 }
 

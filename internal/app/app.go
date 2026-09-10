@@ -302,6 +302,18 @@ func newAppDevice(
 	}
 
 	tcpLogs := newTCPReconnectLogDispatcher(logger, 64)
+	// The dispatcher owns a goroutine from construction, but only a fully built
+	// device reaches App.devices and therefore closeResources. Every error return
+	// below would otherwise leak that goroutine for the process lifetime.
+	deviceBuilt := false
+	defer func() {
+		if !deviceBuilt {
+			tcpLogs.Close()
+		}
+	}()
+	// The dispatcher owns a goroutine from construction, but only a fully built
+	// device reaches App.devices and therefore closeResources. Every error return
+	// below would otherwise leak that goroutine for the process lifetime.
 
 	matrixClient, err := matrix.NewTCPClient(matrix.ClientOptions{
 		Host:            devCfg.Host,
@@ -343,7 +355,7 @@ func newAppDevice(
 		Registry:          animationRegistry,
 		Packer:            packer,
 		QueueCapacity:     playQueueCapacity,
-		Background:        backgroundConfig(devCfg),
+		Background:        backgroundConfig(*devCfg),
 		ReconnectMinDelay: devCfg.ReconnectMinDelay,
 		ReconnectMaxDelay: devCfg.ReconnectMaxDelay,
 		HeartbeatInterval: devCfg.HeartbeatInterval,
@@ -421,6 +433,7 @@ func newAppDevice(
 		}
 	}
 
+	deviceBuilt = true
 	return &appDevice{
 		id:        deviceID,
 		client:    matrixClient,
@@ -1031,9 +1044,33 @@ func (d *tcpReconnectLogDispatcher) run() {
 	for {
 		select {
 		case <-d.stop:
+			d.drainAccepted()
 			return
 		case event := <-d.events:
 			d.runEvent(event)
+		}
+	}
+}
+
+// drainAccepted flushes events that enqueue already accepted before Close.
+//
+// Without this, shutdown silently discarded up to cap(d.events) reconnect log
+// lines: they were never written, and they were not counted as drops either,
+// because enqueue had already taken responsibility for them. A reconnect storm
+// immediately before shutdown is exactly when those lines matter most.
+//
+// Close deliberately does NOT wait for this drain. Blocking shutdown on a slog
+// handler would reintroduce the coupling this dispatcher exists to prevent —
+// TCPClient invokes the reconnect callbacks while its command-serialization mutex
+// is held, so log handling must never gate anything. Draining without joining
+// trades a short post-Close tail of log writes for not losing them.
+func (d *tcpReconnectLogDispatcher) drainAccepted() {
+	for {
+		select {
+		case event := <-d.events:
+			d.runEvent(event)
+		default:
+			return
 		}
 	}
 }
