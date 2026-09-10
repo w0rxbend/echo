@@ -1512,7 +1512,7 @@
         },
         "/api/v1/devices/{device}/matrix/static": {
             "post": {
-                "description": "Puts the firmware into static-colour mode, which keeps asserting the colour until another mode change. Unlike matrix/fill, this survives as a steady display state, which is what makes it usable as an idle background.",
+                "description": "Puts the firmware into static-colour mode (command 0x07). The pixels are identical to matrix/fill — the firmware renders both through the same fill — so prefer matrix/fill for a one-off colour. The difference is bookkeeping, not persistence: only this mode is recognised by idle background convergence as matching a configured static_color background, so a fill to the same colour would be re-asserted once on the next idle pass.",
                 "parameters": [
                     {
                         "description": "Device ID",

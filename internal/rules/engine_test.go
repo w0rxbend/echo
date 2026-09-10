@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -186,4 +187,41 @@ func mustEngine(t *testing.T, data []byte) *Engine {
 	}
 
 	return engine
+}
+
+// An unrecognised restore policy used to pass config load and then kill the
+// device's scheduler: Scheduler.restore returns an error for an unknown policy and
+// Run returns that error, so the first event matching the rule permanently stopped
+// all playback and control for that device until the process restarted.
+func TestLoadRejectsUnknownRestorePolicy(t *testing.T) {
+	_, err := Load([]byte(`
+rules:
+  - id: typo_restore
+    when:
+      source: http
+      type: notify
+    play:
+      animation: notification
+      restore: backround
+`))
+	if err == nil {
+		t.Fatal("Load() error = nil; an unknown restore policy must be rejected at load, not at runtime")
+	}
+	for _, want := range []string{"backround", "restore policy", "background"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Load() error = %v, want containing %q so the operator can see the fix", err, want)
+		}
+	}
+}
+
+func TestLoadAcceptsEveryValidRestorePolicyAndTheEmptyDefault(t *testing.T) {
+	for _, policy := range append(animations.RestorePolicyNames(), "") {
+		body := "\nrules:\n  - id: r\n    when:\n      source: http\n      type: notify\n    play:\n      animation: notification\n"
+		if policy != "" {
+			body += "      restore: " + policy + "\n"
+		}
+		if _, err := Load([]byte(body)); err != nil {
+			t.Fatalf("Load() with restore=%q error = %v, want nil", policy, err)
+		}
+	}
 }

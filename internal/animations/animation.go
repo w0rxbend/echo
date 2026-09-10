@@ -54,6 +54,40 @@ const (
 	RestoreLeave         RestorePolicy = "leave"
 )
 
+// validRestorePolicies is the canonical set. The HTTP boundary, the rules loader
+// and the scheduler all validate against this one map; an unrecognised policy that
+// reaches Scheduler.restore is returned as an error that exits Run, so every entry
+// point must reject it first.
+var validRestorePolicies = map[RestorePolicy]struct{}{
+	RestoreClear:         {},
+	RestoreBlank:         {},
+	RestorePreviousFrame: {},
+	RestoreBackground:    {},
+	RestoreLeave:         {},
+}
+
+// IsValidRestorePolicy reports whether the policy is one the scheduler implements.
+// The empty policy is accepted: the scheduler treats it as RestoreLeave.
+func IsValidRestorePolicy(policy RestorePolicy) bool {
+	if policy == "" {
+		return true
+	}
+	_, ok := validRestorePolicies[policy]
+	return ok
+}
+
+// RestorePolicyNames returns the accepted policy names in a stable order, for
+// error messages and help text.
+func RestorePolicyNames() []string {
+	return []string{
+		string(RestoreLeave),
+		string(RestoreBackground),
+		string(RestoreClear),
+		string(RestoreBlank),
+		string(RestorePreviousFrame),
+	}
+}
+
 type LoopPolicy string
 
 const (

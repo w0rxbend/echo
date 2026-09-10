@@ -162,7 +162,7 @@ animations:
     color: "#00FF55"
 ```
 
-**Static colours** — a fixed colour the firmware keeps asserting. Unlike a one-shot fill this survives as a display state, which is what makes it usable as an idle background:
+**Static colours** — a fixed colour for use as an idle background. The pixels are identical to a fill; what differs is that idle convergence recognises this mode as already matching the configured background instead of repainting it:
 
 ```yaml
 animations:

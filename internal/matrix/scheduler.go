@@ -799,13 +799,29 @@ func (s *Scheduler) SetPreset(ctx context.Context, effectID byte, interval time.
 	})
 }
 
-// SetPixel sets one logical x/y pixel. Coordinates are display-space; the client
-// maps them to the firmware's physical serpentine order.
+// SetPixel sets one pixel, taking display-space coordinates.
+//
+// The firmware applies its own serpentine mapping to whatever x/y it receives, but
+// that mapping alone is NOT the one frame uploads go through: LayoutPacker also
+// compensates for this panel's mirrored odd rows (Layout.OddRowDisplayFlip) before
+// computing the chain index. Forwarding display coordinates raw therefore put every
+// pixel on rows 1/3/5/7 at the mirrored LED — 32 of 64 coordinates disagreed with
+// every frame-based path.
+//
+// Converting to server space here is exactly the missing half: the firmware's own
+// serpentine step then lands on the same physical LED the packer would have chosen.
+// This is the same display -> server translation the Python reference client does in
+// tools/matrix_client.py::display_to_server_point.
 func (s *Scheduler) SetPixel(ctx context.Context, x, y byte, color RGB) error {
+	layout := s.packer.Layout()
+	serverX, serverY, err := layout.DisplayToServerPoint(int(x), int(y))
+	if err != nil {
+		return fmt.Errorf("%w: %s", ErrInvalidControl, err)
+	}
 	return s.EnqueueControl(ctx, ControlRequest{
 		Kind:  ControlSetPixel,
-		X:     x,
-		Y:     y,
+		X:     byte(serverX),
+		Y:     byte(serverY),
 		Color: color,
 	})
 }

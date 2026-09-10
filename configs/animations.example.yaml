@@ -32,11 +32,13 @@ animations:
     color: "#FF8800"
 
   # ── Static colours ────────────────────────────────────────────────────────
-  # Backed by the firmware's static-colour command (0x07). The device keeps
-  # re-asserting the colour, which is what makes it usable as an idle
-  # background — unlike a one-shot fill. Do not use firmware_preset with
-  # effect_id 0 for this: 0 is the "stop effect" sentinel and discards the
-  # colour, leaving the panel dark.
+  # Backed by the firmware's static-colour command (0x07). The visible result is
+  # the same as a fill — the firmware renders both through the same fill — so the
+  # reason this type exists is convergence: it is the only solid colour the
+  # scheduler can recognise as matching a configured background, so it is not
+  # repainted on every idle pass. Do not use firmware_preset with effect_id 0 for
+  # a colour: 0 is the "stop effect" sentinel, it discards the colour, and it
+  # leaves whatever the last effect frame drew rather than going dark.
 
   # Static green — useful for hardware validation.
   static_green_background:

@@ -3971,3 +3971,70 @@ func TestMatrixPresetRejectsEffectIdAboveFirmwareRange(t *testing.T) {
 		t.Fatalf("preset payload = %v, want [22 90 0 1 2 3]", got)
 	}
 }
+
+// A pixel and a frame must address the same LED for the same display coordinate.
+//
+// The firmware maps whatever x/y it receives through its own serpentine order, but
+// frame uploads go through LayoutPacker, which ALSO compensates for this panel's
+// mirrored odd rows. Forwarding display coordinates raw put every pixel on rows
+// 1/3/5/7 on the mirrored LED, so `matrix pixel 0 1` and a frame with display (0,1)
+// lit disagreed — 32 of 64 coordinates.
+func TestMatrixPixelAddressesTheSameLEDAsAFrame(t *testing.T) {
+	httpServer, matrixServer := startMatrixTestApp(t)
+
+	// Row 1 is an odd row, which is where the two paths used to diverge.
+	const x, y = 0, 1
+	postMatrix(t, httpServer, "/matrix/pixel", `{"x":0,"y":1,"r":1,"g":2,"b":3}`, http.StatusOK)
+	pixelPayload := awaitCommandPayload(t, matrixServer, testCommandSetPixel)
+
+	// What the firmware will do with the coordinate it was handed.
+	firmwareIndex := func(px, py int) int {
+		if py%2 == 0 {
+			return py*8 + px
+		}
+		return py*8 + (7 - px)
+	}
+	gotLED := firmwareIndex(int(pixelPayload[0]), int(pixelPayload[1]))
+
+	// Where a frame upload would put that same display coordinate.
+	wantLED, err := animations.DefaultLayout().DisplayPointToPhysicalIndex(x, y)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if gotLED != wantLED {
+		t.Fatalf("display (%d,%d): pixel lands on LED %d, a frame lands on LED %d; sent x=%d y=%d",
+			x, y, gotLED, wantLED, pixelPayload[0], pixelPayload[1])
+	}
+}
+
+// Exhaustive version of the invariant above, so a future layout change cannot
+// silently reintroduce the mirror on a subset of rows.
+func TestMatrixPixelAgreesWithFrameForEveryCoordinate(t *testing.T) {
+	httpServer, matrixServer := startMatrixTestApp(t)
+
+	firmwareIndex := func(px, py int) int {
+		if py%2 == 0 {
+			return py*8 + px
+		}
+		return py*8 + (7 - px)
+	}
+	layout := animations.DefaultLayout()
+
+	for y := 0; y < 8; y++ {
+		for x := 0; x < 8; x++ {
+			body := fmt.Sprintf(`{"x":%d,"y":%d,"r":9,"g":9,"b":9}`, x, y)
+			postMatrix(t, httpServer, "/matrix/pixel", body, http.StatusOK)
+			payload := awaitCommandPayload(t, matrixServer, testCommandSetPixel)
+
+			gotLED := firmwareIndex(int(payload[0]), int(payload[1]))
+			wantLED, err := layout.DisplayPointToPhysicalIndex(x, y)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gotLED != wantLED {
+				t.Fatalf("display (%d,%d): pixel -> LED %d, frame -> LED %d", x, y, gotLED, wantLED)
+			}
+		}
+	}
+}

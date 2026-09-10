@@ -123,14 +123,6 @@ type queueClearResponse struct {
 	Cleared int `json:"cleared"`
 }
 
-var validRestorePolicySet = map[animations.RestorePolicy]struct{}{
-	animations.RestoreClear:         {},
-	animations.RestoreBlank:         {},
-	animations.RestorePreviousFrame: {},
-	animations.RestoreBackground:    {},
-	animations.RestoreLeave:         {},
-}
-
 var validInterruptModeSet = map[animations.InterruptMode]struct{}{
 	animations.InterruptNone:           {},
 	animations.InterruptHigherPriority: {},
@@ -453,8 +445,7 @@ func parseOptionalDuration(value string) (time.Duration, error) {
 }
 
 func validRestorePolicy(policy animations.RestorePolicy) bool {
-	_, ok := validRestorePolicySet[policy]
-	return ok
+	return animations.IsValidRestorePolicy(policy)
 }
 
 func validInterruptMode(mode animations.InterruptMode) bool {
@@ -823,7 +814,7 @@ func (s *Server) handleMatrixPanel(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary		Hold a fixed colour
-// @Description	Puts the firmware into static-colour mode, which keeps asserting the colour until another mode change. Unlike matrix/fill, this survives as a steady display state, which is what makes it usable as an idle background.
+// @Description	Puts the firmware into static-colour mode (command 0x07). The pixels are identical to matrix/fill — the firmware renders both through the same fill — so prefer matrix/fill for a one-off colour. The difference is bookkeeping, not persistence: only this mode is recognised by idle background convergence as matching a configured static_color background, so a fill to the same colour would be re-asserted once on the next idle pass.
 // @Tags		device
 // @Accept		json
 // @Produce		json
