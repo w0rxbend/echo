@@ -271,6 +271,34 @@ func cloneEntry(entry Entry) Entry {
 	return entry
 }
 
+// StopEffectID is the firmware's "stop effect" sentinel. It halts the running
+// effect without touching the frame buffer or calling render(), so the panel keeps
+// whatever the last effect tick happened to draw. That makes it unusable as a
+// restorable display state: replaying it reproduces no image.
+const StopEffectID byte = 0
+
+// colourIgnoringEffectIDs are the firmware effects that accept an RGB triple on the
+// wire and discard it, because they compute their own colours:
+// 7 rainbow, 11 fire, 17 plasma, 22 confetti. Verified against the renderers in
+// led-matrix-controller/src/TcpMatrixServer.cpp.
+//
+// This matters beyond documentation: the scheduler remembers EffectID, Interval and
+// Color for convergence matching, so without this, two visually identical
+// backgrounds could fail to match on a byte the panel never used.
+var colourIgnoringEffectIDs = map[byte]struct{}{
+	7:  {},
+	11: {},
+	17: {},
+	22: {},
+}
+
+// FirmwareEffectIgnoresColor reports whether the effect computes its own colours
+// and discards the caller's.
+func FirmwareEffectIgnoresColor(effectID byte) bool {
+	_, ok := colourIgnoringEffectIDs[effectID]
+	return ok
+}
+
 // MaxFirmwareEffectID is the highest effect id the firmware implements.
 // TcpMatrixServer::applyCommand rejects anything above this with
 // Status::kInvalidLength, so reject it here instead of surfacing a 502 later.

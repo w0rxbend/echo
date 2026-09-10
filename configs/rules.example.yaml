@@ -8,8 +8,17 @@ rules:
       priority: 50
       duration: 2s
       interrupt: none
-      # Restore controls the immediate post-playback behavior. With
-      # background.restore_on_idle enabled, the configured background still owns
-      # the eventual idle matrix state even if a rule uses leave,
-      # previous_frame, clear, or blank here.
+      # Restore controls only the immediate post-playback display. With
+      # background.restore_on_idle enabled, the configured background owns the
+      # eventual idle state regardless of what is set here — Run marks the
+      # background dirty before every item and reconverges as soon as the queue
+      # drains. So with a background configured, "leave" and "background" end at
+      # the same place, and "clear" adds a brief dark flash first.
+      #
+      # Accepted: leave, background, clear, previous_frame.
+      # An unrecognised value is now rejected at config load.
       restore: background
+
+      # Optional. loop: none (default) | until_deadline | forever.
+      # "forever" requires a positive duration, or it would never complete.
+      # loop: until_deadline

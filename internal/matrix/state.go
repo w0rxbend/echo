@@ -257,7 +257,6 @@ const (
 	ControlFill            ControlKind = "fill"
 	ControlSetPixel        ControlKind = "pixel"
 	ControlSetPanel        ControlKind = "panel"
-	ControlSetStaticColor  ControlKind = "static"
 	ControlUploadAnimation ControlKind = "upload_animation"
 )
 

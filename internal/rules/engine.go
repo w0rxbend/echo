@@ -40,6 +40,7 @@ type Play struct {
 	Duration  Duration                 `yaml:"duration,omitempty"`
 	Interrupt animations.InterruptMode `yaml:"interrupt,omitempty"`
 	Restore   animations.RestorePolicy `yaml:"restore,omitempty"`
+	Loop      animations.LoopPolicy    `yaml:"loop,omitempty"`
 	Params    map[string]string        `yaml:"params,omitempty"`
 }
 
@@ -139,6 +140,13 @@ func validateRule(rule Rule) error {
 	if !animations.IsValidRestorePolicy(animations.RestorePolicy(rule.Play.Restore)) {
 		return fmt.Errorf("play.restore %q is not a valid restore policy; expected one of %s",
 			rule.Play.Restore, strings.Join(animations.RestorePolicyNames(), ", "))
+	}
+	if !animations.IsValidLoopPolicy(rule.Play.Loop) {
+		return fmt.Errorf("play.loop %q is not a valid loop policy; expected one of %s",
+			rule.Play.Loop, strings.Join(animations.LoopPolicyNames(), ", "))
+	}
+	if rule.Play.Loop == animations.LoopForever && rule.Play.Duration.Duration <= 0 {
+		return fmt.Errorf("play.loop %q requires a positive play.duration to terminate", rule.Play.Loop)
 	}
 
 	return nil

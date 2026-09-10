@@ -7264,3 +7264,64 @@ func containsAll(haystack []string, needles []string) bool {
 	}
 	return true
 }
+
+// Effect 0 is the firmware's stop sentinel: stopEffects() never touches the frame
+// buffer or calls render(), so the panel keeps whatever the last tick drew.
+// Remembering it as a restorable display state made restore: previous_frame replay
+// a command that reproduces no image.
+func TestSchedulerDoesNotRememberStopEffectAsRestorableState(t *testing.T) {
+	client := newFakeMatrixClient()
+	registry := animations.NewRegistry()
+	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runScheduler(t, ctx, scheduler)
+
+	// A real effect is remembered...
+	if err := scheduler.SetPreset(ctx, 12, 90*time.Millisecond, RGB{G: 255, B: 85}); err != nil {
+		t.Fatal(err)
+	}
+	if got := scheduler.snapshotDisplayState(); got.Kind != displayStatePreset || got.EffectID != 12 {
+		t.Fatalf("after preset 12, display state = %+v, want remembered preset 12", got)
+	}
+
+	// ...and the stop sentinel leaves the previous remembered state alone.
+	if err := scheduler.SetPreset(ctx, 0, 0, RGB{}); err != nil {
+		t.Fatal(err)
+	}
+	got := scheduler.snapshotDisplayState()
+	if got.EffectID == 0 && got.Kind == displayStatePreset {
+		t.Fatal("effect 0 was remembered as a restorable preset; replaying it restores no image")
+	}
+	if got.EffectID != 12 {
+		t.Fatalf("display state = %+v, want the previous remembered preset 12 to survive", got)
+	}
+}
+
+// Four effects compute their own colours and discard the caller's RGB. Storing that
+// byte let convergence compare something the panel never rendered, so two visually
+// identical backgrounds could fail to match.
+func TestSchedulerDoesNotRememberColourForEffectsThatDiscardIt(t *testing.T) {
+	client := newFakeMatrixClient()
+	registry := animations.NewRegistry()
+	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runScheduler(t, ctx, scheduler)
+
+	// 11 is fire, which hardcodes a heat palette.
+	if err := scheduler.SetPreset(ctx, 11, 80*time.Millisecond, RGB{R: 1, G: 2, B: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if got := scheduler.snapshotDisplayState(); got.Color != (RGB{}) {
+		t.Fatalf("remembered colour for fire = %+v, want zero; the renderer discards it", got.Color)
+	}
+
+	// 12 is matrix_rain, which does honour the caller's colour.
+	if err := scheduler.SetPreset(ctx, 12, 80*time.Millisecond, RGB{R: 4, G: 5, B: 6}); err != nil {
+		t.Fatal(err)
+	}
+	if got := scheduler.snapshotDisplayState(); got.Color != (RGB{R: 4, G: 5, B: 6}) {
+		t.Fatalf("remembered colour for matrix_rain = %+v, want it preserved", got.Color)
+	}
+}

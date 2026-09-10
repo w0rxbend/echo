@@ -48,7 +48,6 @@ type RestorePolicy string
 
 const (
 	RestoreClear         RestorePolicy = "clear"
-	RestoreBlank         RestorePolicy = "blank"
 	RestorePreviousFrame RestorePolicy = "previous_frame"
 	RestoreBackground    RestorePolicy = "background"
 	RestoreLeave         RestorePolicy = "leave"
@@ -60,7 +59,6 @@ const (
 // point must reject it first.
 var validRestorePolicies = map[RestorePolicy]struct{}{
 	RestoreClear:         {},
-	RestoreBlank:         {},
 	RestorePreviousFrame: {},
 	RestoreBackground:    {},
 	RestoreLeave:         {},
@@ -76,6 +74,28 @@ func IsValidRestorePolicy(policy RestorePolicy) bool {
 	return ok
 }
 
+var validLoopPolicies = map[LoopPolicy]struct{}{
+	LoopNone:    {},
+	LoopForever: {},
+	LoopUntil:   {},
+}
+
+// IsValidLoopPolicy reports whether the policy is one the scheduler implements.
+// The empty policy is accepted and means LoopNone.
+func IsValidLoopPolicy(policy LoopPolicy) bool {
+	if policy == "" {
+		return true
+	}
+	_, ok := validLoopPolicies[policy]
+	return ok
+}
+
+// LoopPolicyNames returns the accepted loop names in a stable order, for error
+// messages and help text.
+func LoopPolicyNames() []string {
+	return []string{string(LoopNone), string(LoopForever), string(LoopUntil)}
+}
+
 // RestorePolicyNames returns the accepted policy names in a stable order, for
 // error messages and help text.
 func RestorePolicyNames() []string {
@@ -83,7 +103,6 @@ func RestorePolicyNames() []string {
 		string(RestoreLeave),
 		string(RestoreBackground),
 		string(RestoreClear),
-		string(RestoreBlank),
 		string(RestorePreviousFrame),
 	}
 }
@@ -105,7 +124,11 @@ type AnimationRequest struct {
 	MaxDuration   time.Duration `json:"max_duration,omitempty" yaml:"max_duration,omitempty"`
 	InterruptMode InterruptMode `json:"interrupt_mode,omitempty" yaml:"interrupt_mode,omitempty"`
 	RestorePolicy RestorePolicy `json:"restore_policy,omitempty" yaml:"restore_policy,omitempty"`
-	CreatedAt     time.Time     `json:"created_at" yaml:"created_at"`
+	// Loop controls whether the rendered frames repeat. LoopUntil and LoopForever
+	// both require a deadline to terminate, which MaxDuration supplies; without one
+	// LoopForever never ends and holds the play queue.
+	Loop      LoopPolicy `json:"loop,omitempty" yaml:"loop,omitempty"`
+	CreatedAt time.Time  `json:"created_at" yaml:"created_at"`
 }
 
 type Animation interface {

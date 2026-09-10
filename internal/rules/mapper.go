@@ -59,6 +59,7 @@ func mapRule(rule Rule, event events.Event) animations.AnimationRequest {
 		MaxDuration:   rule.Play.Duration.Duration,
 		InterruptMode: interrupt,
 		RestorePolicy: restore,
+		Loop:          rule.Play.Loop,
 		CreatedAt:     time.Now().UTC(),
 	}
 }

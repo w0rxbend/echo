@@ -244,8 +244,19 @@ func applyEventOverrides(request *animations.AnimationRequest, event events.Even
 	if animationID := event.Attributes["animation"]; animationID != "" {
 		request.AnimationID = animationID
 	}
+	// Validate rather than trust. The HTTP boundary already checks these, but the
+	// bus is the extension point for other producers, and an unrecognised restore
+	// policy reaching Scheduler.restore returns an error that exits Run — so an
+	// unchecked attribute here would stop the device's scheduler outright.
 	if restore := event.Attributes["restore"]; restore != "" {
-		request.RestorePolicy = animations.RestorePolicy(restore)
+		if policy := animations.RestorePolicy(restore); animations.IsValidRestorePolicy(policy) {
+			request.RestorePolicy = policy
+		}
+	}
+	if loop := event.Attributes["loop"]; loop != "" {
+		if policy := animations.LoopPolicy(loop); animations.IsValidLoopPolicy(policy) {
+			request.Loop = policy
+		}
 	}
 	if duration := event.Attributes["duration"]; duration != "" {
 		if parsed, err := time.ParseDuration(duration); err == nil {

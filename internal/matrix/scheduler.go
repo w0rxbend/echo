@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -152,11 +153,20 @@ var controlSpecs = map[ControlKind]controlSpec{
 			return scheduler.client.SetPreset(ctx, control.EffectID, control.Interval, control.Color)
 		},
 		rememberState: func(scheduler *Scheduler, control *ControlItem) {
+			// Effect 0 stops the running effect without touching the frame buffer, so
+			// the panel keeps whatever the last tick drew. Remembering it would make
+			// restore: previous_frame replay a command that reproduces no image —
+			// exactly the failure ControlSetPixel deliberately avoids.
+			if control.EffectID == animations.StopEffectID {
+				return
+			}
 			scheduler.rememberDisplayState(displayState{
 				Kind:     displayStatePreset,
 				EffectID: control.EffectID,
 				Interval: control.Interval,
-				Color:    control.Color,
+				// Effects that compute their own colours discard this byte, so storing
+				// it would let convergence compare something the panel never rendered.
+				Color: presetColorForState(control.EffectID, control.Color),
 			})
 		},
 		marksBackgroundDirty: true,
@@ -194,18 +204,6 @@ var controlSpecs = map[ControlKind]controlSpec{
 		// restores it on re-enable, so the desired background is still satisfied and
 		// must not be marked dirty.
 	},
-	ControlSetStaticColor: {
-		run: func(ctx context.Context, scheduler *Scheduler, control *ControlItem) error {
-			return scheduler.client.SetStaticColor(ctx, control.Color)
-		},
-		rememberState: func(scheduler *Scheduler, control *ControlItem) {
-			scheduler.rememberDisplayState(displayState{
-				Kind:  displayStateStatic,
-				Color: control.Color,
-			})
-		},
-		marksBackgroundDirty: true,
-	},
 	ControlUploadAnimation: {
 		validateRequest: func(request ControlRequest) error {
 			return validateAnimationFrames(request.Animation)
@@ -221,6 +219,15 @@ var controlSpecs = map[ControlKind]controlSpec{
 		},
 		marksBackgroundDirty: true,
 	},
+}
+
+// presetColorForState zeroes the colour for effects that ignore it, so remembered
+// state and background-match comparisons only consider bytes the panel used.
+func presetColorForState(effectID byte, color RGB) RGB {
+	if animations.FirmwareEffectIgnoresColor(effectID) {
+		return RGB{}
+	}
+	return color
 }
 
 func validatePixelCoordinate(x, y byte) error {
@@ -288,9 +295,6 @@ var probeRetryableKinds = map[ErrorKind]struct{}{
 }
 
 var restorePolicySpecs = map[animations.RestorePolicy]restorePolicySpec{
-	"": func(ctx context.Context, s *Scheduler, _ displayState) error {
-		return nil
-	},
 	animations.RestoreLeave: func(ctx context.Context, _ *Scheduler, _ displayState) error {
 		return nil
 	},
@@ -300,19 +304,6 @@ var restorePolicySpecs = map[animations.RestorePolicy]restorePolicySpec{
 		})
 		if err == nil {
 			s.rememberDisplayState(displayState{Kind: displayStateClear})
-		}
-		return err
-	},
-	animations.RestoreBlank: func(ctx context.Context, s *Scheduler, _ displayState) error {
-		blank := RGB{}
-		err := s.retryMatrix(ctx, func() error {
-			return s.client.Fill(ctx, blank)
-		})
-		if err == nil {
-			s.rememberDisplayState(displayState{
-				Kind:  displayStateFill,
-				Color: blank,
-			})
 		}
 		return err
 	},
@@ -835,16 +826,6 @@ func (s *Scheduler) SetPanelEnabled(ctx context.Context, enabled bool) error {
 	})
 }
 
-// SetStaticColor puts the firmware into static-colour mode, which keeps asserting
-// the colour until another mode change. Prefer this over Fill for anything that
-// needs to survive as a steady display state.
-func (s *Scheduler) SetStaticColor(ctx context.Context, color RGB) error {
-	return s.EnqueueControl(ctx, ControlRequest{
-		Kind:  ControlSetStaticColor,
-		Color: color,
-	})
-}
-
 // UploadAnimation stores an animation in the firmware's custom slot and lets the
 // device loop it locally, with no per-frame TCP round-trip. Frames arrive in
 // display space and are packed to the device's physical LED order here, so callers
@@ -984,7 +965,11 @@ func (s *Scheduler) ResolveRequest(ctx context.Context, request animations.Anima
 	if err != nil {
 		return ScheduledItem{}, fmt.Errorf("render animation %q: %w", request.AnimationID, err)
 	}
-	frames = applyMaxDuration(frames, request.MaxDuration)
+	// Trimming applies to a single pass. A looping item keeps its whole cycle and is
+	// bounded by a deadline instead, set below.
+	if request.Loop == "" || request.Loop == animations.LoopNone {
+		frames = applyMaxDuration(frames, request.MaxDuration)
+	}
 	if len(frames) == 0 {
 		return ScheduledItem{}, fmt.Errorf("%w: %s", ErrEmptyAnimation, request.AnimationID)
 	}
@@ -1005,6 +990,25 @@ func (s *Scheduler) ResolveRequest(ctx context.Context, request animations.Anima
 	if interruptMode == "" {
 		interruptMode = animations.InterruptNone
 	}
+	loop := request.Loop
+	if loop == "" {
+		loop = animations.LoopNone
+	}
+	if !animations.IsValidLoopPolicy(loop) {
+		return ScheduledItem{}, fmt.Errorf("%w: loop %q is not a valid loop policy; expected one of %s",
+			ErrInvalidControl, loop, strings.Join(animations.LoopPolicyNames(), ", "))
+	}
+	// Both looping strategies test PlayItem.Deadline, and applyMaxDuration only
+	// trims frames — it never sets one. Without a deadline LoopForever's exit test
+	// can never fire and LoopUntil's guard is permanently true, so either would loop
+	// forever and pin the queue. Require a duration and convert it to a deadline.
+	var deadline time.Time
+	if loop != animations.LoopNone {
+		if request.MaxDuration <= 0 {
+			return ScheduledItem{}, fmt.Errorf("%w: loop %q requires a positive duration to terminate", ErrInvalidControl, loop)
+		}
+		deadline = createdAt.Add(request.MaxDuration)
+	}
 
 	return ScheduledItem{
 		PlayItem: PlayItem{
@@ -1012,7 +1016,8 @@ func (s *Scheduler) ResolveRequest(ctx context.Context, request animations.Anima
 			EventID:  request.EventID,
 			Priority: request.Priority,
 			Frames:   frames,
-			Loop:     animations.LoopNone,
+			Loop:     loop,
+			Deadline: deadline,
 		},
 		AnimationID:         request.AnimationID,
 		RestorePolicy:       restore,
@@ -1862,7 +1867,7 @@ func (s *Scheduler) restoreFirmwarePreset(ctx context.Context, preset animations
 			Kind:         displayStatePreset,
 			EffectID:     preset.EffectID,
 			Interval:     preset.Interval,
-			Color:        preset.Color,
+			Color:        presetColorForState(preset.EffectID, RGB{R: preset.Color.R, G: preset.Color.G, B: preset.Color.B}),
 			BackgroundID: s.background.AnimationID,
 		})
 	}
@@ -1905,7 +1910,7 @@ func (s *Scheduler) displayStateMatchesConfiguredBackground(state displayState) 
 		return state.Kind == displayStatePreset &&
 			state.EffectID == preset.EffectID &&
 			state.Interval == preset.Interval &&
-			state.Color == preset.Color
+			state.Color == presetColorForState(preset.EffectID, RGB{R: preset.Color.R, G: preset.Color.G, B: preset.Color.B})
 	}
 	if color, ok := s.registry.StaticColor(s.background.AnimationID); ok {
 		return state.Kind == displayStateStatic &&

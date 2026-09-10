@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -35,6 +36,7 @@ type playRequest struct {
 	Priority      int               `json:"priority,omitempty"         example:"50"`
 	Restore       string            `json:"restore,omitempty"          example:"background"`
 	InterruptMode string            `json:"interrupt_mode,omitempty"   example:"none"`
+	Loop          string            `json:"loop,omitempty"             example:"forever"`
 	Params        map[string]string `json:"params,omitempty"`
 }
 
@@ -132,7 +134,7 @@ var validInterruptModeSet = map[animations.InterruptMode]struct{}{
 // ── Event endpoints ───────────────────────────────────────────────────────────
 
 // @Summary		Publish a generic event
-// @Description	Publishes a normalized event for async rule processing. Known override attributes (animation, restore, duration, interrupt_mode) are validated synchronously before publishing.
+// @Description	Publishes a normalized event for async rule processing. Known override attributes (animation, restore, duration, interrupt_mode, loop) are validated synchronously before publishing.
 // @Tags		events
 // @Accept		json
 // @Produce		json
@@ -283,6 +285,11 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	loop, err := s.parseLoopPolicy(req.Loop)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	interruptMode, err := s.parseInterruptMode(req.InterruptMode, animations.InterruptNone)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -297,6 +304,7 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 		MaxDuration:   duration,
 		InterruptMode: interruptMode,
 		RestorePolicy: restore,
+		Loop:          loop,
 		CreatedAt:     time.Now().UTC(),
 	}
 	if err := scheduler.EnqueueRequest(r.Context(), request); err != nil {
@@ -355,6 +363,20 @@ func (s *Server) parseRestorePolicy(raw string, defaultPolicy animations.Restore
 	return animations.RestorePolicy(raw), nil
 }
 
+// parseLoopPolicy validates the optional loop field. LoopForever and LoopUntil
+// were implemented in the scheduler but selectable from nowhere, which meant no
+// animation could repeat at all.
+func (s *Server) parseLoopPolicy(raw string) (animations.LoopPolicy, error) {
+	if raw == "" {
+		return animations.LoopNone, nil
+	}
+	policy := animations.LoopPolicy(raw)
+	if !animations.IsValidLoopPolicy(policy) {
+		return "", fmt.Errorf("loop %q is not valid; expected one of %s", raw, strings.Join(animations.LoopPolicyNames(), ", "))
+	}
+	return policy, nil
+}
+
 func (s *Server) parseInterruptMode(raw string, defaultMode animations.InterruptMode) (animations.InterruptMode, error) {
 	if raw == "" {
 		return defaultMode, nil
@@ -378,6 +400,9 @@ func (s *Server) validateEventOverrides(attrs map[string]string) error {
 		return err
 	}
 	if _, err := s.parseInterruptMode(attrs["interrupt_mode"], ""); err != nil {
+		return err
+	}
+	if _, err := s.parseLoopPolicy(attrs["loop"]); err != nil {
 		return err
 	}
 	return nil
@@ -807,35 +832,6 @@ func (s *Server) handleMatrixPanel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := scheduler.SetPanelEnabled(r.Context(), *req.Enabled); err != nil {
-		writeMatrixControlError(w, r, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, statusOK{Status: "ok"})
-}
-
-// @Summary		Hold a fixed colour
-// @Description	Puts the firmware into static-colour mode (command 0x07). The pixels are identical to matrix/fill — the firmware renders both through the same fill — so prefer matrix/fill for a one-off colour. The difference is bookkeeping, not persistence: only this mode is recognised by idle background convergence as matching a configured static_color background, so a fill to the same colour would be re-asserted once on the next idle pass.
-// @Tags		device
-// @Accept		json
-// @Produce		json
-// @Security	BearerAuth
-// @Param		device	path	string			true	"Device ID"
-// @Param		body	body	colorRequest	true	"RGB colour"
-// @Success		200		{object}	statusOK
-// @Failure		400		{object}	errorResponse
-// @Failure		401		{object}	errorResponse
-// @Failure		403		{object}	errorResponse
-// @Failure		404		{object}	errorResponse	"Unknown device"
-// @Failure		502		{object}	errorResponse	"Matrix firmware error"
-// @Router		/api/v1/devices/{device}/matrix/static [post]
-func (s *Server) handleMatrixStatic(w http.ResponseWriter, r *http.Request) {
-	scheduler, _ := s.deviceFromRequest(r)
-	var req colorRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := scheduler.SetStaticColor(r.Context(), matrix.RGB{R: req.R, G: req.G, B: req.B}); err != nil {
 		writeMatrixControlError(w, r, err)
 		return
 	}

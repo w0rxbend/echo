@@ -122,7 +122,6 @@ func (s *Server) Router() http.Handler {
 			r.Post("/fill", s.handleMatrixFill)
 			r.Post("/pixel", s.handleMatrixPixel)
 			r.Post("/panel", s.handleMatrixPanel)
-			r.Post("/static", s.handleMatrixStatic)
 			r.Post("/animation", s.handleMatrixAnimation)
 		})
 	})

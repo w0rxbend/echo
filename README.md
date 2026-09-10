@@ -31,7 +31,7 @@
 - **Config-authored animations** — write 8×8 pixel art in YAML, no code required
 - **22 firmware presets** — trigger built-in ESP8266 effects (`matrix_rain`, `fire`, `rainbow`, `heartbeat` …) via API
 - **Device-side animation** — upload up to 8 frames and let the panel loop them locally, with no network round-trip per frame
-- **Full display control** — pixel, panel blanking, static colour, fill, brightness and clear all reachable over HTTP
+- **Full display control** — pixel, panel blanking, fill, brightness and clear all reachable over HTTP
 - **Auto-reconnect** — robust TCP reconnect with exponential backoff and heartbeat probing
 - **Prometheus metrics** — per-device counters, gauges, and histograms out of the box
 - **Swagger UI** — interactive API explorer at `/docs`
@@ -213,10 +213,9 @@ All device-specific endpoints are namespaced by device ID:
 | `/api/v1/devices/{device}/preset/{id}` | POST ¹ | Play a firmware preset by animation ID |
 | `/api/v1/devices/{device}/background` | GET / PUT ¹ | Read or change the idle animation |
 | `/api/v1/devices/{device}/queue` | GET / DELETE ¹ | Inspect or clear the play queue |
-| `/api/v1/devices/{device}/matrix/clear` | POST ¹ | Discard the image and go dark |
+| `/api/v1/devices/{device}/matrix/clear` | POST ¹ | Discard the image and go dark (see the note below) |
 | `/api/v1/devices/{device}/matrix/brightness` | POST ¹ | Set global brightness (0–255) |
 | `/api/v1/devices/{device}/matrix/fill` | POST ¹ | Fill every pixel with one colour |
-| `/api/v1/devices/{device}/matrix/static` | POST ¹ | Hold a fixed colour (survives as display state) |
 | `/api/v1/devices/{device}/matrix/pixel` | POST ¹ | Set one pixel in display space |
 | `/api/v1/devices/{device}/matrix/panel` | POST ¹ | Blank or restore output, keeping the image |
 | `/api/v1/devices/{device}/matrix/preset` | POST ¹ | Run a firmware effect by ID |
@@ -230,6 +229,35 @@ All device-specific endpoints are namespaced by device ID:
 | `/healthz` | GET | Liveness |
 
 ¹ Requires `Authorization: Bearer <token>` when bound to a non-loopback address.
+
+### Going dark: which command actually sticks
+
+`matrix/clear` and `matrix/panel` are not interchangeable, and the difference is the
+opposite of what the names suggest:
+
+| | What the firmware does | With a background configured |
+| --- | --- | --- |
+| `matrix/clear` | zeroes the stored frame | **momentary** — marks the background dirty, so idle convergence repaints within one loop pass |
+| `matrix/panel` `{"enabled":false}` | keeps the stored frame, stops output | **durable** — the only dark state convergence leaves alone |
+
+So `clear` is the right verb for "forget the image", and `panel` is the right verb
+for "keep it dark". If you want `clear` to stick, turn off `restore_on_idle` for the
+device, or set the background to a `static_color` of `#000000`.
+
+### Repeating an animation
+
+`play` accepts `loop`: `none` (default), `until_deadline`, or `forever`. `forever`
+requires a `duration`, because without a deadline it never completes and holds the
+queue:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/devices/living-room/play \
+  -H "Content-Type: application/json" \
+  -d '{"animation": "spinner", "loop": "forever", "duration": "10s"}'
+```
+
+Animations of 8 frames or fewer can instead be uploaded to the device with
+`matrix/animation`, which loops them on-device with no network traffic.
 
 ### Upload an animation the device loops itself
 

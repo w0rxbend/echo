@@ -3767,19 +3767,18 @@ func TestMatrixPanelRequiresEnabledField(t *testing.T) {
 	}
 }
 
-func TestMatrixStaticColorUsesStaticColorCommand(t *testing.T) {
+// /matrix/static was removed: renderStatic in the firmware is the same
+// LedMatrixController::fill that 0x03 calls, so the route produced pixels no user
+// could distinguish from matrix/fill. Opcode 0x07 is retained for background
+// convergence only, which TestStaticColorBackgroundConvergesThroughStaticColorCommand
+// covers.
+func TestMatrixStaticRouteIsGone(t *testing.T) {
 	httpServer, matrixServer := startMatrixTestApp(t)
 
-	postMatrix(t, httpServer, "/matrix/static", `{"r":0,"g":68,"b":0}`, http.StatusOK)
+	postMatrix(t, httpServer, "/matrix/static", `{"r":0,"g":68,"b":0}`, http.StatusNotFound)
 
-	got := awaitCommandPayload(t, matrixServer, testCommandStaticColor)
-	if want := []byte{0, 68, 0}; !bytes.Equal(got, want) {
-		t.Fatalf("static colour payload = %v, want %v", got, want)
-	}
-	// A static colour must not degrade into a one-shot fill: fill does not survive
-	// as a display state on the device.
-	if got := matrixServer.CommandCount(testCommandFill); got != 0 {
-		t.Fatalf("fill command count = %d, want 0", got)
+	if got := matrixServer.CommandCount(testCommandStaticColor); got != 0 {
+		t.Fatalf("static colour command count = %d, want 0", got)
 	}
 }
 
@@ -4036,5 +4035,122 @@ func TestMatrixPixelAgreesWithFrameForEveryCoordinate(t *testing.T) {
 				t.Fatalf("display (%d,%d): pixel -> LED %d, frame -> LED %d", x, y, gotLED, wantLED)
 			}
 		}
+	}
+}
+
+// ── Loop policies ────────────────────────────────────────────────────────────
+//
+// LoopForever and LoopUntil were implemented in playItemLoopStrategies and
+// selectable from nowhere — no HTTP field, no rules key, no CLI flag — so no
+// animation could repeat at all. These pin the new surface.
+
+// loop=none stops when the frames run out; loop=forever keeps going until the
+// deadline. Asserting the difference avoids hard-coding a frame count: the
+// notification animation is 8 frames over 2s per pass, so a 3s looping budget must
+// produce strictly more frames than a non-looping pass can.
+func TestPlayAcceptsLoopForeverWithADuration(t *testing.T) {
+	httpServer, matrixServer := startMatrixTestApp(t)
+
+	countFrames := func(budget time.Duration) int {
+		seen := 0
+		deadline := time.After(budget)
+		for {
+			select {
+			case f := <-matrixServer.frames:
+				if f.Command == testCommandSetFrame {
+					seen++
+				}
+			case <-deadline:
+				return seen
+			}
+		}
+	}
+
+	// One pass: a generous duration does not make a non-looping item repeat.
+	postMatrix(t, httpServer, "/play", `{"animation":"notification","duration":"10s","restore":"leave"}`, http.StatusAccepted)
+	singlePass := countFrames(3 * time.Second)
+	if singlePass == 0 {
+		t.Fatal("no frames for a non-looping play item")
+	}
+
+	// Looping for longer than one pass must send more frames than that pass did.
+	postMatrix(t, httpServer, "/play", `{"animation":"notification","loop":"forever","duration":"3s","restore":"leave"}`, http.StatusAccepted)
+	looped := countFrames(4 * time.Second)
+	if looped <= singlePass {
+		t.Fatalf("loop=forever sent %d frames, a single pass sent %d; it did not repeat", looped, singlePass)
+	}
+}
+
+func TestPlayRejectsLoopForeverWithoutADuration(t *testing.T) {
+	httpServer, _ := startMatrixTestApp(t)
+	// Without a deadline LoopForever never completes and pins the queue.
+	postMatrix(t, httpServer, "/play", `{"animation":"notification","loop":"forever"}`, http.StatusBadRequest)
+}
+
+func TestPlayRejectsUnknownLoopPolicy(t *testing.T) {
+	httpServer, _ := startMatrixTestApp(t)
+	postMatrix(t, httpServer, "/play", `{"animation":"notification","loop":"for-ever"}`, http.StatusBadRequest)
+}
+
+func TestPlayDefaultsToNoLoop(t *testing.T) {
+	httpServer, _ := startMatrixTestApp(t)
+	postMatrix(t, httpServer, "/play", `{"animation":"notification","duration":"50ms","restore":"leave"}`, http.StatusAccepted)
+}
+
+func TestEventRejectsUnknownLoopAttribute(t *testing.T) {
+	httpServer, _ := startMatrixTestApp(t)
+	postMatrix(t, httpServer, "/events",
+		`{"source":"http","type":"notify","attributes":{"loop":"sometimes"}}`, http.StatusBadRequest)
+}
+
+// ── The blank restore policy was cut ─────────────────────────────────────────
+//
+// RestoreBlank sent Fill(black) and RestoreClear sends Clear; those are
+// bit-for-bit identical firmware state, so an author had no observable criterion
+// for choosing between them.
+func TestPlayRejectsTheRemovedBlankRestorePolicy(t *testing.T) {
+	httpServer, _ := startMatrixTestApp(t)
+	postMatrix(t, httpServer, "/play", `{"animation":"notification","restore":"blank"}`, http.StatusBadRequest)
+	postMatrix(t, httpServer, "/play", `{"animation":"notification","restore":"clear"}`, http.StatusAccepted)
+}
+
+// A looping item must terminate. applyMaxDuration only trims frames for a single
+// pass and never set PlayItem.Deadline, so both loop strategies tested a zero
+// deadline: LoopForever's exit test could never fire and LoopUntil's guard was
+// permanently true. Either pinned the play queue forever, which blocked every
+// subsequent control — a /matrix/clear issued afterwards would simply time out.
+func TestLoopingPlayItemTerminatesAndReleasesTheQueue(t *testing.T) {
+	httpServer, matrixServer := startMatrixTestApp(t)
+
+	for _, loop := range []string{"forever", "until_deadline"} {
+		t.Run(loop, func(t *testing.T) {
+			body := `{"animation":"notification","loop":"` + loop + `","duration":"150ms","restore":"leave"}`
+			postMatrix(t, httpServer, "/play", body, http.StatusAccepted)
+
+			// The queue must drain: a following control has to complete, not time out.
+			done := make(chan int, 1)
+			go func() {
+				resp, err := http.Post(httpServer.URL+"/api/v1/devices/default/matrix/clear", "application/json", bytes.NewBufferString(`{}`))
+				if err != nil {
+					done <- 0
+					return
+				}
+				defer resp.Body.Close()
+				done <- resp.StatusCode
+			}()
+
+			select {
+			case status := <-done:
+				if status != http.StatusOK {
+					t.Fatalf("clear after loop=%s returned %d, want 200", loop, status)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatalf("clear after loop=%s never completed; the looping item pinned the queue", loop)
+			}
+
+			if got := matrixServer.CommandCount(testCommandClear); got == 0 {
+				t.Fatalf("clear never reached the firmware after loop=%s", loop)
+			}
+		})
 	}
 }
