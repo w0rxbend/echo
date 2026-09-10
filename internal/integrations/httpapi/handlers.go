@@ -149,8 +149,8 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	_, deviceID := s.deviceFromRequest(r)
 
 	var event events.Event
-	if err := decodeJSON(r, &event); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if err := decodeJSON(w, r, &event); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	if event.Source == "" {
@@ -195,8 +195,8 @@ func (s *Server) handleNotify(w http.ResponseWriter, r *http.Request) {
 	_, deviceID := s.deviceFromRequest(r)
 
 	var req notifyRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	if _, err := parseOptionalDuration(req.Duration); err != nil {
@@ -262,8 +262,8 @@ func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	scheduler, _ := s.deviceFromRequest(r)
 
 	var req playRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	if req.Animation == "" {
@@ -442,8 +442,19 @@ func matrixControlStatus(r *http.Request, err error) int {
 	return http.StatusServiceUnavailable
 }
 
-func decodeJSON(r *http.Request, target any) error {
+// maxRequestBodyBytes caps how much of a request body the server will buffer.
+//
+// The event ingress routes (/events, /notify) are deliberately reachable without
+// an admin token, so an unauthenticated caller can reach this decoder. Without a
+// cap, a single well-formed but enormous document — an unbounded params map, or a
+// long frame list on the animation upload — is buffered in full before any
+// validation runs. 1 MiB is far above the largest legitimate request: a full
+// 8-frame animation upload with a palette is a few kilobytes.
+const maxRequestBodyBytes = 1 << 20
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
 	defer r.Body.Close()
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
@@ -453,6 +464,18 @@ func decodeJSON(r *http.Request, target any) error {
 		return errors.New("request body must contain a single JSON value")
 	}
 	return nil
+}
+
+// writeDecodeError reports a decodeJSON failure with the status that fits it:
+// 413 when the body exceeded maxRequestBodyBytes, 400 for anything malformed.
+func writeDecodeError(w http.ResponseWriter, err error) {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		writeError(w, http.StatusRequestEntityTooLarge,
+			fmt.Sprintf("request body exceeds %d bytes", tooLarge.Limit))
+		return
+	}
+	writeError(w, http.StatusBadRequest, err.Error())
 }
 
 func parseOptionalDuration(value string) (time.Duration, error) {
@@ -611,8 +634,8 @@ func (s *Server) handleSetBackground(w http.ResponseWriter, r *http.Request) {
 	scheduler, _ := s.deviceFromRequest(r)
 
 	var req backgroundConfigRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	if req.Animation != "" {
@@ -698,8 +721,8 @@ func (s *Server) handleMatrixClear(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMatrixBrightness(w http.ResponseWriter, r *http.Request) {
 	scheduler, _ := s.deviceFromRequest(r)
 	var req brightnessRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	if err := scheduler.SetBrightness(r.Context(), req.Value); err != nil {
@@ -727,8 +750,8 @@ func (s *Server) handleMatrixBrightness(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleMatrixPreset(w http.ResponseWriter, r *http.Request) {
 	scheduler, _ := s.deviceFromRequest(r)
 	var req presetRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	interval, err := parseOptionalDuration(req.Interval)
@@ -765,8 +788,8 @@ func (s *Server) handleMatrixPreset(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMatrixFill(w http.ResponseWriter, r *http.Request) {
 	scheduler, _ := s.deviceFromRequest(r)
 	var req colorRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	if err := scheduler.Fill(r.Context(), matrix.RGB{R: req.R, G: req.G, B: req.B}); err != nil {
@@ -794,8 +817,8 @@ func (s *Server) handleMatrixFill(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMatrixPixel(w http.ResponseWriter, r *http.Request) {
 	scheduler, _ := s.deviceFromRequest(r)
 	var req pixelRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	if err := scheduler.SetPixel(r.Context(), req.X, req.Y, matrix.RGB{R: req.R, G: req.G, B: req.B}); err != nil {
@@ -823,8 +846,8 @@ func (s *Server) handleMatrixPixel(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMatrixPanel(w http.ResponseWriter, r *http.Request) {
 	scheduler, _ := s.deviceFromRequest(r)
 	var req panelRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	if req.Enabled == nil {
@@ -856,8 +879,8 @@ func (s *Server) handleMatrixPanel(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMatrixAnimation(w http.ResponseWriter, r *http.Request) {
 	scheduler, _ := s.deviceFromRequest(r)
 	var req animationUploadRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 	frames, err := renderUploadedAnimation(req)
