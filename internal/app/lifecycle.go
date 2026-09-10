@@ -205,10 +205,17 @@ func (a *App) Run(ctx context.Context) error {
 		return a.runWorkersAdmitted(ctx)
 	})
 
+	// ReadHeaderTimeout alone only bounds the header phase: a client that
+	// completes its headers and then dribbles a body holds a connection and a
+	// goroutine indefinitely. Every handler here is fast — the slowest queues an
+	// item and returns — so a 30s whole-request budget is generous.
 	server := &http.Server{
 		Addr:              a.cfg.Server.Addr,
 		Handler:           a.router(),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	g.Go(func() error {
