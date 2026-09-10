@@ -352,15 +352,7 @@ func (a *App) closeResources() error {
 func (a *App) runHealthMetricsWorker(ctx context.Context) error {
 	a.syncHealthMetrics()
 
-	// Use the smallest heartbeat interval across all devices (or 1s default).
-	interval := time.Second
-	for _, d := range a.devices {
-		devCfg := a.cfg.Devices[d.id]
-		if devCfg != nil && devCfg.HeartbeatInterval > 0 && (interval == time.Second || devCfg.HeartbeatInterval < interval) {
-			interval = devCfg.HeartbeatInterval
-		}
-	}
-	ticker := time.NewTicker(interval)
+	ticker := time.NewTicker(a.healthMetricsInterval())
 	defer ticker.Stop()
 
 	for {
@@ -372,6 +364,30 @@ func (a *App) runHealthMetricsWorker(ctx context.Context) error {
 			a.syncHealthMetrics()
 		}
 	}
+}
+
+// healthMetricsInterval returns the smallest configured device heartbeat
+// interval, falling back to one second when no device configures one.
+//
+// The "not yet chosen" marker has to be the zero value rather than the fallback:
+// using time.Second as the sentinel made a device configured at exactly 1s
+// indistinguishable from an unset interval, so a later, larger interval in the
+// slice replaced it and the ticker ran slower than the fastest device.
+func (a *App) healthMetricsInterval() time.Duration {
+	var interval time.Duration
+	for _, d := range a.devices {
+		devCfg := a.cfg.Devices[d.id]
+		if devCfg == nil || devCfg.HeartbeatInterval <= 0 {
+			continue
+		}
+		if interval == 0 || devCfg.HeartbeatInterval < interval {
+			interval = devCfg.HeartbeatInterval
+		}
+	}
+	if interval <= 0 {
+		return time.Second
+	}
+	return interval
 }
 
 func (a *App) syncHealthMetrics() {
