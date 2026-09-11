@@ -396,7 +396,7 @@ func TestMetricsExposeTCPImmediateReconnectFailureWhenRetryTransportFails(t *tes
 		if status != http.StatusOK && status != http.StatusBadGateway {
 			t.Fatalf("POST /matrix/fill status = %d, want %d or %d; fill command count = %d", status, http.StatusOK, http.StatusBadGateway, matrixServer.CommandCount(testCommandFill))
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(testBudget(2 * time.Second)):
 		t.Fatal("POST /matrix/fill did not return after retry transport failure")
 	}
 
@@ -776,7 +776,7 @@ func TestNotifyStreamsFramesAndRestoresBackground(t *testing.T) {
 	var sawFrame bool
 	var sawPreset bool
 	var commandCount int
-	deadline := time.After(3 * time.Second)
+	deadline := time.After(testBudget(3 * time.Second))
 	for !sawFrame || !sawPreset {
 		select {
 		case frame := <-matrixServer.frames:
@@ -1517,7 +1517,7 @@ func TestEventsAnimationOverrideValidatesPlayableAnimationBeforePublish(t *testi
 					if got := event.Attributes["animation"]; got != tt.animation {
 						t.Fatalf("published attributes.animation = %q, want %q", got, tt.animation)
 					}
-				case <-time.After(time.Second):
+				case <-time.After(testBudget(time.Second)):
 					t.Fatal("timed out waiting for accepted event to publish")
 				}
 				return
@@ -1526,7 +1526,7 @@ func TestEventsAnimationOverrideValidatesPlayableAnimationBeforePublish(t *testi
 			select {
 			case event := <-ch:
 				t.Fatalf("invalid animation override was published to async event path: %#v", event)
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(testBudget(50 * time.Millisecond)):
 			}
 		})
 	}
@@ -1605,7 +1605,7 @@ func TestEventsOverrideValidationRejectsInvalidRestoreAndDurationBeforePublish(t
 			select {
 			case event := <-ch:
 				t.Fatalf("invalid override event was published to async event path: %#v", event)
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(testBudget(50 * time.Millisecond)):
 			}
 		})
 	}
@@ -1666,7 +1666,7 @@ func TestEventsOverrideValidationAllowsCustomAttributesBeforePublish(t *testing.
 				t.Fatalf("published attributes[%q] = %q, want %q; all attributes = %#v", key, got, value, event.Attributes)
 			}
 		}
-	case <-time.After(time.Second):
+	case <-time.After(testBudget(time.Second)):
 		t.Fatal("timed out waiting for accepted event to publish")
 	}
 }
@@ -1790,7 +1790,7 @@ func TestEventsInvalidInterruptModeRejectedAtIngress(t *testing.T) {
 	select {
 	case event := <-ch:
 		t.Fatalf("invalid interrupt_mode event was published to async event path: %#v", event)
-	case <-time.After(50 * time.Millisecond):
+	case <-time.After(testBudget(50 * time.Millisecond)):
 	}
 }
 
@@ -1837,7 +1837,7 @@ func TestEventsValidInterruptModePassesIngress(t *testing.T) {
 		if got := event.Attributes["interrupt_mode"]; got != "higher_priority" {
 			t.Fatalf("published attributes.interrupt_mode = %q, want %q", got, "higher_priority")
 		}
-	case <-time.After(time.Second):
+	case <-time.After(testBudget(time.Second)):
 		t.Fatal("timed out waiting for accepted event to publish")
 	}
 }
@@ -1888,7 +1888,7 @@ func TestEventsSchemaAgnosticAttributesPassInterruptValidation(t *testing.T) {
 		if got := event.Attributes["x-custom"]; got != "val" {
 			t.Fatalf("published attributes[x-custom] = %q, want %q", got, "val")
 		}
-	case <-time.After(time.Second):
+	case <-time.After(testBudget(time.Second)):
 		t.Fatal("timed out waiting for accepted event to publish")
 	}
 }
@@ -1931,7 +1931,7 @@ func TestPlayHigherPriorityInterruptEvictsQueuedLowerPriorityItems(t *testing.T)
 	waitForMatrixCommand(t, matrixServer, testCommandSetFrame)
 	select {
 	case <-pausedFrameResponse:
-	case <-time.After(time.Second):
+	case <-time.After(testBudget(time.Second)):
 		t.Fatal("timed out waiting for first frame response to pause")
 	}
 
@@ -2178,7 +2178,7 @@ func TestMatrixFillWaitsForCurrentAnimationThroughScheduler(t *testing.T) {
 
 	var commands []recordedFrame
 	var sawFirstFrame bool
-	deadline := time.After(3 * time.Second)
+	deadline := time.After(testBudget(3 * time.Second))
 	for !sawFirstFrame {
 		select {
 		case frame := <-matrixServer.frames:
@@ -2192,7 +2192,7 @@ func TestMatrixFillWaitsForCurrentAnimationThroughScheduler(t *testing.T) {
 	}
 	select {
 	case <-pausedFrameResponse:
-	case <-time.After(time.Second):
+	case <-time.After(testBudget(time.Second)):
 		t.Fatal("timed out waiting for first frame response to pause")
 	}
 
@@ -2217,7 +2217,7 @@ func TestMatrixFillWaitsForCurrentAnimationThroughScheduler(t *testing.T) {
 
 	framesBeforeFill := 0
 	sawFill := false
-	deadline = time.After(3 * time.Second)
+	deadline = time.After(testBudget(3 * time.Second))
 	for !sawFill {
 		select {
 		case frame := <-matrixServer.frames:
@@ -2248,7 +2248,7 @@ func TestMatrixFillWaitsForCurrentAnimationThroughScheduler(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(testBudget(time.Second)):
 		t.Fatal("POST /matrix/fill did not return after scheduled execution")
 	}
 
@@ -2337,7 +2337,7 @@ func TestMatrixControlsConvergeToConfiguredBackgroundAfterHTTPControl(t *testing
 			})
 			select {
 			case <-pausedResponse:
-			case <-time.After(time.Second):
+			case <-time.After(testBudget(time.Second)):
 				t.Fatal("timed out waiting for fake ESP to pause the requested control response")
 			}
 			select {
@@ -2397,7 +2397,7 @@ func TestMatrixPresetDurationBoundReturnsBadRequest(t *testing.T) {
 	waitForMatrixCommand(t, matrixServer, testCommandSetFrame)
 	select {
 	case <-pausedFrameResponse:
-	case <-time.After(time.Second):
+	case <-time.After(testBudget(time.Second)):
 		t.Fatal("timed out waiting for first frame response to pause")
 	}
 
@@ -2519,7 +2519,7 @@ func TestQueueClearUnblocksWaitingMatrixControl(t *testing.T) {
 	waitForMatrixCommand(t, matrixServer, testCommandSetFrame)
 	select {
 	case <-pausedFrameResponse:
-	case <-time.After(time.Second):
+	case <-time.After(testBudget(time.Second)):
 		t.Fatal("timed out waiting for first frame response to pause")
 	}
 
@@ -2546,7 +2546,7 @@ func TestQueueClearUnblocksWaitingMatrixControl(t *testing.T) {
 		if status != http.StatusServiceUnavailable {
 			t.Fatalf("POST /matrix/fill status = %d, want %d", status, http.StatusServiceUnavailable)
 		}
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(testBudget(500 * time.Millisecond)):
 		t.Fatal("POST /matrix/fill did not return promptly after queue clear")
 	}
 }
@@ -2583,7 +2583,7 @@ func TestQueueInspectionAndClearCoverMixedSchedulerOwnedQueue(t *testing.T) {
 	waitForMatrixCommand(t, matrixServer, testCommandSetFrame)
 	select {
 	case <-pausedFrameResponse:
-	case <-time.After(time.Second):
+	case <-time.After(testBudget(time.Second)):
 		t.Fatal("timed out waiting for first frame response to pause")
 	}
 
@@ -2685,7 +2685,7 @@ func TestQueueInspectionAndClearCoverMixedSchedulerOwnedQueue(t *testing.T) {
 		if status != http.StatusServiceUnavailable {
 			t.Fatalf("POST /matrix/fill status = %d, want %d", status, http.StatusServiceUnavailable)
 		}
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(testBudget(500 * time.Millisecond)):
 		t.Fatal("POST /matrix/fill did not return promptly after mixed queue clear")
 	}
 }
@@ -2798,7 +2798,7 @@ func runAppWorkersWithContext(t *testing.T, application *app.App, ctx context.Co
 
 func shutdownAppWorkers(t *testing.T, application *app.App, done <-chan error) {
 	t.Helper()
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), testBudget(time.Second))
 	defer cancel()
 
 	shutdownErr := application.Shutdown(shutdownCtx)
@@ -2810,7 +2810,7 @@ func shutdownAppWorkers(t *testing.T, application *app.App, done <-chan error) {
 		if runErr != nil {
 			t.Fatalf("RunWorkers() error = %v", runErr)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(testBudget(time.Second)):
 		if shutdownErr != nil {
 			t.Fatalf("Shutdown() error = %v; RunWorkers() did not stop", shutdownErr)
 		}
@@ -2820,7 +2820,7 @@ func shutdownAppWorkers(t *testing.T, application *app.App, done <-chan error) {
 
 func shutdownAppWorkersExpectingError(t *testing.T, application *app.App, done <-chan error, want error) {
 	t.Helper()
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), testBudget(time.Second))
 	defer cancel()
 
 	shutdownErr := application.Shutdown(shutdownCtx)
@@ -2832,7 +2832,7 @@ func shutdownAppWorkersExpectingError(t *testing.T, application *app.App, done <
 		if !errors.Is(runErr, want) {
 			t.Fatalf("RunWorkers() error = %v, want %v", runErr, want)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(testBudget(time.Second)):
 		if shutdownErr != nil {
 			t.Fatalf("Shutdown() error = %v; RunWorkers() did not stop", shutdownErr)
 		}
@@ -2842,7 +2842,7 @@ func shutdownAppWorkersExpectingError(t *testing.T, application *app.App, done <
 
 func shutdownApp(t *testing.T, application *app.App) {
 	t.Helper()
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), testBudget(time.Second))
 	defer cancel()
 	if err := application.Shutdown(shutdownCtx); err != nil {
 		t.Fatalf("Shutdown() error = %v", err)
@@ -2856,7 +2856,7 @@ func waitAppWorkers(t *testing.T, done <-chan error) {
 		if err != nil {
 			t.Fatalf("RunWorkers() error = %v", err)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(testBudget(time.Second)):
 		t.Fatal("RunWorkers() did not stop")
 	}
 }
@@ -3156,7 +3156,7 @@ func assertNoJSONFields(t *testing.T, raw map[string]json.RawMessage, fields ...
 
 func waitForMatrixCommand(t *testing.T, server *fakeESPServer, command byte) recordedFrame {
 	t.Helper()
-	deadline := time.After(2 * time.Second)
+	deadline := time.After(testBudget(2 * time.Second))
 	for {
 		select {
 		case frame := <-server.frames:
@@ -3169,9 +3169,19 @@ func waitForMatrixCommand(t *testing.T, server *fakeESPServer, command byte) rec
 	}
 }
 
+// testBudget scales a wall-clock budget for the machine the tests are on.
+//
+// Every budget in this file bounds a wait on real goroutines and real loopback
+// I/O rather than on computation, so the right value depends on how contended
+// the machine is. Scaling in one place keeps the numbers at the call sites
+// readable as intent -- "about a second" -- instead of tuned constants.
+func testBudget(d time.Duration) time.Duration {
+	return d * testBudgetScale
+}
+
 func waitForMatrixCommandMatching(t *testing.T, server *fakeESPServer, description string, match func(recordedFrame) bool) recordedFrame {
 	t.Helper()
-	deadline := time.After(2 * time.Second)
+	deadline := time.After(testBudget(2 * time.Second))
 	for {
 		select {
 		case frame := <-server.frames:
@@ -3195,7 +3205,7 @@ func waitForHTTPControlResult(t *testing.T, done <-chan httpControlResult, path 
 	select {
 	case result := <-done:
 		return result
-	case <-time.After(time.Second):
+	case <-time.After(testBudget(time.Second)):
 		t.Fatalf("POST %s did not return after fake ESP acknowledged requested control", path)
 	}
 	return httpControlResult{}
@@ -3706,7 +3716,7 @@ func postMatrix(t *testing.T, httpServer *httptest.Server, path, body string, wa
 // returns its payload.
 func awaitCommandPayload(t *testing.T, matrixServer *fakeESPServer, command byte) []byte {
 	t.Helper()
-	deadline := time.After(3 * time.Second)
+	deadline := time.After(testBudget(3 * time.Second))
 	for {
 		select {
 		case frame := <-matrixServer.frames:
@@ -4144,7 +4154,7 @@ func TestLoopingPlayItemTerminatesAndReleasesTheQueue(t *testing.T) {
 				if status != http.StatusOK {
 					t.Fatalf("clear after loop=%s returned %d, want 200", loop, status)
 				}
-			case <-time.After(5 * time.Second):
+			case <-time.After(testBudget(5 * time.Second)):
 				t.Fatalf("clear after loop=%s never completed; the looping item pinned the queue", loop)
 			}
 
