@@ -45,20 +45,12 @@ type appLifecycleSnapshot struct {
 	draining       bool
 }
 
-type startWorkersTransition func(l *appLifecycle, cancel context.CancelFunc) error
-type closeTransition func(l *appLifecycle) (bool, error)
+func (l *appLifecycle) startWorkers(cancel context.CancelFunc) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 
-var startWorkersTransitions = map[appLifecycleState]startWorkersTransition{
-	appLifecycleClosed: func(l *appLifecycle, cancel context.CancelFunc) error {
-		return ErrAppClosed
-	},
-	appLifecycleStopped: func(l *appLifecycle, cancel context.CancelFunc) error {
-		return ErrAppClosed
-	},
-	appLifecycleRunning: func(l *appLifecycle, cancel context.CancelFunc) error {
-		return ErrAppRunning
-	},
-	appLifecycleNeverRun: func(l *appLifecycle, cancel context.CancelFunc) error {
+	switch l.state {
+	case appLifecycleNeverRun:
 		if l.shutdownRequested {
 			return ErrAppClosed
 		}
@@ -68,37 +60,13 @@ var startWorkersTransitions = map[appLifecycleState]startWorkersTransition{
 		l.workerDone = make(chan struct{})
 		l.workerErr = nil
 		return nil
-	},
-}
-
-var closeTransitions = map[appLifecycleState]closeTransition{
-	appLifecycleClosed: func(l *appLifecycle) (bool, error) {
-		return false, nil
-	},
-	appLifecycleRunning: func(l *appLifecycle) (bool, error) {
-		return false, ErrAppRunning
-	},
-	appLifecycleStopped: func(l *appLifecycle) (bool, error) {
-		l.state = appLifecycleClosed
-		l.draining = true
-		return true, nil
-	},
-	appLifecycleNeverRun: func(l *appLifecycle) (bool, error) {
-		l.state = appLifecycleClosed
-		l.draining = true
-		return true, nil
-	},
-}
-
-func (l *appLifecycle) startWorkers(cancel context.CancelFunc) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	transition, ok := startWorkersTransitions[l.state]
-	if !ok {
+	case appLifecycleRunning:
+		return ErrAppRunning
+	case appLifecycleStopped, appLifecycleClosed:
+		return ErrAppClosed
+	default:
 		return ErrAppClosed
 	}
-	return transition(l, cancel)
 }
 
 func (l *appLifecycle) markDraining() {
@@ -130,18 +98,19 @@ func (l *appLifecycle) close() (bool, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	transition, ok := closeTransitions[l.state]
-	if !ok {
+	switch l.state {
+	case appLifecycleClosed:
+		// Already closed; Close is documented as safe to call repeatedly.
+		return false, nil
+	case appLifecycleRunning:
+		return false, ErrAppRunning
+	default:
+		// Never run, stopped, or an unreachable state: closing is valid and the
+		// resources are the caller's to release.
 		l.state = appLifecycleClosed
 		l.draining = true
 		return true, nil
 	}
-	success, err := transition(l)
-	if success {
-		l.state = appLifecycleClosed
-		l.draining = true
-	}
-	return success, err
 }
 
 func (l *appLifecycle) beginShutdown() (chan struct{}, context.CancelFunc, bool) {
@@ -296,7 +265,7 @@ func (a *App) Close() error {
 		return nil
 	}
 
-	return errors.Join(err, a.closeResources())
+	return a.closeResources()
 }
 
 // Shutdown coordinates worker cancellation and releases app-owned resources.
