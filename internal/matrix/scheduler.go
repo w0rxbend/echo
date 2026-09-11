@@ -1027,25 +1027,43 @@ func (s *Scheduler) ResolveRequest(ctx context.Context, request animations.Anima
 	}, nil
 }
 
+// stoppedByContext reports whether err means the run context ended rather than
+// the operation itself failing.
+func stoppedByContext(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// itemDisposition says what Run should do once an item has finished.
+type itemDisposition uint8
+
+const (
+	// itemNext: take the next item.
+	itemNext itemDisposition = iota
+	// itemDrain: the run context is done; stop cleanly.
+	itemDrain
+	// itemFail: stop and report the error.
+	itemFail
+)
+
 func (s *Scheduler) Run(ctx context.Context) error {
 	defer s.Close()
 	defer s.completeQueuedControls(ErrSchedulerStopped)
 
 	if err := s.waitReady(ctx, time.Time{}); err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		if stoppedByContext(err) {
 			s.setState(StateDraining)
 			return nil
 		}
 		return err
 	}
+
 	deferBackgroundRestore := false
-runLoop:
 	for {
 		if deferBackgroundRestore {
 			deferBackgroundRestore = false
 		} else if s.shouldApplyDesiredBackground() && s.queue.len() == 0 {
 			if err := s.applyDesiredBackground(ctx, false); err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				if stoppedByContext(err) {
 					s.setState(StateDraining)
 					return nil
 				}
@@ -1060,9 +1078,10 @@ runLoop:
 		if s.queue.len() == 0 {
 			s.notifyIdle()
 		}
+
 		item, ok, err := s.nextItemOrHeartbeat(ctx)
 		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			if stoppedByContext(err) {
 				s.setState(StateDraining)
 				return nil
 			}
@@ -1070,7 +1089,7 @@ runLoop:
 		}
 		if !ok {
 			if err := s.heartbeat(ctx); err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				if stoppedByContext(err) {
 					s.setState(StateDraining)
 					return nil
 				}
@@ -1078,6 +1097,7 @@ runLoop:
 			}
 			continue
 		}
+
 		if s.expired(item.PlayItem) {
 			if item.Control != nil {
 				s.completeControlWithOutcome(item, ErrPlayItemExpired, 0)
@@ -1088,136 +1108,151 @@ runLoop:
 		}
 
 		if item.Control != nil {
-			if item.Control.isCompleted() {
-				continue
-			}
-			if err := item.Control.ctxErr(); err != nil {
-				s.completeControlWithOutcome(item, err, 0)
-				continue
-			}
-			err = s.controlTerminalError(ctx, s.executeControl(ctx, item.Control))
-			s.completeControlWithOutcome(item, err, 0)
-			if ctx.Err() != nil {
+			if !s.runControl(ctx, item) {
 				s.setState(StateDraining)
 				return nil
 			}
-			s.setState(StateReady)
 			continue
 		}
 
-		preItemState := s.snapshotDisplayState()
-		// Ordinary playback is transient. Once a playback item is selected,
-		// the configured background is again the desired eventual idle state;
-		// item restore policies may affect only the immediate post-playback
-		// display unless they explicitly force a background restore.
-		s.markDesiredBackgroundDirty()
-		var terminalErr error
-		itemCtx, itemCancel := context.WithCancelCause(ctx)
-		s.mu.Lock()
-		s.currentItemCancel = itemCancel
-		s.currentItemPriority = item.Priority
-		s.mu.Unlock()
-		for {
-			if s.expired(item.PlayItem) {
-				terminalErr = ErrPlayItemExpired
-				break
-			}
-
-			s.setState(StatePlayingTransient)
-			err = s.playItem(itemCtx, item.PlayItem)
-			if err == nil {
-				if restoreErr := s.restore(ctx, item.RestorePolicy, preItemState); restoreErr != nil {
-					terminalErr = s.animationTerminalError(ctx, restoreErr)
-					if errors.Is(terminalErr, ErrSchedulerStopped) {
-						s.setState(StateDraining)
-						itemCancel(nil)
-						s.clearCurrentItemCancel()
-						s.completeAnimationWithOutcome(item, terminalErr, 0)
-						return nil
-					}
-					s.setState(StateReady)
-					itemCancel(nil)
-					s.clearCurrentItemCancel()
-					s.completeAnimationWithOutcome(item, terminalErr, 0)
-					if errors.Is(terminalErr, context.Canceled) || errors.Is(terminalErr, context.DeadlineExceeded) || errors.Is(terminalErr, ErrPlayItemExpired) {
-						continue runLoop
-					}
-					return restoreErr
-				}
-				s.setState(StateReady)
-				terminalErr = nil
-				break
-			}
-			if errors.Is(err, ErrEmptyAnimation) || errors.Is(err, ErrPlayItemExpired) {
-				s.setState(StateReady)
-				terminalErr = err
-				break
-			}
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				if context.Cause(itemCtx) == ErrItemInterrupted {
-					terminalErr = ErrItemInterrupted
-				} else {
-					terminalErr = s.animationTerminalError(ctx, err)
-				}
-				if errors.Is(terminalErr, ErrSchedulerStopped) {
-					s.setState(StateDraining)
-					itemCancel(nil)
-					s.clearCurrentItemCancel()
-					s.completeAnimationWithOutcome(item, terminalErr, 0)
-					return nil
-				}
-				s.setState(StateReady)
-				break
-			}
-			if IsPermanentError(ctx, err) {
-				itemCancel(nil)
-				s.clearCurrentItemCancel()
-				s.completeAnimationWithOutcome(item, err, 0)
-				return err
-			}
-			s.markMatrixFailure(StateDisconnected)
-			if err := s.waitReady(ctx, item.PlayItem.Deadline); err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrPlayItemExpired) {
-					terminalErr = s.animationTerminalError(ctx, err)
-					if errors.Is(terminalErr, ErrSchedulerStopped) {
-						s.setState(StateDraining)
-					}
-					break
-				}
-				itemCancel(nil)
-				s.clearCurrentItemCancel()
-				s.completeAnimationWithOutcome(item, err, 0)
-				return err
-			}
+		switch disposition, err := s.playScheduledItem(ctx, item); disposition {
+		case itemNext:
+			continue
+		case itemDrain:
+			return nil
+		default:
+			return err
 		}
+	}
+}
+
+// runControl executes one queued control item and records its outcome. It
+// reports whether the run should continue; false means the context ended while
+// the control was in flight.
+func (s *Scheduler) runControl(ctx context.Context, item ScheduledItem) bool {
+	if item.Control.isCompleted() {
+		return true
+	}
+	if err := item.Control.ctxErr(); err != nil {
+		s.completeControlWithOutcome(item, err, 0)
+		return true
+	}
+
+	err := s.terminalError(ctx, s.executeControl(ctx, item.Control))
+	s.completeControlWithOutcome(item, err, 0)
+	if ctx.Err() != nil {
+		return false
+	}
+	s.setState(StateReady)
+	return true
+}
+
+// playScheduledItem plays one animation item to completion and says what Run
+// should do next.
+//
+// Releasing the per-item cancel func and recording the item's outcome happens
+// once, in a defer, instead of at each of the five exits this loop used to
+// have -- where every new exit was a chance to leak the cancel func or drop the
+// outcome record.
+//
+// The value the item is recorded as finishing with is not always the value Run
+// is told to fail with: a failed restore records the classified terminal error
+// but surfaces the raw restore error to the caller.
+func (s *Scheduler) playScheduledItem(ctx context.Context, item ScheduledItem) (itemDisposition, error) {
+	preItemState := s.snapshotDisplayState()
+	// Ordinary playback is transient. Once a playback item is selected, the
+	// configured background is again the desired eventual idle state; item
+	// restore policies may affect only the immediate post-playback display
+	// unless they explicitly force a background restore.
+	s.markDesiredBackgroundDirty()
+
+	itemCtx, itemCancel := context.WithCancelCause(ctx)
+	s.mu.Lock()
+	s.currentItemCancel = itemCancel
+	s.currentItemPriority = item.Priority
+	s.mu.Unlock()
+
+	var outcomeErr error
+	defer func() {
 		itemCancel(nil)
 		s.clearCurrentItemCancel()
-		s.completeAnimationWithOutcome(item, terminalErr, 0)
+		s.completeAnimationWithOutcome(item, outcomeErr, 0)
+	}()
+
+	for {
+		if s.expired(item.PlayItem) {
+			outcomeErr = ErrPlayItemExpired
+			return itemNext, nil
+		}
+
+		s.setState(StatePlayingTransient)
+		err := s.playItem(itemCtx, item.PlayItem)
+
+		switch {
+		case err == nil:
+			restoreErr := s.restore(ctx, item.RestorePolicy, preItemState)
+			if restoreErr == nil {
+				s.setState(StateReady)
+				outcomeErr = nil
+				return itemNext, nil
+			}
+			outcomeErr = s.terminalError(ctx, restoreErr)
+			if errors.Is(outcomeErr, ErrSchedulerStopped) {
+				s.setState(StateDraining)
+				return itemDrain, nil
+			}
+			s.setState(StateReady)
+			if stoppedByContext(outcomeErr) || errors.Is(outcomeErr, ErrPlayItemExpired) {
+				return itemNext, nil
+			}
+			return itemFail, restoreErr
+
+		case errors.Is(err, ErrEmptyAnimation) || errors.Is(err, ErrPlayItemExpired):
+			s.setState(StateReady)
+			outcomeErr = err
+			return itemNext, nil
+
+		case stoppedByContext(err):
+			if context.Cause(itemCtx) == ErrItemInterrupted {
+				outcomeErr = ErrItemInterrupted
+			} else {
+				outcomeErr = s.terminalError(ctx, err)
+			}
+			if errors.Is(outcomeErr, ErrSchedulerStopped) {
+				s.setState(StateDraining)
+				return itemDrain, nil
+			}
+			s.setState(StateReady)
+			return itemNext, nil
+
+		case IsPermanentError(ctx, err):
+			outcomeErr = err
+			return itemFail, err
+		}
+
+		s.markMatrixFailure(StateDisconnected)
+		if waitErr := s.waitReady(ctx, item.PlayItem.Deadline); waitErr != nil {
+			if stoppedByContext(waitErr) || errors.Is(waitErr, ErrPlayItemExpired) {
+				outcomeErr = s.terminalError(ctx, waitErr)
+				if errors.Is(outcomeErr, ErrSchedulerStopped) {
+					s.setState(StateDraining)
+				}
+				return itemNext, nil
+			}
+			outcomeErr = waitErr
+			return itemFail, waitErr
+		}
 	}
 }
 
-func (s *Scheduler) animationTerminalError(runCtx context.Context, err error) error {
+// terminalError reports a context-shaped failure as ErrSchedulerStopped when
+// the run context is what ended, and passes anything else through unchanged.
+func (s *Scheduler) terminalError(runCtx context.Context, err error) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		if runCtx.Err() != nil {
-			return ErrSchedulerStopped
-		}
-		return err
-	}
-	return err
-}
-
-func (s *Scheduler) controlTerminalError(runCtx context.Context, err error) error {
-	if err == nil {
-		return nil
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		if runCtx.Err() != nil {
-			return ErrSchedulerStopped
-		}
-		return err
+	if stoppedByContext(err) && runCtx.Err() != nil {
+		return ErrSchedulerStopped
 	}
 	return err
 }
