@@ -7,6 +7,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 )
@@ -72,19 +73,30 @@ func (s *Server) HandleSwagger(w http.ResponseWriter, r *http.Request) {
 
 // HandleDocs serves Swagger UI backed by the spec at /openapi.json.
 func (s *Server) HandleDocs(w http.ResponseWriter, r *http.Request) {
-	specURL := fmt.Sprintf("%s://%s/openapi.json", scheme(r), r.Host)
+	// A same-origin relative URL, not one built from the request. The template
+	// interpolates into a JS string with %q, which escapes quotes but not
+	// "</script>", and both r.Host and X-Forwarded-Proto are attacker-controlled
+	// -- so building the URL from them put a reflected XSS in the docs page.
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = fmt.Fprintf(w, swaggerUITemplate, specURL)
+	_, _ = io.WriteString(w, swaggerUI)
 }
 
+// scheme reports the scheme to advertise in the spec's "servers" entry.
+//
+// X-Forwarded-Proto is set by whatever spoke to us last, so only the two values
+// that mean anything here are honoured; anything else is treated as absent.
 func scheme(r *http.Request) string {
 	if r.TLS != nil {
 		return "https"
 	}
-	if fwd := r.Header.Get("X-Forwarded-Proto"); fwd != "" {
-		return fwd
+	switch r.Header.Get("X-Forwarded-Proto") {
+	case "https":
+		return "https"
+	case "http":
+		return "http"
+	default:
+		return "http"
 	}
-	return "http"
 }
 
 // cloneTopLevel returns a shallow copy of the top-level map so per-request
@@ -97,7 +109,7 @@ func cloneTopLevel(m map[string]any) map[string]any {
 	return out
 }
 
-const swaggerUITemplate = `<!DOCTYPE html>
+const swaggerUI = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -114,7 +126,7 @@ const swaggerUITemplate = `<!DOCTYPE html>
   <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
   <script>
     SwaggerUIBundle({
-      url: %q,
+      url: "/openapi.json",
       dom_id: '#swagger-ui',
       presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
       layout: 'BaseLayout',
