@@ -1256,7 +1256,7 @@ func (s *Scheduler) heartbeat(ctx context.Context) error {
 		}
 		s.reportProbeFailure(ctx, err, probeTimedOut)
 		if s.classifyProbeError(ctx, err) == ErrorKindPermanent {
-			return err
+			return cancellationOr(ctx, err)
 		}
 		s.markMatrixFailure(StateDisconnected)
 		return nil
@@ -2017,7 +2017,7 @@ func (s *Scheduler) waitReady(ctx context.Context, deadline time.Time) error {
 				return ErrPlayItemExpired
 			}
 			if _, ok := probeRetryableKinds[s.classifyProbeError(ctx, err)]; !ok {
-				return err
+				return cancellationOr(ctx, err)
 			}
 		}
 		s.markMatrixFailure(StateDisconnected)
@@ -2143,6 +2143,27 @@ func defaultReconnectJitter(base time.Duration) time.Duration {
 		return base
 	}
 	return base - time.Duration(rand.Int63n(int64(window)+1))
+}
+
+// cancellationOr reports ctx's own error in place of err once ctx is done.
+//
+// Both classifiers treat every error as permanent the moment the context is
+// cancelled, so an ordinary "connection refused" from a probe that raced
+// cancellation is indistinguishable from a genuine permanent failure. Checking
+// the context before the probe is not enough: cancellation can land between
+// that check and the classification, and then a retryable transport error
+// escapes Run as a real failure -- which is how Shutdown came to report a
+// connection error for a device the caller had just deliberately stopped.
+//
+// Anywhere a "permanent" verdict would end the run, ask the context first.
+func cancellationOr(ctx context.Context, err error) error {
+	if ctx == nil {
+		return err
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	return err
 }
 
 func (s *Scheduler) classifyProbeError(ctx context.Context, err error) ErrorKind {
