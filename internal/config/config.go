@@ -119,7 +119,7 @@ func (c Config) Validate() error {
 		return errors.New("server.addr is required")
 	}
 	if len(c.Devices) == 0 {
-		return errors.New("at least one device is required under devices:")
+		return errors.New("config needs at least one entry under devices")
 	}
 	for id, device := range c.Devices {
 		if err := validateDeviceID(id); err != nil {
@@ -193,7 +193,8 @@ func validateDeviceID(id string) error {
 		return errors.New("device id cannot be empty")
 	}
 	for _, r := range id {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_') {
+		alphanumeric := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+		if !alphanumeric && r != '-' && r != '_' {
 			return fmt.Errorf("device id %q contains invalid character %q (only alphanumeric, hyphens, underscores allowed)", id, string(r))
 		}
 	}

@@ -703,7 +703,7 @@ func (s *Scheduler) playScheduledItem(ctx context.Context, item ScheduledItem) (
 			return itemNext, nil
 
 		case stoppedByContext(err):
-			if context.Cause(itemCtx) == ErrItemInterrupted {
+			if errors.Is(context.Cause(itemCtx), ErrItemInterrupted) {
 				outcomeErr = ErrItemInterrupted
 			} else {
 				outcomeErr = s.terminalError(ctx, err)
@@ -721,7 +721,7 @@ func (s *Scheduler) playScheduledItem(ctx context.Context, item ScheduledItem) (
 		}
 
 		s.markMatrixFailure(StateDisconnected)
-		if waitErr := s.waitReady(ctx, item.PlayItem.Deadline); waitErr != nil {
+		if waitErr := s.waitReady(ctx, item.Deadline); waitErr != nil {
 			if stoppedByContext(waitErr) || errors.Is(waitErr, ErrPlayItemExpired) {
 				outcomeErr = s.terminalError(ctx, waitErr)
 				if errors.Is(outcomeErr, ErrSchedulerStopped) {

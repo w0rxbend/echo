@@ -79,6 +79,7 @@ func TestRunTreatsCancellationDuringProbeFailureAsShutdown(t *testing.T) {
 func TestCancellationOrPrefersTheContextError(t *testing.T) {
 	refused := &net0pErr{}
 
+	//nolint:staticcheck // SA1012: passing nil is the branch under test.
 	if got := cancellationOr(nil, refused); !errors.Is(got, syscall.ECONNREFUSED) {
 		t.Errorf("cancellationOr(nil, err) = %v, want the original error", got)
 	}

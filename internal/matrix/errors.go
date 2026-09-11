@@ -92,10 +92,7 @@ func isPermanentMatrixError(err error) bool {
 		return true
 	}
 	var statusErr *StatusError
-	if errors.As(err, &statusErr) {
-		return true
-	}
-	return false
+	return errors.As(err, &statusErr)
 }
 
 func isRetryableTransportError(err error) bool {
@@ -117,9 +114,26 @@ func isRetryableTransportError(err error) bool {
 		return true
 	}
 
-	var netErr net.Error
-	if errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary()) {
+	// A transient resolver failure must stay retryable: the device is addressed
+	// by host name in most deployments, and treating a DNS hiccup as permanent
+	// ends the scheduler run instead of reconnecting. DNSError.IsTemporary is
+	// the non-deprecated way to ask.
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) && dnsErr.IsTemporary {
 		return true
 	}
-	return false
+
+	var netErr net.Error
+	if !errors.As(err, &netErr) {
+		return false
+	}
+	if netErr.Timeout() {
+		return true
+	}
+	// Temporary is deprecated because it is ill-defined in general, but this is
+	// the one question being asked -- may this be retried -- and a net.Error
+	// that answers yes is the whole reason to retry. Dropping it silently
+	// reclassified transient failures as permanent, which the tests above catch.
+	//nolint:staticcheck // SA1019: deliberate; see comment.
+	return netErr.Temporary()
 }

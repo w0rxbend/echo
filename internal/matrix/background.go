@@ -129,7 +129,7 @@ func (s *Scheduler) backgroundPreset() (*animations.FirmwarePreset, *animations.
 }
 
 func (s *Scheduler) restoreStaticColorBackground(ctx context.Context, color animations.RGB) error {
-	rgb := RGB{R: color.R, G: color.G, B: color.B}
+	rgb := color
 	err := s.retryBackgroundMatrix(ctx, func() error {
 		return s.client.SetStaticColor(ctx, rgb)
 	})
@@ -199,7 +199,7 @@ func (s *Scheduler) displayStateMatchesConfiguredBackground(state displayState) 
 	}
 	if color, ok := s.registry.StaticColor(s.background.AnimationID); ok {
 		return state.Kind == displayStateStatic &&
-			state.Color == RGB{R: color.R, G: color.G, B: color.B}
+			state.Color == color
 	}
 	return state.Kind == displayStateFrame && state.BackgroundID == s.background.AnimationID
 }

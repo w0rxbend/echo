@@ -50,7 +50,7 @@ func (s *Scheduler) SetPixel(ctx context.Context, x, y byte, color RGB) error {
 	layout := s.packer.Layout()
 	serverX, serverY, err := layout.DisplayToServerPoint(int(x), int(y))
 	if err != nil {
-		return fmt.Errorf("%w: %s", ErrInvalidControl, err)
+		return fmt.Errorf("%w: %w", ErrInvalidControl, err)
 	}
 	return s.EnqueueControl(ctx, ControlRequest{
 		Kind:  ControlSetPixel,

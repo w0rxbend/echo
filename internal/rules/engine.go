@@ -137,7 +137,7 @@ func validateRule(rule Rule) error {
 	// returns an error for it and Run returns that error, permanently stopping the
 	// device's scheduler on the first event this rule matches. Reject it at load
 	// time, where the operator can see it.
-	if !animations.IsValidRestorePolicy(animations.RestorePolicy(rule.Play.Restore)) {
+	if !animations.IsValidRestorePolicy(rule.Play.Restore) {
 		return fmt.Errorf("play.restore %q is not a valid restore policy; expected one of %s",
 			rule.Play.Restore, strings.Join(animations.RestorePolicyNames(), ", "))
 	}
