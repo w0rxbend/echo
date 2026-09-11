@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/worxbend/echo/internal/animations"
+
+	"github.com/worxbend/echo/internal/observability"
 )
 
 const (
@@ -459,9 +461,7 @@ type Scheduler struct {
 	outcomeDrops                    atomic.Uint64
 	outcomeRecordingPanics          atomic.Uint64
 
-	observabilityMu                   sync.Mutex
-	observabilityCallbackPanicCounts  map[string]uint64
-	observabilityCallbackPanicCounter atomic.Uint64
+	callbackPanics observability.CallbackPanics
 
 	// currentItemCancel and currentItemPriority track the in-flight animation
 	// item's per-item cancel function and priority. Protected by mu.
@@ -563,7 +563,6 @@ func newScheduler(options SchedulerOptions, recordReliableOutcome func(OutcomeRe
 		backgroundConvergenceState:        BackgroundConvergenceUnknown,
 		backgroundLastRestoreErrorClass:   ErrorKindNone,
 		clientReconnectRecoveries:         clientReconnectRecoveryCount(options.Client),
-		observabilityCallbackPanicCounts:  make(map[string]uint64),
 	}, nil
 }
 
@@ -1494,45 +1493,6 @@ func (s *Scheduler) OutcomeRecordingPanics() uint64 {
 	return s.outcomeRecordingPanics.Load()
 }
 
-func (s *Scheduler) ObservabilityCallbackPanics() uint64 {
-	return s.observabilityCallbackPanicCounter.Load()
-}
-
-func (s *Scheduler) ObservabilityCallbackPanicCounts() map[string]uint64 {
-	s.observabilityMu.Lock()
-	defer s.observabilityMu.Unlock()
-	if len(s.observabilityCallbackPanicCounts) == 0 {
-		return nil
-	}
-	counts := make(map[string]uint64, len(s.observabilityCallbackPanicCounts))
-	for name, count := range s.observabilityCallbackPanicCounts {
-		counts[name] = count
-	}
-	return counts
-}
-
-func (s *Scheduler) runObservabilityCallback(name string, fn func()) {
-	if fn == nil {
-		return
-	}
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			s.recordObservabilityCallbackPanic(name)
-		}
-	}()
-	fn()
-}
-
-func (s *Scheduler) recordObservabilityCallbackPanic(name string) {
-	s.observabilityCallbackPanicCounter.Add(1)
-	s.observabilityMu.Lock()
-	defer s.observabilityMu.Unlock()
-	if s.observabilityCallbackPanicCounts == nil {
-		s.observabilityCallbackPanicCounts = make(map[string]uint64)
-	}
-	s.observabilityCallbackPanicCounts[name]++
-}
-
 func (s *Scheduler) notifyIdle() {
 	if s.onIdle != nil {
 		s.onIdle()
@@ -2123,7 +2083,7 @@ func (s *Scheduler) nextReconnectDelay(deadline time.Time, retryErr error) (time
 		if retryErr != nil {
 			errText = retryErr.Error()
 		}
-		s.runObservabilityCallback(observabilityCallbackReconnectDelay, func() {
+		s.callbackPanics.Run(observabilityCallbackReconnectDelay, func() {
 			s.onReconnectDelay(ReconnectAttempt{
 				Source:         ReconnectSourceSchedulerBackoff,
 				Attempt:        attempt,
@@ -2235,7 +2195,7 @@ func (s *Scheduler) reportProbeFailure(ctx context.Context, err error, probeTime
 		Reason:    reason,
 		Error:     errText,
 	}
-	s.runObservabilityCallback(observabilityCallbackProbeFailure, func() {
+	s.callbackPanics.Run(observabilityCallbackProbeFailure, func() {
 		s.onProbeFailure(failure)
 	})
 }
@@ -2262,7 +2222,7 @@ func (s *Scheduler) reportReconnectFailure(outcome ReconnectFailureOutcome, err 
 		Outcome:   outcome,
 		Error:     errText,
 	}
-	s.runObservabilityCallback(observabilityCallbackReconnectFailure, func() {
+	s.callbackPanics.Run(observabilityCallbackReconnectFailure, func() {
 		s.onReconnectFailure(failure)
 	})
 }
@@ -2468,7 +2428,7 @@ func (s *Scheduler) reportBackgroundRestore(event BackgroundRestoreEvent) {
 	if s.onBackgroundRestore == nil {
 		return
 	}
-	s.runObservabilityCallback(observabilityCallbackBackgroundRestore, func() {
+	s.callbackPanics.Run(observabilityCallbackBackgroundRestore, func() {
 		s.onBackgroundRestore(event)
 	})
 }
@@ -2570,7 +2530,7 @@ func (s *Scheduler) markMatrixSuccess(state State) {
 		s.notifyMatrixConnectedChange(true)
 	}
 	if recovery != nil && s.onReconnectRecovered != nil {
-		s.runObservabilityCallback(observabilityCallbackReconnectRecovered, func() {
+		s.callbackPanics.Run(observabilityCallbackReconnectRecovered, func() {
 			s.onReconnectRecovered(*recovery)
 		})
 	}
@@ -2595,7 +2555,7 @@ func (s *Scheduler) markMatrixFailure(state State) {
 
 func (s *Scheduler) notifyMatrixConnectedChange(connected bool) {
 	if s.onMatrixConnectedChange != nil {
-		s.runObservabilityCallback(observabilityCallbackMatrixConnectedChange, func() {
+		s.callbackPanics.Run(observabilityCallbackMatrixConnectedChange, func() {
 			s.onMatrixConnectedChange(connected)
 		})
 	}
@@ -2636,4 +2596,15 @@ func sleepContext(ctx context.Context, delay time.Duration) error {
 	case <-timer.C:
 		return nil
 	}
+}
+
+// ObservabilityCallbackPanics is the total number of panics recovered from
+// best-effort observability callbacks.
+func (s *Scheduler) ObservabilityCallbackPanics() uint64 {
+	return s.callbackPanics.Total()
+}
+
+// ObservabilityCallbackPanicCounts breaks that total down by callback name.
+func (s *Scheduler) ObservabilityCallbackPanicCounts() map[string]uint64 {
+	return s.callbackPanics.Counts()
 }

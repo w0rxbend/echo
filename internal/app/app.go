@@ -23,6 +23,7 @@ import (
 	"github.com/worxbend/echo/internal/integrations/httpapi"
 	"github.com/worxbend/echo/internal/matrix"
 	"github.com/worxbend/echo/internal/metrics"
+	"github.com/worxbend/echo/internal/observability"
 	"github.com/worxbend/echo/internal/rules"
 )
 
@@ -981,9 +982,7 @@ type tcpReconnectLogDispatcher struct {
 	closed        bool
 	eventsDropped atomic.Uint64
 
-	observabilityMu                  sync.Mutex
-	observabilityCallbackPanicCounts map[string]uint64
-	observabilityCallbackPanics      atomic.Uint64
+	callbackPanics observability.CallbackPanics
 }
 
 type tcpReconnectLogEvent struct {
@@ -1089,7 +1088,7 @@ func (d *tcpReconnectLogDispatcher) drainAccepted() {
 func (d *tcpReconnectLogDispatcher) runEvent(event tcpReconnectLogEvent) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			d.recordObservabilityCallbackPanic(event.callback)
+			d.callbackPanics.Record(event.callback)
 		}
 	}()
 	event.log(d.logger)
@@ -1118,31 +1117,12 @@ func (d *tcpReconnectLogDispatcher) ObservabilityCallbackPanics() uint64 {
 	if d == nil {
 		return 0
 	}
-	return d.observabilityCallbackPanics.Load()
+	return d.callbackPanics.Total()
 }
 
 func (d *tcpReconnectLogDispatcher) ObservabilityCallbackPanicCounts() map[string]uint64 {
 	if d == nil {
 		return nil
 	}
-	d.observabilityMu.Lock()
-	defer d.observabilityMu.Unlock()
-	if len(d.observabilityCallbackPanicCounts) == 0 {
-		return nil
-	}
-	counts := make(map[string]uint64, len(d.observabilityCallbackPanicCounts))
-	for name, count := range d.observabilityCallbackPanicCounts {
-		counts[name] = count
-	}
-	return counts
-}
-
-func (d *tcpReconnectLogDispatcher) recordObservabilityCallbackPanic(name string) {
-	d.observabilityCallbackPanics.Add(1)
-	d.observabilityMu.Lock()
-	defer d.observabilityMu.Unlock()
-	if d.observabilityCallbackPanicCounts == nil {
-		d.observabilityCallbackPanicCounts = make(map[string]uint64)
-	}
-	d.observabilityCallbackPanicCounts[name]++
+	return d.callbackPanics.Counts()
 }

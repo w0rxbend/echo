@@ -10,6 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/worxbend/echo/internal/observability"
 )
 
 const (
@@ -72,9 +74,7 @@ type TCPClient struct {
 
 	reconnectRecoveries atomic.Uint64
 
-	observabilityMu                  sync.Mutex
-	observabilityCallbackPanicCounts map[string]uint64
-	observabilityCallbackPanics      atomic.Uint64
+	callbackPanics observability.CallbackPanics
 }
 
 func NewTCPClient(options ClientOptions) (*TCPClient, error) {
@@ -309,7 +309,7 @@ func (c *TCPClient) reportCommandDone(result CommandResult) {
 	if c.onCommandDone == nil {
 		return
 	}
-	defer c.recoverObservabilityCallback(ObservabilityCallbackCommandDone)
+	defer c.callbackPanics.RecoverFrom(ObservabilityCallbackCommandDone)
 	c.onCommandDone(result)
 }
 
@@ -317,7 +317,7 @@ func (c *TCPClient) reportReconnectAttempt(attempt ReconnectAttempt) {
 	if c.onReconnectAttempt == nil {
 		return
 	}
-	defer c.recoverObservabilityCallback(ObservabilityCallbackReconnectAttempt)
+	defer c.callbackPanics.RecoverFrom(ObservabilityCallbackReconnectAttempt)
 	c.onReconnectAttempt(attempt)
 }
 
@@ -326,7 +326,7 @@ func (c *TCPClient) reportReconnectRecovered(recovery ReconnectRecovery) {
 	if c.onReconnectRecovered == nil {
 		return
 	}
-	defer c.recoverObservabilityCallback(ObservabilityCallbackReconnectRecovered)
+	defer c.callbackPanics.RecoverFrom(ObservabilityCallbackReconnectRecovered)
 	c.onReconnectRecovered(recovery)
 }
 
@@ -334,41 +334,8 @@ func (c *TCPClient) reportReconnectFailure(failure ReconnectFailure) {
 	if c.onReconnectFailure == nil {
 		return
 	}
-	defer c.recoverObservabilityCallback(ObservabilityCallbackReconnectFailure)
+	defer c.callbackPanics.RecoverFrom(ObservabilityCallbackReconnectFailure)
 	c.onReconnectFailure(failure)
-}
-
-func (c *TCPClient) recoverObservabilityCallback(name string) {
-	if recovered := recover(); recovered != nil {
-		c.recordObservabilityCallbackPanic(name)
-	}
-}
-
-func (c *TCPClient) recordObservabilityCallbackPanic(name string) {
-	c.observabilityCallbackPanics.Add(1)
-	c.observabilityMu.Lock()
-	defer c.observabilityMu.Unlock()
-	if c.observabilityCallbackPanicCounts == nil {
-		c.observabilityCallbackPanicCounts = make(map[string]uint64)
-	}
-	c.observabilityCallbackPanicCounts[name]++
-}
-
-func (c *TCPClient) ObservabilityCallbackPanics() uint64 {
-	return c.observabilityCallbackPanics.Load()
-}
-
-func (c *TCPClient) ObservabilityCallbackPanicCounts() map[string]uint64 {
-	c.observabilityMu.Lock()
-	defer c.observabilityMu.Unlock()
-	if len(c.observabilityCallbackPanicCounts) == 0 {
-		return nil
-	}
-	counts := make(map[string]uint64, len(c.observabilityCallbackPanicCounts))
-	for name, count := range c.observabilityCallbackPanicCounts {
-		counts[name] = count
-	}
-	return counts
 }
 
 func reconnectFailureFromError(ctx context.Context, attempt int, err error) ReconnectFailure {
@@ -450,4 +417,15 @@ func writeAll(conn net.Conn, data []byte) error {
 		data = data[n:]
 	}
 	return nil
+}
+
+// ObservabilityCallbackPanics is the total number of panics recovered from
+// best-effort observability callbacks.
+func (c *TCPClient) ObservabilityCallbackPanics() uint64 {
+	return c.callbackPanics.Total()
+}
+
+// ObservabilityCallbackPanicCounts breaks that total down by callback name.
+func (c *TCPClient) ObservabilityCallbackPanicCounts() map[string]uint64 {
+	return c.callbackPanics.Counts()
 }
