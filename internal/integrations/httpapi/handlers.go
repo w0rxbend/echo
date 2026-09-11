@@ -115,12 +115,6 @@ type deviceListResponse struct {
 	Devices []string `json:"devices"`
 }
 
-type queueResponse struct {
-	Depth int    `json:"depth"`
-	State string `json:"state"`
-	Items []any  `json:"items"`
-}
-
 type queueClearResponse struct {
 	Cleared int `json:"cleared"`
 }

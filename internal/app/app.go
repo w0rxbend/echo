@@ -195,7 +195,11 @@ func (a *App) Handler() http.Handler {
 func (a *App) router() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	// No middleware.RealIP: chi deprecated it as unfixable rather than patching
+	// it (GHSA-3fxj-6jh8-hvhx and friends). It rewrites RemoteAddr from
+	// X-Forwarded-For / True-Client-IP / X-Real-IP whether or not anything
+	// upstream actually sets them, so any client can choose its own apparent
+	// address. Nothing here reads RemoteAddr, so it was pure attack surface.
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
 
@@ -470,11 +474,6 @@ func (a *App) handleReady(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	a.refreshBackgroundStateMetrics()
 	promhttp.HandlerFor(a.metrics.Gatherer(), promhttp.HandlerOpts{}).ServeHTTP(w, r)
-}
-
-func (a *App) isReady() bool {
-	_, ready := a.readiness()
-	return ready
 }
 
 type readyResponse struct {
