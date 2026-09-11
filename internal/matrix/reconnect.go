@@ -25,7 +25,8 @@ func (s *Scheduler) waitReady(ctx context.Context, deadline time.Time) error {
 		if err == nil {
 			s.markMatrixSuccess(StateReady)
 			return nil
-		} else {
+		}
+		{
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				s.reportReconnectFailure(reconnectFailureOutcomeFromError(ctxErr), ctxErr)
 				return ctxErr

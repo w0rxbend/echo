@@ -1,0 +1,77 @@
+version: "2"
+
+# Chosen for what they catch in this codebase rather than for breadth: a network
+# service with one long-lived goroutine per device, so the value is in resource
+# leaks, error handling, and anything that silently reclassifies a failure.
+linters:
+  default: standard
+  enable:
+    # Correctness
+    - bodyclose        # HTTP response bodies must be closed
+    - durationcheck    # multiplying two durations is almost always a bug
+    - errorlint        # %w and errors.Is/As over == and %v
+    - noctx            # requests without a context cannot be cancelled
+    # Clarity
+    - misspell
+    - revive
+    - unconvert
+    - wastedassign
+    # Security
+    - gosec
+
+  # contextcheck is deliberately not enabled. It flags the terminal-outcome
+  # classifiers (animationOutcomeFromError, controlOutcomeFromError and the
+  # reconnect failure reporters), which are context-free on purpose: they run on
+  # cleanup paths after the context that produced the error is already gone.
+  # Nineteen findings, none actionable, is a filter that trains people to ignore
+  # the output.
+
+  settings:
+    errcheck:
+      exclude-functions:
+        - (net.Conn).Close
+        - (io.Closer).Close
+    gosec:
+      excludes:
+        - G104  # duplicates errcheck
+        # G115 (integer truncation) fires on the binary protocol encoder, where
+        # every conversion is preceded by its own bound check:
+        # buildCommandFrame rejects payloads over maxPayloadSize before writing
+        # the length byte, durations are range-checked before the uint16 cast,
+        # and pixel coordinates are validated by DisplayToServerPoint. Each was
+        # read and confirmed rather than assumed.
+        - G115
+        # G304 and G703 fire on reading the config and animation files named by
+        # the -config flag or MATRIX_PROXY_CONFIG. Both are set by the operator
+        # at process start, not by a request; reading the path they chose is the
+        # feature, and gosec's taint tracker simply treats os.Getenv as a source.
+        - G304
+        - G703
+        # G404 fires on math/rand for reconnect jitter, which spreads retries
+        # rather than protecting anything. crypto/rand would be cargo cult.
+        - G404
+    revive:
+      rules:
+        - name: context-as-argument
+        - name: error-strings
+        - name: errorf
+        - name: indent-error-flow
+        - name: var-declaration
+
+  exclusions:
+    rules:
+      # Tests drive failure paths on purpose and use fixed ports, fixtures and
+      # deliberate typos; these linters have nothing useful to say there.
+      - path: _test\.go
+        linters:
+          - bodyclose
+          - errcheck
+          - gosec
+          - misspell
+          - noctx
+          - revive
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

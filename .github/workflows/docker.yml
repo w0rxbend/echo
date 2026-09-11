@@ -53,6 +53,19 @@ jobs:
             exit 1
           fi
 
+      - name: Lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.13.2
+
+      # Reachability-based: it walks the call graph, so it reports only
+      # vulnerabilities this module can actually get to. It is how the three
+      # reachable chi RealIP advisories were found.
+      - name: Vulnerability scan
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
       - name: Test
         run: go test -race ./...
 
