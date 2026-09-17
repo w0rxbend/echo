@@ -142,9 +142,17 @@ func (b *Bus) SubscribeWithOptions(ctx context.Context, options SubscriptionOpti
 	b.mu.Unlock()
 	observeDepthChanges([]depthObservation{{subscriber: sub, depth: 0}})
 
+	// Closed by the first unsubscribe so the context watchdog below has an exit
+	// path other than cancellation. Without it, unsubscribing a subscription
+	// whose context outlives it -- an application-lifetime context, say -- left
+	// the watchdog parked on ctx.Done() for the life of the process, so a
+	// caller that resubscribed leaked one goroutine per subscription.
+	released := make(chan struct{})
+
 	var once sync.Once
 	unsubscribe := func() {
 		once.Do(func() {
+			close(released)
 			var observations []depthObservation
 			b.mu.Lock()
 			if _, ok := b.subscribers[ch]; ok {
@@ -160,8 +168,11 @@ func (b *Bus) SubscribeWithOptions(ctx context.Context, options SubscriptionOpti
 
 	if ctx != nil {
 		go func() {
-			<-ctx.Done()
-			unsubscribe()
+			select {
+			case <-ctx.Done():
+				unsubscribe()
+			case <-released:
+			}
 		}()
 	}
 
