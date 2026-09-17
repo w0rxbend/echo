@@ -212,6 +212,24 @@ func (r *Registry) RegisterTCPReconnectLogEventsDropped(deviceID string, value f
 	return nil
 }
 
+// RegisterEventObservabilityCallbackPanics exposes the event bus's recovered
+// callback panics. It carries no device label because the bus is shared: the
+// counter is registered once per callback name at app wire-up, not per device.
+//
+// Without it a bus observer that panics on every call is invisible to alerting
+// -- the gauge it feeds simply stops moving, and only a readiness poll says so.
+func (r *Registry) RegisterEventObservabilityCallbackPanics(callback string, value func() float64) error {
+	counter := prometheus.NewCounterFunc(prometheus.CounterOpts{
+		Name:        "matrix_proxy_event_observability_callback_panics_total",
+		Help:        "Total panics recovered from event bus observability callbacks by callback name.",
+		ConstLabels: prometheus.Labels{"callback": callback},
+	}, value)
+	if err := r.registry.Register(counter); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (r *Registry) RegisterMatrixObservabilityCallbackPanics(deviceID, source, callback string, value func() float64) error {
 	counter := prometheus.NewCounterFunc(prometheus.CounterOpts{
 		Name:        "matrix_proxy_matrix_observability_callback_panics_total",

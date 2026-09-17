@@ -126,6 +126,18 @@ func newWithOptions(cfg config.Config, logger *slog.Logger, options ...appNewOpt
 	}
 	partial.bus = bus
 
+	// The bus is a singleton, so its panic counters are registered once here with
+	// no device label -- a per-device registration would collide on the second
+	// device, and the counts are not attributable to one device anyway.
+	for _, cb := range busObservabilityCallbackNames() {
+		cb := cb
+		if err := registry.RegisterEventObservabilityCallbackPanics(cb, func() float64 {
+			return float64(bus.ObservabilityCallbackPanicCounts()[cb])
+		}); err != nil {
+			return nil, err
+		}
+	}
+
 	ruleEngine, err := rules.LoadFile(cfg.RulesFile)
 	if err != nil {
 		return nil, err
@@ -1008,6 +1020,14 @@ func schedulerObservabilityCallbackNames() []string {
 		matrix.ObservabilityCallbackProbeFailure,
 		matrix.ObservabilityCallbackMatrixConnectedChange,
 		matrix.ObservabilityCallbackBackgroundRestore,
+	}
+}
+
+func busObservabilityCallbackNames() []string {
+	return []string{
+		events.ObservabilityCallbackDepthChange,
+		events.ObservabilityCallbackPublishBackpressureWait,
+		events.ObservabilityCallbackPublishBackpressureTimeout,
 	}
 }
 
