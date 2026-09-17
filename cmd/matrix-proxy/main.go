@@ -27,9 +27,12 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	"sort"
+	"strings"
 	"syscall"
 
 	"github.com/worxbend/echo/internal/app"
@@ -51,11 +54,21 @@ func main() {
 
 func run() error {
 	configPath := flag.String("config", config.DefaultPath, "path to YAML configuration file")
-	logLevel := flag.String("log-level", "info", "log level: debug, info, warn, error")
+	logLevel := flag.String("log-level", "info", "log level: "+strings.Join(logLevelNames(), ", "))
 	flag.Parse()
 
+	level, err := parseLogLevel(*logLevel)
+	if err != nil {
+		// There is no logger yet, and the whole point is that this must not pass
+		// quietly: a typo used to start the process at info, so an operator
+		// reaching for debug during an incident got no extra lines and no hint
+		// why.
+		fmt.Fprintln(os.Stderr, err)
+		return err
+	}
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: parseLogLevel(*logLevel),
+		Level: level,
 	}))
 
 	cfg, err := config.Load(*configPath)
@@ -80,9 +93,20 @@ func run() error {
 	return nil
 }
 
-func parseLogLevel(value string) slog.Leveler {
+func parseLogLevel(value string) (slog.Leveler, error) {
 	if level, ok := logLevelParsers[value]; ok {
-		return level
+		return level, nil
 	}
-	return slog.LevelInfo
+	return nil, fmt.Errorf("invalid -log-level %q: want one of %s", value, strings.Join(logLevelNames(), ", "))
+}
+
+func logLevelNames() []string {
+	names := make([]string, 0, len(logLevelParsers))
+	for name := range logLevelParsers {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		return logLevelParsers[names[i]].Level() < logLevelParsers[names[j]].Level()
+	})
+	return names
 }
