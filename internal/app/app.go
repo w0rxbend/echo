@@ -297,9 +297,23 @@ func applyEventOverrides(request *animations.AnimationRequest, event events.Even
 			request.MaxDuration = parsed
 		}
 	}
-	if event.Priority != 0 {
+	// Priority is not a refinement like the overrides above: it orders the queue,
+	// and for rules that set an interrupt mode it decides which queued items are
+	// evicted and whether the in-flight animation is cancelled. /events and
+	// /notify are the only device routes without adminOnly, so this integer
+	// arrives unauthenticated. Let an event lower its own priority, never raise it
+	// above the ceiling the matched rule set -- otherwise an anonymous
+	// notification outranks, evicts, or cancels work queued through the
+	// admin-only /play route. That keeps the rules file the whole policy: a caller
+	// steering which rule matches can still only reach a priority an operator
+	// wrote down.
+	if event.Priority != 0 && event.Priority < request.Priority {
 		request.Priority = event.Priority
 	}
+	// No interrupt_mode case, deliberately. The HTTP boundary validates that
+	// attribute so a typo fails loudly, but preemption stays the operator's
+	// decision: honouring it here would let an unauthenticated event overrule a
+	// rule that says interrupt: none.
 	if request.Params == nil {
 		request.Params = animations.Params{}
 	}

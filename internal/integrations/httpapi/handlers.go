@@ -133,7 +133,7 @@ type queueResponse struct {
 // ── Event endpoints ───────────────────────────────────────────────────────────
 
 // @Summary		Publish a generic event
-// @Description	Publishes a normalized event for async rule processing. Known override attributes (animation, restore, duration, interrupt_mode, loop) are validated synchronously before publishing.
+// @Description	Publishes a normalized event for async rule processing. Known override attributes (animation, restore, duration, interrupt_mode, loop) are validated synchronously before publishing. Preemption stays under the matched rule's control: interrupt_mode is validated but not applied, and a supplied priority may only lower the rule's priority, never raise it.
 // @Tags		events
 // @Accept		json
 // @Produce		json
@@ -401,6 +401,8 @@ func (s *Server) validateEventOverrides(attrs map[string]string) error {
 	if _, err := parseOptionalDuration(attrs["duration"]); err != nil {
 		return err
 	}
+	// Validated for early, loud feedback on a typo even though applyEventOverrides
+	// deliberately does not apply it -- the matched rule owns preemption.
 	if _, err := s.parseInterruptMode(attrs["interrupt_mode"], ""); err != nil {
 		return err
 	}
