@@ -192,6 +192,34 @@ func (a *App) Handler() http.Handler {
 	return a.router()
 }
 
+// securityHeaders sets the response headers that apply to everything this
+// server serves. Until now only /docs set them, because only /docs is HTML --
+// but what they defend against is not limited to HTML. The JSON endpoints and
+// /metrics get opened in browsers too, by hand: a readiness check pasted into
+// a tab, a scrape someone wants to eyeball. Without nosniff the browser is
+// free to disregard Content-Type and guess a type from the bytes, and a guess
+// of "HTML" on a body whose leading field an attacker influences is the usual
+// way a JSON endpoint ends up executing script on this origin. DENY and
+// no-referrer cost nothing on an API that is never meant to be framed and
+// whose paths carry device identifiers that have no business travelling in a
+// Referer to wherever a page links next.
+//
+// These are set on the way in, before any handler runs, so they also survive
+// the responses this server writes without reaching a handler at all -- the
+// 500 from middleware.Recoverer, the 504 from middleware.Timeout -- and a
+// handler that needs something stricter still wins, because setting the same
+// header in the handler replaces the value rather than appending to it. That
+// is what lets HandleDocs keep its own content-security-policy.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (a *App) router() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -200,6 +228,7 @@ func (a *App) router() http.Handler {
 	// X-Forwarded-For / True-Client-IP / X-Real-IP whether or not anything
 	// upstream actually sets them, so any client can choose its own apparent
 	// address. Nothing here reads RemoteAddr, so it was pure attack surface.
+	r.Use(securityHeaders)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
 
