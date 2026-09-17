@@ -120,11 +120,15 @@ type BackgroundRestoreEvent struct {
 }
 
 type SchedulerOptions struct {
-	Client                  Client
-	Registry                AnimationRegistry
-	Packer                  animations.LayoutPacker
-	QueueCapacity           int
-	Background              BackgroundConfig
+	Client        Client
+	Registry      AnimationRegistry
+	Packer        animations.LayoutPacker
+	QueueCapacity int
+	Background    BackgroundConfig
+	// InitialBrightness is applied to the panel once, as soon as the scheduler
+	// first reaches a ready matrix. nil leaves the panel's own brightness alone;
+	// 0 is a meaningful setting ("off"), so it cannot double as "unset".
+	InitialBrightness       *byte
 	ReconnectMinDelay       time.Duration
 	ReconnectMaxDelay       time.Duration
 	ReconnectJitter         func(time.Duration) time.Duration
@@ -155,6 +159,7 @@ type Scheduler struct {
 	queue                             *playQueue
 	queueDepthMu                      sync.Mutex
 	background                        BackgroundConfig
+	initialBrightness                 *byte
 	reconnectMinDelay                 time.Duration
 	reconnectMaxDelay                 time.Duration
 	reconnectJitter                   func(time.Duration) time.Duration
@@ -275,6 +280,7 @@ func newScheduler(options SchedulerOptions, recordReliableOutcome func(OutcomeRe
 		packer:                            options.Packer,
 		queue:                             queue,
 		background:                        options.Background,
+		initialBrightness:                 options.InitialBrightness,
 		reconnectMinDelay:                 reconnectMinDelay,
 		reconnectMaxDelay:                 reconnectMaxDelay,
 		reconnectJitter:                   reconnectJitter,
@@ -542,11 +548,33 @@ const (
 	itemFail
 )
 
+// applyInitialBrightness pushes the configured brightness to the panel before
+// the background animation starts rendering, so the first thing the operator
+// sees is already at the brightness they asked for. It runs once per Run: the
+// panel keeps the setting until it reboots, and unlike the background there is
+// no convergence machinery to re-apply it after a reconnect.
+func (s *Scheduler) applyInitialBrightness(ctx context.Context) error {
+	if s.initialBrightness == nil {
+		return nil
+	}
+	brightness := *s.initialBrightness
+	return s.retryMatrix(ctx, func() error {
+		return s.client.SetBrightness(ctx, brightness)
+	})
+}
+
 func (s *Scheduler) Run(ctx context.Context) error {
 	defer s.Close()
 	defer s.completeQueuedControls(ErrSchedulerStopped)
 
 	if err := s.waitReady(ctx, time.Time{}); err != nil {
+		if stoppedByContext(err) {
+			s.setState(StateDraining)
+			return nil
+		}
+		return err
+	}
+	if err := s.applyInitialBrightness(ctx); err != nil {
 		if stoppedByContext(err) {
 			s.setState(StateDraining)
 			return nil

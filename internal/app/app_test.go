@@ -3150,6 +3150,9 @@ func waitForExactSetFramePayloads(t *testing.T, server *fakeESPServer, want [][]
 			switch frame.Command {
 			case testCommandPing:
 				continue
+			case testCommandSetBrightness:
+				// Sent once at startup from the device config, before any frame.
+				continue
 			case testCommandSetFrame:
 				if len(frame.Payload) != testFramePayloadSize {
 					t.Fatalf("SetFullFrame payload length = %d, want %d", len(frame.Payload), testFramePayloadSize)
@@ -3181,6 +3184,9 @@ func waitForGeneratedBackgroundAfterNotification(t *testing.T, server *fakeESPSe
 			commands = append(commands, frame.Command)
 			switch frame.Command {
 			case testCommandPing:
+				continue
+			case testCommandSetBrightness:
+				// Sent once at startup from the device config, before any frame.
 				continue
 			case testCommandSetFrame:
 				if len(frame.Payload) != testFramePayloadSize {

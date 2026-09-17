@@ -356,9 +356,6 @@ func newAppDevice(
 			tcpLogs.Close()
 		}
 	}()
-	// The dispatcher owns a goroutine from construction, but only a fully built
-	// device reaches App.devices and therefore closeResources. Every error return
-	// below would otherwise leak that goroutine for the process lifetime.
 
 	matrixClient, err := matrix.NewTCPClient(matrix.ClientOptions{
 		Host:            devCfg.Host,
@@ -395,12 +392,16 @@ func newAppDevice(
 		}
 	}
 
+	// Copied rather than aliased: the scheduler outlives this call and must not
+	// observe later edits to the device config.
+	brightness := devCfg.Brightness
 	scheduler, err := matrix.NewSchedulerWithReliableAppOutcomeRecorder(matrix.SchedulerOptions{
 		Client:            matrixClient,
 		Registry:          animationRegistry,
 		Packer:            packer,
 		QueueCapacity:     playQueueCapacity,
 		Background:        backgroundConfig(*devCfg),
+		InitialBrightness: &brightness,
 		ReconnectMinDelay: devCfg.ReconnectMinDelay,
 		ReconnectMaxDelay: devCfg.ReconnectMaxDelay,
 		HeartbeatInterval: devCfg.HeartbeatInterval,

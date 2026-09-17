@@ -29,16 +29,17 @@ import (
 )
 
 const (
-	testCommandPing      byte = 0x00
-	testCommandClear     byte = 0x01
-	testCommandFill      byte = 0x03
-	testCommandSetFrame  byte = 0x05
-	testCommandSetPreset byte = 0x08
-	testMagic0           byte = 0x4C
-	testMagic1           byte = 0x4D
-	testProtocolVersion  byte = 0x01
-	testResponseCommand  byte = 0x80
-	testFramePayloadSize      = 192
+	testCommandPing          byte = 0x00
+	testCommandClear         byte = 0x01
+	testCommandSetBrightness byte = 0x02
+	testCommandFill          byte = 0x03
+	testCommandSetFrame      byte = 0x05
+	testCommandSetPreset     byte = 0x08
+	testMagic0               byte = 0x4C
+	testMagic1               byte = 0x4D
+	testProtocolVersion      byte = 0x01
+	testResponseCommand      byte = 0x80
+	testFramePayloadSize          = 192
 
 	testStatusOK             byte = 0x00
 	testStatusUnknownCommand byte = 0x03
@@ -783,6 +784,8 @@ func TestNotifyStreamsFramesAndRestoresBackground(t *testing.T) {
 			commandCount++
 			switch frame.Command {
 			case testCommandPing:
+			case testCommandSetBrightness:
+				// Sent once at startup from the device config, before any frame.
 			case testCommandSetFrame:
 				sawFrame = true
 				if len(frame.Payload) != testFramePayloadSize {
