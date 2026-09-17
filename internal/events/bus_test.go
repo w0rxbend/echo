@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -347,6 +348,60 @@ func TestDepthCallbackPanicDoesNotStopOtherDepthObservers(t *testing.T) {
 	assertEventID(t, receiveEvent(t, panickingCh), "one")
 	assertEventID(t, receiveEvent(t, recordingCh), "one")
 	depths.assertAll(0, 1)
+}
+
+func TestDepthCallbackPanicsAreCounted(t *testing.T) {
+	bus := newTestBus(t, 1)
+	ch, unsubscribe := bus.SubscribeWithOptions(context.TODO(), SubscriptionOptions{
+		OnDepthChange: func(int) {
+			panic("depth callback failed")
+		},
+	})
+	assertCallbackPanicCounts(t, bus, map[string]uint64{ObservabilityCallbackDepthChange: 1})
+
+	publishEvent(t, bus, "one")
+	assertEventID(t, receiveEvent(t, ch), "one")
+	assertCallbackPanicCounts(t, bus, map[string]uint64{ObservabilityCallbackDepthChange: 2})
+
+	unsubscribe()
+	assertSubscriptionClosed(t, ch)
+	// Subscribing, the publish, and the terminal observation unsubscribe emits:
+	// recovering each one keeps the bus alive, and counting it is the only way
+	// an observer that panics on every single call is visible at all.
+	assertCallbackPanicCounts(t, bus, map[string]uint64{ObservabilityCallbackDepthChange: 3})
+}
+
+func TestCallbackPanicCountsAreEmptyWhenNothingPanics(t *testing.T) {
+	bus := newTestBus(t, 1)
+	depths := newDepthRecorder(t)
+	ch, unsubscribe := bus.SubscribeWithOptions(context.TODO(), SubscriptionOptions{
+		OnDepthChange: depths.record,
+	})
+	defer unsubscribe()
+
+	publishEvent(t, bus, "one")
+	assertEventID(t, receiveEvent(t, ch), "one")
+
+	if counts := bus.ObservabilityCallbackPanicCounts(); counts != nil {
+		t.Fatalf("ObservabilityCallbackPanicCounts() = %v, want nil", counts)
+	}
+	if total := bus.ObservabilityCallbackPanics(); total != 0 {
+		t.Fatalf("ObservabilityCallbackPanics() = %d, want 0", total)
+	}
+}
+
+func TestCallbackPanicAccountingOnNilBus(t *testing.T) {
+	var bus *Bus
+	assertDoesNotPanic(t, "ObservabilityCallbackPanics", func() {
+		if total := bus.ObservabilityCallbackPanics(); total != 0 {
+			t.Fatalf("ObservabilityCallbackPanics() = %d, want 0", total)
+		}
+	})
+	assertDoesNotPanic(t, "ObservabilityCallbackPanicCounts", func() {
+		if counts := bus.ObservabilityCallbackPanicCounts(); counts != nil {
+			t.Fatalf("ObservabilityCallbackPanicCounts() = %v, want nil", counts)
+		}
+	})
 }
 
 func TestPublishBlocksUntilFullSubscriberReceivesEvent(t *testing.T) {
@@ -789,6 +844,69 @@ func TestPublishBackpressureCallbackPanicsRecovered(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Publish() did not return after context timeout")
+	}
+}
+
+func TestPublishBackpressureCallbackPanicsAreCounted(t *testing.T) {
+	bus, err := NewBusWithOptions(1, BusOptions{
+		OnPublishBackpressureWait: func(time.Duration) {
+			panic("backpressure wait callback failed")
+		},
+		OnPublishBackpressureTimeout: func() {
+			panic("backpressure timeout callback failed")
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, unsubscribe := bus.Subscribe(context.TODO())
+	defer unsubscribe()
+
+	publishEvent(t, bus, "one")
+	published := make(chan error, 1)
+	go func() {
+		published <- bus.Publish(context.Background(), Event{ID: "two", Source: SourceExternal, Type: "test"})
+	}()
+	assertPublishStillBlocked(t, published)
+	assertEventID(t, receiveEvent(t, ch), "one")
+	select {
+	case publishErr := <-published:
+		if publishErr != nil {
+			t.Fatalf("blocked Publish() error = %v", publishErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Publish() remained blocked after subscriber received an event")
+	}
+	assertEventID(t, receiveEvent(t, ch), "two")
+	assertCallbackPanicCounts(t, bus, map[string]uint64{
+		ObservabilityCallbackPublishBackpressureWait: 1,
+	})
+
+	publishEvent(t, bus, "three")
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	if publishErr := bus.Publish(ctx, Event{ID: "four", Source: SourceExternal, Type: "test"}); !errors.Is(publishErr, context.DeadlineExceeded) {
+		t.Fatalf("Publish() error = %v, want %v", publishErr, context.DeadlineExceeded)
+	}
+	// A publisher that gives up waited first, so the timed-out publish trips
+	// both observers and both panics are counted under their own names.
+	assertCallbackPanicCounts(t, bus, map[string]uint64{
+		ObservabilityCallbackPublishBackpressureWait:    2,
+		ObservabilityCallbackPublishBackpressureTimeout: 1,
+	})
+}
+
+func assertCallbackPanicCounts(t *testing.T, bus *Bus, want map[string]uint64) {
+	t.Helper()
+	if got := bus.ObservabilityCallbackPanicCounts(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("ObservabilityCallbackPanicCounts() = %v, want %v", got, want)
+	}
+	var wantTotal uint64
+	for _, count := range want {
+		wantTotal += count
+	}
+	if got := bus.ObservabilityCallbackPanics(); got != wantTotal {
+		t.Fatalf("ObservabilityCallbackPanics() = %d, want %d", got, wantTotal)
 	}
 }
 

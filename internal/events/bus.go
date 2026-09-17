@@ -23,11 +23,22 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/worxbend/echo/internal/observability"
 )
 
 var (
 	ErrBusClosed       = errors.New("event bus is closed")
 	ErrInvalidCapacity = errors.New("event bus capacity must be positive")
+)
+
+// Names the bus counts recovered callback panics under. Both depth-observation
+// paths share one name because they are one caller-supplied callback, reached
+// from a steady-state publish and from a terminal lifecycle path.
+const (
+	ObservabilityCallbackDepthChange                = "depth_change"
+	ObservabilityCallbackPublishBackpressureWait    = "publish_backpressure_wait"
+	ObservabilityCallbackPublishBackpressureTimeout = "publish_backpressure_timeout"
 )
 
 type Bus struct {
@@ -40,6 +51,8 @@ type Bus struct {
 
 	onPublishBackpressureWait    func(time.Duration)
 	onPublishBackpressureTimeout func()
+
+	callbackPanics observability.CallbackPanics
 }
 
 type SubscriptionOptions struct {
@@ -48,7 +61,8 @@ type SubscriptionOptions struct {
 	// synchronously after publish, subscribe, unsubscribe, or close paths, and
 	// must be fast. Terminal lifecycle paths wait for any in-flight callback
 	// before publishing their terminal zero-depth observation. Calls are
-	// best-effort: callback panics are recovered. Once unsubscribe returns, the
+	// best-effort: callback panics are recovered and counted, and show up in
+	// the bus's ObservabilityCallbackPanics. Once unsubscribe returns, the
 	// subscription is inactive and no later bus-owned OnDepthChange calls are
 	// made for it. Callers that consume from the channel should record
 	// receive-side depth.
@@ -58,11 +72,11 @@ type SubscriptionOptions struct {
 type BusOptions struct {
 	// OnPublishBackpressureWait reports total time a Publish call spent blocked
 	// behind full subscriber channels. It is invoked outside bus locks and
-	// callback panics are recovered.
+	// callback panics are recovered and counted.
 	OnPublishBackpressureWait func(time.Duration)
 	// OnPublishBackpressureTimeout reports Publish calls that return because the
 	// publish context expired while waiting behind subscriber backpressure. It is
-	// invoked outside bus locks and callback panics are recovered.
+	// invoked outside bus locks and callback panics are recovered and counted.
 	OnPublishBackpressureTimeout func()
 }
 
@@ -73,6 +87,7 @@ type subscriber struct {
 	observing        int
 	terminalObserved bool
 	onDepthChange    func(int)
+	panics           *observability.CallbackPanics
 }
 
 type depthObservation struct {
@@ -113,7 +128,7 @@ func (b *Bus) Subscribe(ctx context.Context) (<-chan Event, func()) {
 // Publish currently blocked behind a full subscriber channel.
 func (b *Bus) SubscribeWithOptions(ctx context.Context, options SubscriptionOptions) (<-chan Event, func()) {
 	ch := make(chan Event, b.capacity)
-	sub := newSubscriber(options.OnDepthChange)
+	sub := newSubscriber(options.OnDepthChange, &b.callbackPanics)
 
 	b.mu.Lock()
 	if b.closed {
@@ -253,6 +268,27 @@ func (b *Bus) Capacity() int {
 	return b.capacity
 }
 
+// ObservabilityCallbackPanics is the total number of panics recovered from the
+// bus's best-effort callbacks: the subscribers' depth observers and the two
+// publish backpressure observers. Recovering keeps one bad observer from taking
+// down a publisher, but on its own it also makes that observer invisible -- a
+// callback that panics on every call simply never runs, and nothing says so.
+func (b *Bus) ObservabilityCallbackPanics() uint64 {
+	if b == nil {
+		return 0
+	}
+	return b.callbackPanics.Total()
+}
+
+// ObservabilityCallbackPanicCounts breaks that total down by callback name, or
+// returns nil when nothing has panicked. The map is a copy.
+func (b *Bus) ObservabilityCallbackPanicCounts() map[string]uint64 {
+	if b == nil {
+		return nil
+	}
+	return b.callbackPanics.Counts()
+}
+
 func cloneEvent(event Event) Event {
 	if len(event.Attributes) == 0 {
 		return event
@@ -289,10 +325,18 @@ func (b *Bus) removeSubscriberOrderLocked(ch chan Event) {
 	}
 }
 
-func newSubscriber(onDepthChange func(int)) *subscriber {
+func newSubscriber(onDepthChange func(int), panics *observability.CallbackPanics) *subscriber {
+	if panics == nil {
+		// Every subscriber has somewhere to count, so the observation sites
+		// below need no nil check. The bus hands over its own counter; a
+		// subscriber built without one gets a private counter nobody reads,
+		// which still beats swallowing the panic.
+		panics = &observability.CallbackPanics{}
+	}
 	sub := &subscriber{
 		active:        true,
 		onDepthChange: onDepthChange,
+		panics:        panics,
 	}
 	sub.cond = sync.NewCond(&sub.mu)
 	return sub
@@ -317,52 +361,38 @@ func observeTerminalDepthChanges(observations []depthObservation) {
 }
 
 func (b *Bus) observePublishBackpressure(observation publishBackpressureObservation) {
-	if observation.waited > 0 {
-		observeDurationSafely(b.onPublishBackpressureWait, observation.waited)
+	if observation.waited > 0 && b.onPublishBackpressureWait != nil {
+		waited := observation.waited
+		b.callbackPanics.Run(ObservabilityCallbackPublishBackpressureWait, func() {
+			b.onPublishBackpressureWait(waited)
+		})
 	}
 	if observation.timedOut {
-		observeFuncSafely(b.onPublishBackpressureTimeout)
+		b.callbackPanics.Run(ObservabilityCallbackPublishBackpressureTimeout, b.onPublishBackpressureTimeout)
 	}
-}
-
-func observeDurationSafely(callback func(time.Duration), value time.Duration) {
-	if callback == nil {
-		return
-	}
-	defer func() {
-		_ = recover()
-	}()
-	callback(value)
-}
-
-func observeFuncSafely(callback func()) {
-	if callback == nil {
-		return
-	}
-	defer func() {
-		_ = recover()
-	}()
-	callback()
 }
 
 func (s *subscriber) observeDepthSafely(depth int) {
 	if !s.beginDepthObservation() {
 		return
 	}
+	// endDepthObservation is registered first so it runs last: recover has to
+	// go first, as the bare recover here used to, or a panicking observer
+	// leaves the in-flight count raised and the terminal paths that wait on it
+	// blocked forever.
 	defer s.endDepthObservation()
-	defer func() {
-		_ = recover()
-	}()
+	defer s.panics.RecoverFrom(ObservabilityCallbackDepthChange)
 	s.observeDepth(depth)
 }
 
+// observeTerminalDepthSafely has no endDepthObservation to match its begin:
+// beginTerminalDepthObservation marks the subscriber inactive and drains the
+// in-flight observers rather than joining them, and it only ever fires once.
 func (s *subscriber) observeTerminalDepthSafely(depth int) {
 	if !s.beginTerminalDepthObservation() {
 		return
 	}
-	defer func() {
-		_ = recover()
-	}()
+	defer s.panics.RecoverFrom(ObservabilityCallbackDepthChange)
 	s.observeDepth(depth)
 }
 
