@@ -2048,6 +2048,62 @@ func TestAppShutdownRunningCancelsWorkersClosesResourcesAndPreventsRestart(t *te
 	}
 }
 
+func TestReadinessReportsConfiguredBrightnessAndCommandedPanelState(t *testing.T) {
+	matrixServer := newFakeESPServer(t)
+	defer matrixServer.Close()
+
+	cfg := newHTTPMatrixTestConfig(t, matrixServer.Addr())
+	cfg.Server.Addr = reserveTCPAddr(t)
+	// Zero is the value a plain byte field plus omitempty would erase, and it is
+	// the one an operator most needs to see: the panel is dimmed all the way off
+	// rather than merely unconfigured.
+	cfg.Devices["default"].Brightness = 0
+	application, err := app.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := runApp(t, application, ctx)
+	defer func() {
+		cancel()
+		waitAppRun(t, done)
+	}()
+	baseURL := "http://" + cfg.Server.Addr
+	waitForStatus(t, baseURL+"/readyz", http.StatusOK)
+	waitForActiveMatrixConnections(t, matrixServer, 1)
+
+	ready, _ := getReadyDetails(t, baseURL)
+	device := ready.DefaultDevice()
+	if device.Brightness == nil {
+		t.Fatal("/readyz brightness = absent, want the configured value")
+	}
+	if *device.Brightness != 0 {
+		t.Fatalf("/readyz brightness = %d, want 0", *device.Brightness)
+	}
+	// No panel command has been issued, so the scheduler holds no instruction and
+	// the key must be absent rather than reported as a false the operator never chose.
+	if device.PanelEnabled != nil {
+		t.Fatalf("/readyz panel_enabled = %v before any panel command, want absent", *device.PanelEnabled)
+	}
+	if body := getReadyBody(t, baseURL); strings.Contains(body, "panel_enabled") {
+		t.Fatalf("/readyz body contains panel_enabled before any panel command: %s", body)
+	}
+
+	postJSON(t, baseURL+"/api/v1/devices/default/matrix/panel", `{"enabled":false}`, http.StatusOK)
+
+	// SetPanelEnabled only returns once the panel has acknowledged the command and
+	// the scheduler has recorded it, so the next poll already sees the new value.
+	ready, _ = getReadyDetails(t, baseURL)
+	device = ready.DefaultDevice()
+	if device.PanelEnabled == nil {
+		t.Fatal("/readyz panel_enabled = absent after blanking the panel, want false")
+	}
+	if *device.PanelEnabled {
+		t.Fatal("/readyz panel_enabled = true after blanking the panel, want false")
+	}
+}
+
 func TestAppRunContextCancellationClosesResourcesAndPreventsRestart(t *testing.T) {
 	matrixServer := newFakeESPServer(t)
 	defer matrixServer.Close()
@@ -3500,6 +3556,8 @@ func (r readyDetails) DefaultDevice() deviceReadyEntry {
 type deviceReadyEntry struct {
 	SchedulerState  string          `json:"scheduler_state"`
 	MatrixConnected bool            `json:"matrix_connected"`
+	PanelEnabled    *bool           `json:"panel_enabled"`
+	Brightness      *byte           `json:"brightness"`
 	Background      readyBackground `json:"background"`
 	LastSuccess     *time.Time      `json:"last_success"`
 	LastFailure     *time.Time      `json:"last_failure"`

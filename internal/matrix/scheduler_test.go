@@ -2,6 +2,7 @@ package matrix
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"os"
@@ -1807,6 +1808,97 @@ func TestSchedulerRestoresPanelVisibilityAfterVerifiedReconnect(t *testing.T) {
 	want := []string{"panel", "panel"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("commands = %v, want %v", got, want)
+	}
+}
+
+func TestSchedulerHealthOmitsPanelAndBrightnessWhenUncommanded(t *testing.T) {
+	client := newFakeMatrixClient()
+	registry := animations.NewRegistry()
+
+	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runScheduler(t, ctx, scheduler)
+
+	health := scheduler.Health()
+	if health.PanelEnabled != nil {
+		t.Fatalf("PanelEnabled = %v, want nil when the operator never set it", *health.PanelEnabled)
+	}
+	if health.Brightness != nil {
+		t.Fatalf("Brightness = %d, want nil when no initial brightness is configured", *health.Brightness)
+	}
+	// The pointers exist so an absent instruction stays absent on the wire: a
+	// reader must be able to tell "the scheduler leaves this alone" from the
+	// perfectly valid settings false and 0.
+	encoded, err := json.Marshal(health)
+	if err != nil {
+		t.Fatalf("marshal health: %v", err)
+	}
+	for _, key := range []string{`"panel_enabled"`, `"brightness"`} {
+		if strings.Contains(string(encoded), key) {
+			t.Fatalf("health JSON %s contains %s, want it omitted", encoded, key)
+		}
+	}
+}
+
+func TestSchedulerHealthReportsZeroBrightnessAndBlankedPanel(t *testing.T) {
+	client := newFakeMatrixClient()
+	registry := animations.NewRegistry()
+	// Zero is the value that a plain byte field plus omitempty would silently
+	// erase, and it is the one an operator most needs to see: the panel is
+	// dimmed all the way off rather than merely unconfigured.
+	brightness := byte(0)
+
+	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{
+		InitialBrightness: &brightness,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runScheduler(t, ctx, scheduler)
+
+	if err := scheduler.SetPanelEnabled(ctx, false); err != nil {
+		t.Fatalf("SetPanelEnabled: %v", err)
+	}
+
+	health := scheduler.Health()
+	if health.PanelEnabled == nil || *health.PanelEnabled {
+		t.Fatalf("PanelEnabled = %v, want a reported false", health.PanelEnabled)
+	}
+	if health.Brightness == nil || *health.Brightness != 0 {
+		t.Fatalf("Brightness = %v, want a reported 0", health.Brightness)
+	}
+	encoded, err := json.Marshal(health)
+	if err != nil {
+		t.Fatalf("marshal health: %v", err)
+	}
+	for _, want := range []string{`"panel_enabled":false`, `"brightness":0`} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("health JSON %s missing %s", encoded, want)
+		}
+	}
+}
+
+func TestSchedulerHealthPanelStateDoesNotAliasSchedulerPointer(t *testing.T) {
+	client := newFakeMatrixClient()
+	registry := animations.NewRegistry()
+
+	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runScheduler(t, ctx, scheduler)
+
+	if err := scheduler.SetPanelEnabled(ctx, true); err != nil {
+		t.Fatalf("SetPanelEnabled: %v", err)
+	}
+	health := scheduler.Health()
+	if health.PanelEnabled == nil {
+		t.Fatal("PanelEnabled = nil, want a reported true")
+	}
+	// Health hands out a snapshot, so a caller writing through the pointer must
+	// not be able to rewrite what the scheduler will re-send after a reconnect.
+	*health.PanelEnabled = false
+	if again := scheduler.Health(); again.PanelEnabled == nil || !*again.PanelEnabled {
+		t.Fatalf("PanelEnabled = %v after mutating a snapshot, want it still true", again.PanelEnabled)
 	}
 }
 

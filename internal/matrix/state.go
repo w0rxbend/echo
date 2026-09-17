@@ -164,9 +164,25 @@ const (
 	ProbeFailurePermanent    ProbeFailureReason = "permanent"
 )
 
+// Health is the scheduler's view of the device, snapshotted under its lock.
+//
+// PanelEnabled and Brightness are pointers because "never set" and "set to the
+// zero value" are different answers: brightness 0 means the panel is dimmed all
+// the way off, and PanelEnabled false means the operator deliberately blanked it.
+// A nil reports that the scheduler holds no such instruction and will leave the
+// panel's own setting alone. Both are the values a reconnect re-sends, not a
+// reading taken from the panel — the firmware offers no way to ask it.
+//
+// The resend-pending flags behind them are deliberately not reported: each is
+// consumed at the top of the run loop before the resend is attempted and is not
+// re-raised if that attempt fails, so a poll would read "nothing pending" in
+// precisely the case an operator cares about. Failed resends surface as the
+// connection failure that caused them.
 type Health struct {
 	State                           State                      `json:"state"`
 	MatrixConnected                 bool                       `json:"matrix_connected"`
+	PanelEnabled                    *bool                      `json:"panel_enabled,omitempty"`
+	Brightness                      *byte                      `json:"brightness,omitempty"`
 	BackgroundID                    string                     `json:"background_id,omitempty"`
 	BackgroundKind                  BackgroundKind             `json:"background_kind,omitempty"`
 	BackgroundConvergenceState      BackgroundConvergenceState `json:"background_convergence_state"`

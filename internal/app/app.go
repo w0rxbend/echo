@@ -534,9 +534,14 @@ type readyResponse struct {
 	ObservabilityCallbackCounts  map[string]uint64 `json:"observability_callback_panic_counts,omitempty"`
 }
 
+// deviceReadyEntry mirrors matrix.Health for the readiness payload. PanelEnabled
+// and Brightness are omitted when the scheduler holds no instruction for them;
+// present-and-false and present-and-zero are meaningful settings, not absences.
 type deviceReadyEntry struct {
 	SchedulerState  matrix.State    `json:"scheduler_state"`
 	MatrixConnected bool            `json:"matrix_connected"`
+	PanelEnabled    *bool           `json:"panel_enabled,omitempty"`
+	Brightness      *byte           `json:"brightness,omitempty"`
 	Background      backgroundReady `json:"background"`
 	LastSuccess     *time.Time      `json:"last_success,omitempty"`
 	LastFailure     *time.Time      `json:"last_failure,omitempty"`
@@ -583,6 +588,8 @@ func (a *App) readiness() (readyResponse, bool) {
 		entry := deviceReadyEntry{
 			SchedulerState:  health.State,
 			MatrixConnected: health.MatrixConnected,
+			PanelEnabled:    health.PanelEnabled,
+			Brightness:      health.Brightness,
 			Background: backgroundReady{
 				ConfiguredID:   health.BackgroundID,
 				Kind:           backgroundKind,

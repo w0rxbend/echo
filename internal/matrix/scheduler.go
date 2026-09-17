@@ -384,6 +384,16 @@ func (s *Scheduler) Health() Health {
 		OutcomeReportsDropped:           s.OutcomeReportsDropped(),
 		OutcomeRecordingPanics:          s.OutcomeRecordingPanics(),
 	}
+	if s.panelEnabled != nil {
+		panelEnabled := *s.panelEnabled
+		health.PanelEnabled = &panelEnabled
+	}
+	// initialBrightness is assigned once during construction and only read after,
+	// so the read lock already held here is enough.
+	if s.initialBrightness != nil {
+		brightness := *s.initialBrightness
+		health.Brightness = &brightness
+	}
 	health.ObservabilityCallbackPanics = s.ObservabilityCallbackPanics()
 	health.ObservabilityCallbackCounts = s.ObservabilityCallbackPanicCounts()
 	if !s.lastSuccess.IsZero() {
