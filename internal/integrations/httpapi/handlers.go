@@ -338,8 +338,7 @@ func (s *Server) handlePlayPreset(w http.ResponseWriter, r *http.Request) {
 
 	preset, ok := s.registry.FirmwarePreset(animationID)
 	if !ok {
-		if entry, exists := s.registry.Entry(animationID); exists {
-			_ = entry
+		if _, exists := s.registry.Entry(animationID); exists {
 			writeError(w, http.StatusBadRequest,
 				fmt.Sprintf("animation %q is not a firmware preset; use /play for renderable animations", animationID))
 			return
@@ -643,12 +642,10 @@ func (s *Server) handleSetBackground(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Animation != "" {
-		entry, ok := s.registry.Entry(req.Animation)
-		if !ok {
+		if _, ok := s.registry.Entry(req.Animation); !ok {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown animation %q", req.Animation))
 			return
 		}
-		_ = entry
 	}
 
 	cfg := matrix.BackgroundConfig{}
