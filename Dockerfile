@@ -1,4 +1,4 @@
-FROM golang:1.26-alpine3.24 AS builder
+FROM golang:1.27-alpine3.24 AS builder
 # TARGETOS/TARGETARCH/TARGETVARIANT are injected by docker/build-push-action
 # in CI for multi-arch builds. For local builds they default to the host arch.
 ARG TARGETOS=linux
