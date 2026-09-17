@@ -1781,6 +1781,35 @@ func TestSchedulerReappliesBrightnessAfterVerifiedReconnect(t *testing.T) {
 	}
 }
 
+func TestSchedulerRestoresPanelVisibilityAfterVerifiedReconnect(t *testing.T) {
+	client := newFakeMatrixClient()
+	registry := animations.NewRegistry()
+
+	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{
+		HeartbeatInterval: 10 * time.Millisecond,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runScheduler(t, ctx, scheduler)
+
+	if err := scheduler.SetPanelEnabled(ctx, false); err != nil {
+		t.Fatalf("SetPanelEnabled: %v", err)
+	}
+	client.waitCommands(t, 1)
+	// The firmware keeps no state across a reboot and starts up enabled, so a
+	// panel the operator blanked comes back lit -- and the background
+	// convergence then repaints it. Without a resend the scheduler itself
+	// undoes the operator's last explicit command.
+	client.failCommand("ping", net.ErrClosed)
+	waitClientAttempts(t, client, "ping", 3)
+	client.waitCommands(t, 2)
+	got := commandKinds(client.commands())
+	want := []string{"panel", "panel"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("commands = %v, want %v", got, want)
+	}
+}
+
 func TestSchedulerMarksBackgroundDirtyWhileReconnectPending(t *testing.T) {
 	client := newFakeMatrixClient()
 	registry := animations.NewRegistry()

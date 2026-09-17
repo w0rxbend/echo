@@ -156,7 +156,9 @@ var controlSpecs = map[ControlKind]controlSpec{
 		},
 		// Panel enable is a visibility flag: the firmware keeps the stored frame and
 		// restores it on re-enable, so the desired background is still satisfied and
-		// must not be marked dirty.
+		// must not be marked dirty. That holds only while the panel stays up — across
+		// a reboot the flag is lost, which is why the scheduler remembers the last
+		// requested value and re-sends it after a verified reconnect.
 	},
 	ControlUploadAnimation: {
 		validateRequest: func(request ControlRequest) error {

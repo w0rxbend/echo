@@ -234,6 +234,7 @@ func (s *Scheduler) executeControl(ctx context.Context, control *ControlItem) er
 	}
 	if err == nil {
 		s.rememberControlDisplayState(control)
+		s.rememberControlPanelState(control)
 		s.markDesiredBackgroundDirtyAfterControl(control)
 	}
 	return err

@@ -190,6 +190,8 @@ type Scheduler struct {
 	backgroundConvergenceState      BackgroundConvergenceState
 	desiredBackgroundDirty          bool
 	brightnessDirty                 bool
+	panelEnabled                    *bool
+	panelEnabledDirty               bool
 	backgroundLastRestoreAttempt    time.Time
 	backgroundLastRestoreSuccess    time.Time
 	backgroundLastRestoreError      string
@@ -588,6 +590,28 @@ func (s *Scheduler) clearBrightnessDirty() {
 	s.mu.Unlock()
 }
 
+// takePanelEnabledDirty reports whether the operator's last panel-visibility
+// command needs re-sending, clearing the flag as it does. Like the brightness
+// resend it is not re-queued on failure: the flag is raised once per reconnect,
+// so a panel that rejects the command costs one attempt rather than spinning the
+// scheduler loop.
+func (s *Scheduler) takePanelEnabledDirty() (bool, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.panelEnabledDirty || s.panelEnabled == nil {
+		s.panelEnabledDirty = false
+		return false, false
+	}
+	s.panelEnabledDirty = false
+	return *s.panelEnabled, true
+}
+
+func (s *Scheduler) applyPanelEnabled(ctx context.Context, enabled bool) error {
+	return s.retryMatrix(ctx, func() error {
+		return s.client.SetPanelEnabled(ctx, enabled)
+	})
+}
+
 func (s *Scheduler) Run(ctx context.Context) error {
 	defer s.Close()
 	defer s.completeQueuedControls(ErrSchedulerStopped)
@@ -609,6 +633,15 @@ func (s *Scheduler) Run(ctx context.Context) error {
 
 	deferBackgroundRestore := false
 	for {
+		// Visibility is restored before brightness and the background so the
+		// frames those send land on an already-blanked panel, rather than
+		// flashing the operator's blanked display back on for an instant.
+		if enabled, ok := s.takePanelEnabledDirty(); ok {
+			if err := s.applyPanelEnabled(ctx, enabled); err != nil && stoppedByContext(err) {
+				s.setState(StateDraining)
+				return nil
+			}
+		}
 		if s.takeBrightnessDirty() {
 			if err := s.applyInitialBrightness(ctx); err != nil && stoppedByContext(err) {
 				s.setState(StateDraining)

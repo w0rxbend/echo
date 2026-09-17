@@ -356,6 +356,14 @@ func (s *Scheduler) markMatrixSuccess(state State) {
 	if s.initialBrightness != nil && (!previousConnected || clientRecovered) {
 		s.brightnessDirty = true
 	}
+	// Panel visibility has the same problem, with a louder symptom: a rebooted
+	// panel comes back enabled, and the background convergence above then
+	// repaints it, so a display the operator explicitly blanked lights itself
+	// back up. The last requested value is re-sent whatever it was, so the
+	// scheduler does not depend on the firmware's boot default staying "on".
+	if s.panelEnabled != nil && (!previousConnected || clientRecovered) {
+		s.panelEnabledDirty = true
+	}
 	s.reconnectAttempt = 0
 	s.lastSuccess = s.now().UTC()
 	if !previousConnected && attempt > 0 {

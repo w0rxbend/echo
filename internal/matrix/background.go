@@ -256,6 +256,22 @@ func (s *Scheduler) rememberControlDisplayState(control *ControlItem) {
 	spec.rememberState(s, control)
 }
 
+// rememberControlPanelState records the operator's last panel-visibility command
+// so a reconnect can restore it. It is kept apart from displayState because
+// visibility is not a frame: it survives every other command and has to be
+// re-applied alongside them, not instead of them.
+func (s *Scheduler) rememberControlPanelState(control *ControlItem) {
+	if control == nil || control.Kind != ControlSetPanel {
+		return
+	}
+	enabled := control.Enabled
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.panelEnabled = &enabled
+	// The panel just acknowledged this value, so any pending resend is stale.
+	s.panelEnabledDirty = false
+}
+
 func (s *Scheduler) rememberDisplayState(state displayState) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
