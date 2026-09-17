@@ -526,7 +526,10 @@ type readyResponse struct {
 	Draining       bool                        `json:"draining"`
 	EventWorker    eventWorkerReady            `json:"event_worker"`
 	Devices        map[string]deviceReadyEntry `json:"devices"`
-	// Aggregate fields retained for observability convenience.
+	// Aggregate fields retained for observability convenience. The panic counters
+	// span every component that recovers from a best-effort callback: each
+	// device's scheduler, matrix client and TCP reconnect log dispatcher, plus the
+	// process-wide event bus.
 	OutcomesDropped              uint64            `json:"outcome_reports_dropped"`
 	OutcomeRecordingPanics       uint64            `json:"outcome_recording_panics"`
 	TCPReconnectLogEventsDropped uint64            `json:"tcp_reconnect_log_events_dropped"`
@@ -617,6 +620,14 @@ func (a *App) readiness() (readyResponse, bool) {
 		allObsCounts = mergeObservabilityCallbackPanicCounts(allObsCounts,
 			applicationObservabilityCallbackPanicCounts(d.scheduler, d.client, d.tcpLogs))
 	}
+
+	// The event bus is a singleton rather than a per-device component, so it sits
+	// outside the loop above -- and was therefore counted by nothing at all. Its
+	// depth and backpressure observers write to the metrics registry, so a panic
+	// in one of them silently stops a gauge from moving; folding its counters in
+	// here is what makes that visible.
+	totalObsPanics += observabilityCallbackPanics(a.bus)
+	allObsCounts = mergeObservabilityCallbackPanicCounts(allObsCounts, a.bus.ObservabilityCallbackPanicCounts())
 
 	ready := workersRunning && !draining && allConnected
 
