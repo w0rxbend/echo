@@ -5301,6 +5301,68 @@ func TestSchedulerObservabilityCallbackPanicsAreRecoveredAndCounted(t *testing.T
 	}
 }
 
+// The queue-depth, animation-rendered and item-outcome observers are the three
+// best-effort callbacks that used to swallow their panics with a bare recover,
+// leaving a panicking observer invisible in Health(). They are driven directly
+// rather than through Run so the test is about the accounting and not about the
+// scheduler loop's timing.
+func TestSchedulerBestEffortObserverPanicsAreCountedByName(t *testing.T) {
+	client := newFakeMatrixClient()
+	registry := animations.NewRegistry()
+
+	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{
+		OnQueueDepthChange: func(int) {
+			panic("queue depth change")
+		},
+		OnAnimationRendered: func(AnimationRenderResult) {
+			panic("animation rendered")
+		},
+		OnItemOutcome: func(OutcomeReport) {
+			panic("item outcome")
+		},
+	})
+
+	scheduler.reportQueueDepth()
+	scheduler.reportAnimationRendered("demo", time.Millisecond)
+	scheduler.reportOutcome(OutcomeReport{})
+	// The outcome observer runs on the dispatcher goroutine: close drains the
+	// queue and wait blocks until that goroutine has finished, so the count is
+	// settled rather than polled for.
+	scheduler.Close()
+	scheduler.outcomeDispatcher.wait()
+
+	// A second round proves the panics did not take their callers down with
+	// them -- the mutex reportQueueDepth holds is released either way. The
+	// outcome observer is not driven again because dispatch after close drops.
+	scheduler.reportQueueDepth()
+	scheduler.reportAnimationRendered("demo", time.Millisecond)
+
+	wantCounts := map[string]uint64{
+		observabilityCallbackQueueDepthChange:  2,
+		observabilityCallbackAnimationRendered: 2,
+		observabilityCallbackItemOutcome:       1,
+	}
+	counts := scheduler.ObservabilityCallbackPanicCounts()
+	if !reflect.DeepEqual(counts, wantCounts) {
+		t.Fatalf("observability callback panic counts = %v, want %v", counts, wantCounts)
+	}
+	if got := scheduler.ObservabilityCallbackPanics(); got != 5 {
+		t.Fatalf("ObservabilityCallbackPanics() = %d, want 5", got)
+	}
+	health := scheduler.Health()
+	if health.ObservabilityCallbackPanics != 5 {
+		t.Fatalf("Health().ObservabilityCallbackPanics = %d, want 5", health.ObservabilityCallbackPanics)
+	}
+	if !reflect.DeepEqual(health.ObservabilityCallbackCounts, wantCounts) {
+		t.Fatalf("Health().ObservabilityCallbackCounts = %v, want %v", health.ObservabilityCallbackCounts, wantCounts)
+	}
+	// The critical-path counter is a separate reliability signal and must not
+	// have absorbed any of these.
+	if got := scheduler.OutcomeRecordingPanics(); got != 0 {
+		t.Fatalf("OutcomeRecordingPanics() = %d, want 0", got)
+	}
+}
+
 func TestSchedulerReconnectFailureCallbackPanicIsRecoveredAndCounted(t *testing.T) {
 	client := newFakeMatrixClient()
 	client.setDisconnected(true)

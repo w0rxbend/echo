@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/worxbend/echo/internal/observability"
 )
 
 // Terminal outcome reporting.
@@ -16,6 +18,7 @@ import (
 
 type outcomeObserverDispatcher struct {
 	observer func(OutcomeReport)
+	panics   *observability.CallbackPanics
 	reports  chan OutcomeReport
 	done     chan struct{}
 
@@ -24,12 +27,13 @@ type outcomeObserverDispatcher struct {
 	once   sync.Once
 }
 
-func newOutcomeObserverDispatcher(observer func(OutcomeReport)) *outcomeObserverDispatcher {
+func newOutcomeObserverDispatcher(observer func(OutcomeReport), panics *observability.CallbackPanics) *outcomeObserverDispatcher {
 	if observer == nil {
 		return nil
 	}
 	dispatcher := &outcomeObserverDispatcher{
 		observer: observer,
+		panics:   panics,
 		reports:  make(chan OutcomeReport, outcomeObserverQueueCapacity),
 		done:     make(chan struct{}),
 	}
@@ -71,13 +75,25 @@ func (d *outcomeObserverDispatcher) doneCh() <-chan struct{} {
 func (d *outcomeObserverDispatcher) run() {
 	defer close(d.done)
 	for report := range d.reports {
-		func() {
-			defer func() {
-				_ = recover()
-			}()
-			d.observer(report)
-		}()
+		d.deliver(report)
 	}
+}
+
+// deliver runs the observer, counting a panic rather than letting it kill the
+// dispatcher goroutine -- which would leave every later report undelivered with
+// nothing to show for it. The counter is optional so a dispatcher built without
+// one still recovers.
+func (d *outcomeObserverDispatcher) deliver(report OutcomeReport) {
+	if d.panics == nil {
+		defer func() {
+			_ = recover()
+		}()
+		d.observer(report)
+		return
+	}
+	d.panics.Run(observabilityCallbackItemOutcome, func() {
+		d.observer(report)
+	})
 }
 
 func (s *Scheduler) reportOutcome(report OutcomeReport) {
@@ -142,9 +158,9 @@ func (s *Scheduler) reportQueueDepth() {
 	}
 	s.queueDepthMu.Lock()
 	defer s.queueDepthMu.Unlock()
-	defer func() {
-		_ = recover()
-	}()
+	// Registered after the unlock so recover runs first and the mutex is
+	// released either way.
+	defer s.callbackPanics.RecoverFrom(observabilityCallbackQueueDepthChange)
 	observer(s.queue.len())
 }
 
@@ -153,9 +169,7 @@ func (s *Scheduler) reportAnimationRendered(animationID string, duration time.Du
 	if observer == nil {
 		return
 	}
-	defer func() {
-		_ = recover()
-	}()
+	defer s.callbackPanics.RecoverFrom(observabilityCallbackAnimationRendered)
 	observer(AnimationRenderResult{
 		AnimationID: animationID,
 		Duration:    duration,

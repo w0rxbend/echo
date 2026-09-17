@@ -132,6 +132,9 @@ const (
 	ObservabilityCallbackProbeFailure          = "probe_failure"
 	ObservabilityCallbackMatrixConnectedChange = "matrix_connected_change"
 	ObservabilityCallbackBackgroundRestore     = "background_restore"
+	ObservabilityCallbackQueueDepthChange      = "queue_depth_change"
+	ObservabilityCallbackAnimationRendered     = "animation_rendered"
+	ObservabilityCallbackItemOutcome           = "item_outcome"
 )
 
 type ReconnectFailureOutcome string

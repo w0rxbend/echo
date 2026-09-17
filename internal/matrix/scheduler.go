@@ -37,6 +37,9 @@ const (
 	observabilityCallbackProbeFailure          = ObservabilityCallbackProbeFailure
 	observabilityCallbackMatrixConnectedChange = ObservabilityCallbackMatrixConnectedChange
 	observabilityCallbackBackgroundRestore     = ObservabilityCallbackBackgroundRestore
+	observabilityCallbackQueueDepthChange      = ObservabilityCallbackQueueDepthChange
+	observabilityCallbackAnimationRendered     = ObservabilityCallbackAnimationRendered
+	observabilityCallbackItemOutcome           = ObservabilityCallbackItemOutcome
 )
 
 var (
@@ -266,7 +269,7 @@ func newScheduler(options SchedulerOptions, recordReliableOutcome func(OutcomeRe
 
 	backgroundKind := backgroundKindFor(options.Background, options.Registry)
 
-	return &Scheduler{
+	s := &Scheduler{
 		client:                            options.Client,
 		registry:                          options.Registry,
 		packer:                            options.Packer,
@@ -283,7 +286,6 @@ func newScheduler(options SchedulerOptions, recordReliableOutcome func(OutcomeRe
 		onAnimationRendered:               options.OnAnimationRendered,
 		onBackgroundRestore:               options.OnBackgroundRestore,
 		onItemOutcomeRecordedCriticalPath: recordReliableOutcome,
-		outcomeDispatcher:                 newOutcomeObserverDispatcher(options.OnItemOutcome),
 		onQueueDepthChange:                options.OnQueueDepthChange,
 		heartbeatInterval:                 heartbeatInterval,
 		probeTimeout:                      probeTimeout,
@@ -293,7 +295,11 @@ func newScheduler(options SchedulerOptions, recordReliableOutcome func(OutcomeRe
 		backgroundConvergenceState:        BackgroundConvergenceUnknown,
 		backgroundLastRestoreErrorClass:   ErrorKindNone,
 		clientReconnectRecoveries:         clientReconnectRecoveryCount(options.Client),
-	}, nil
+	}
+	// The dispatcher records its observer's panics into the scheduler's own
+	// counter, so it is wired up after s exists rather than inside the literal.
+	s.outcomeDispatcher = newOutcomeObserverDispatcher(options.OnItemOutcome, &s.callbackPanics)
+	return s, nil
 }
 
 func (s *Scheduler) QueueLen() int {
