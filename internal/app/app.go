@@ -1013,14 +1013,7 @@ func logBackgroundRestore(logger *slog.Logger, deviceID string, event matrix.Bac
 }
 
 func schedulerObservabilityCallbackNames() []string {
-	return []string{
-		matrix.ObservabilityCallbackReconnectDelay,
-		matrix.ObservabilityCallbackReconnectRecovered,
-		matrix.ObservabilityCallbackReconnectFailure,
-		matrix.ObservabilityCallbackProbeFailure,
-		matrix.ObservabilityCallbackMatrixConnectedChange,
-		matrix.ObservabilityCallbackBackgroundRestore,
-	}
+	return matrix.SchedulerObservabilityCallbackNames()
 }
 
 func busObservabilityCallbackNames() []string {

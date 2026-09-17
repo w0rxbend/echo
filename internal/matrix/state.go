@@ -137,6 +137,26 @@ const (
 	ObservabilityCallbackItemOutcome           = "item_outcome"
 )
 
+// SchedulerObservabilityCallbackNames lists every name a Scheduler can record a
+// recovered callback panic under, and is the list anything registering per-name
+// panic metrics must iterate. It lives beside the constants and the Run call
+// sites on purpose: the previous copy lived in the app package and drifted to
+// six of these nine, which left the queue-depth, animation-rendered and
+// item-outcome observers counted in Health() but absent from /metrics.
+func SchedulerObservabilityCallbackNames() []string {
+	return []string{
+		ObservabilityCallbackReconnectDelay,
+		ObservabilityCallbackReconnectRecovered,
+		ObservabilityCallbackReconnectFailure,
+		ObservabilityCallbackProbeFailure,
+		ObservabilityCallbackMatrixConnectedChange,
+		ObservabilityCallbackBackgroundRestore,
+		ObservabilityCallbackQueueDepthChange,
+		ObservabilityCallbackAnimationRendered,
+		ObservabilityCallbackItemOutcome,
+	}
+}
+
 type ReconnectFailureOutcome string
 
 const (

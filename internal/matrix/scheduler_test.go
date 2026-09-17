@@ -5438,6 +5438,38 @@ func TestSchedulerReconnectAttemptObservableForRetryableTransportFailure(t *test
 	}
 }
 
+// The per-callback Prometheus series are registered by iterating
+// SchedulerObservabilityCallbackNames, so a name the scheduler records but the
+// list omits is counted in Health() and invisible in /metrics -- which is what
+// happened to queue_depth_change, animation_rendered and item_outcome while the
+// list lived in the app package. Every test that pins a recorded name runs this
+// so the omission fails here rather than in a dashboard.
+func assertSchedulerCallbackNamesAreListed(t *testing.T, counts map[string]uint64) {
+	t.Helper()
+	listed := make(map[string]bool, len(SchedulerObservabilityCallbackNames()))
+	for _, name := range SchedulerObservabilityCallbackNames() {
+		listed[name] = true
+	}
+	for name := range counts {
+		if !listed[name] {
+			t.Fatalf("scheduler recorded callback panics under %q, which SchedulerObservabilityCallbackNames does not list", name)
+		}
+	}
+}
+
+func TestSchedulerObservabilityCallbackNamesAreDistinct(t *testing.T) {
+	seen := make(map[string]bool)
+	for _, name := range SchedulerObservabilityCallbackNames() {
+		if name == "" {
+			t.Fatal("SchedulerObservabilityCallbackNames contains an empty name")
+		}
+		if seen[name] {
+			t.Fatalf("SchedulerObservabilityCallbackNames lists %q twice", name)
+		}
+		seen[name] = true
+	}
+}
+
 func TestSchedulerObservabilityCallbackPanicsAreRecoveredAndCounted(t *testing.T) {
 	client := newFakeMatrixClient()
 	client.failCommand("ping", net.ErrClosed)
@@ -5465,6 +5497,7 @@ func TestSchedulerObservabilityCallbackPanicsAreRecoveredAndCounted(t *testing.T
 	}
 
 	counts := scheduler.ObservabilityCallbackPanicCounts()
+	assertSchedulerCallbackNamesAreListed(t, counts)
 	wantCounts := map[string]uint64{
 		observabilityCallbackProbeFailure:          1,
 		observabilityCallbackReconnectDelay:        1,
@@ -5528,6 +5561,7 @@ func TestSchedulerBestEffortObserverPanicsAreCountedByName(t *testing.T) {
 		observabilityCallbackItemOutcome:       1,
 	}
 	counts := scheduler.ObservabilityCallbackPanicCounts()
+	assertSchedulerCallbackNamesAreListed(t, counts)
 	if !reflect.DeepEqual(counts, wantCounts) {
 		t.Fatalf("observability callback panic counts = %v, want %v", counts, wantCounts)
 	}
@@ -5591,6 +5625,7 @@ func TestSchedulerReconnectFailureCallbackPanicIsRecoveredAndCounted(t *testing.
 	}
 
 	counts := scheduler.ObservabilityCallbackPanicCounts()
+	assertSchedulerCallbackNamesAreListed(t, counts)
 	if counts[observabilityCallbackReconnectFailure] != 1 {
 		t.Fatalf("reconnect failure callback panic count = %d, want 1; counts = %v", counts[observabilityCallbackReconnectFailure], counts)
 	}
