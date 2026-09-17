@@ -1,6 +1,10 @@
 // Regenerate the OpenAPI 3.1 spec with:
 //
-//go:generate go run github.com/swaggo/swag/v2/cmd/swag@latest init --generalInfo cmd/matrix-proxy/main.go --dir ../../.. --output swaggerdocs --outputTypes json --parseInternal --v3.1
+// The swag version is pinned rather than @latest: CI fails the build on any
+// diff in swaggerdocs/, so a floating generator would turn unrelated pull
+// requests red the day swag changes its output.
+//
+//go:generate go run github.com/swaggo/swag/v2/cmd/swag@v2.0.0-rc6 init --generalInfo cmd/matrix-proxy/main.go --dir ../../.. --output swaggerdocs --outputTypes json --parseInternal --v3.1
 package httpapi
 
 import (
