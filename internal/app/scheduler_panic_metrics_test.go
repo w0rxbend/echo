@@ -99,3 +99,19 @@ func TestSchedulerObservabilityCallbackNamesMatchMatrix(t *testing.T) {
 		}
 	}
 }
+
+// The TCP helper is the same pass-through for the same reason: it drove the
+// per-name series off its own literal until the list moved next to the
+// RecoverFrom sites in the matrix package.
+func TestTCPObservabilityCallbackNamesMatchMatrix(t *testing.T) {
+	got := tcpObservabilityCallbackNames()
+	want := matrix.TCPClientObservabilityCallbackNames()
+	if len(got) != len(want) {
+		t.Fatalf("app names = %v, matrix names = %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("app names = %v, matrix names = %v", got, want)
+		}
+	}
+}

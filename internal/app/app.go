@@ -1057,12 +1057,7 @@ func busObservabilityCallbackNames() []string {
 }
 
 func tcpObservabilityCallbackNames() []string {
-	return []string{
-		matrix.ObservabilityCallbackCommandDone,
-		matrix.ObservabilityCallbackReconnectAttempt,
-		matrix.ObservabilityCallbackReconnectRecovered,
-		matrix.ObservabilityCallbackReconnectFailure,
-	}
+	return matrix.TCPClientObservabilityCallbackNames()
 }
 
 func outcomeMetricItem(report matrix.OutcomeReport) string {

@@ -179,6 +179,22 @@ func SchedulerObservabilityCallbackNames() []string {
 	}
 }
 
+// TCPClientObservabilityCallbackNames lists every name a TCPClient can record a
+// recovered callback panic under. It lives here for the same reason the
+// scheduler list does: the copy that drives the per-name Prometheus series used
+// to be an independent literal in the app package, so a name added at a
+// RecoverFrom site below reached Health() and never reached /metrics. These are
+// the client's own callbacks, not the scheduler's -- the two lists overlap on
+// reconnect_recovered and reconnect_failure because both types observe them.
+func TCPClientObservabilityCallbackNames() []string {
+	return []string{
+		ObservabilityCallbackCommandDone,
+		ObservabilityCallbackReconnectAttempt,
+		ObservabilityCallbackReconnectRecovered,
+		ObservabilityCallbackReconnectFailure,
+	}
+}
+
 type ReconnectFailureOutcome string
 
 const (
