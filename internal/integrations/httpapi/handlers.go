@@ -119,6 +119,17 @@ type queueClearResponse struct {
 	Cleared int `json:"cleared"`
 }
 
+// queueResponse is the /queue payload. The handler used to build this inline as
+// a map[string]any, which meant the @Success annotation pointed at a
+// queueResponse that only ever existed in the test package -- swag could not
+// resolve it, and codegen failed on it. Naming the type here documents the
+// response and keeps the spec generatable.
+type queueResponse struct {
+	Depth int                      `json:"depth"`
+	State matrix.State             `json:"state"`
+	Items []matrix.QueueItemStatus `json:"items"`
+}
+
 var validInterruptModeSet = map[animations.InterruptMode]struct{}{
 	animations.InterruptNone:           {},
 	animations.InterruptHigherPriority: {},
@@ -137,6 +148,7 @@ var validInterruptModeSet = map[animations.InterruptMode]struct{}{
 // @Success		202		{object}	eventAccepted
 // @Failure		400		{object}	errorResponse
 // @Failure		404		{object}	errorResponse	"Unknown device"
+// @Failure		413		{object}	errorResponse	"Request body exceeds 1 MiB"
 // @Failure		503		{object}	errorResponse	"Event bus backpressure timeout"
 // @Router		/api/v1/devices/{device}/events [post]
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
@@ -183,6 +195,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 // @Success		202		{object}	eventAccepted
 // @Failure		400		{object}	errorResponse
 // @Failure		404		{object}	errorResponse	"Unknown device"
+// @Failure		413		{object}	errorResponse	"Request body exceeds 1 MiB"
 // @Failure		503		{object}	errorResponse	"Event bus backpressure timeout"
 // @Router		/api/v1/devices/{device}/notify [post]
 func (s *Server) handleNotify(w http.ResponseWriter, r *http.Request) {
@@ -251,6 +264,7 @@ func (s *Server) handleNotify(w http.ResponseWriter, r *http.Request) {
 // @Failure		401		{object}	errorResponse
 // @Failure		403		{object}	errorResponse
 // @Failure		404		{object}	errorResponse	"Unknown device"
+// @Failure		413		{object}	errorResponse	"Request body exceeds 1 MiB"
 // @Router		/api/v1/devices/{device}/play [post]
 func (s *Server) handlePlay(w http.ResponseWriter, r *http.Request) {
 	scheduler, _ := s.deviceFromRequest(r)
@@ -526,10 +540,10 @@ func writeError(w http.ResponseWriter, status int, message string) {
 // @Router		/api/v1/devices/{device}/queue [get]
 func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 	scheduler, _ := s.deviceFromRequest(r)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"depth": scheduler.QueueLen(),
-		"state": scheduler.State(),
-		"items": scheduler.QueueSnapshot(),
+	writeJSON(w, http.StatusOK, queueResponse{
+		Depth: scheduler.QueueLen(),
+		State: scheduler.State(),
+		Items: scheduler.QueueSnapshot(),
 	})
 }
 
@@ -623,6 +637,7 @@ func (s *Server) handleGetBackground(w http.ResponseWriter, r *http.Request) {
 // @Failure		401		{object}	errorResponse
 // @Failure		403		{object}	errorResponse
 // @Failure		404		{object}	errorResponse	"Unknown device"
+// @Failure		413		{object}	errorResponse	"Request body exceeds 1 MiB"
 // @Router		/api/v1/devices/{device}/background [put]
 func (s *Server) handleSetBackground(w http.ResponseWriter, r *http.Request) {
 	scheduler, _ := s.deviceFromRequest(r)
@@ -710,6 +725,7 @@ func (s *Server) handleMatrixClear(w http.ResponseWriter, r *http.Request) {
 // @Failure		401		{object}	errorResponse
 // @Failure		403		{object}	errorResponse
 // @Failure		404		{object}	errorResponse	"Unknown device"
+// @Failure		413		{object}	errorResponse	"Request body exceeds 1 MiB"
 // @Failure		502		{object}	errorResponse	"Matrix firmware error"
 // @Router		/api/v1/devices/{device}/matrix/brightness [post]
 func (s *Server) handleMatrixBrightness(w http.ResponseWriter, r *http.Request) {
@@ -739,6 +755,7 @@ func (s *Server) handleMatrixBrightness(w http.ResponseWriter, r *http.Request) 
 // @Failure		401		{object}	errorResponse
 // @Failure		403		{object}	errorResponse
 // @Failure		404		{object}	errorResponse	"Unknown device"
+// @Failure		413		{object}	errorResponse	"Request body exceeds 1 MiB"
 // @Failure		502		{object}	errorResponse	"Matrix firmware error"
 // @Router		/api/v1/devices/{device}/matrix/preset [post]
 func (s *Server) handleMatrixPreset(w http.ResponseWriter, r *http.Request) {
@@ -777,6 +794,7 @@ func (s *Server) handleMatrixPreset(w http.ResponseWriter, r *http.Request) {
 // @Failure		401		{object}	errorResponse
 // @Failure		403		{object}	errorResponse
 // @Failure		404		{object}	errorResponse	"Unknown device"
+// @Failure		413		{object}	errorResponse	"Request body exceeds 1 MiB"
 // @Failure		502		{object}	errorResponse	"Matrix firmware error"
 // @Router		/api/v1/devices/{device}/matrix/fill [post]
 func (s *Server) handleMatrixFill(w http.ResponseWriter, r *http.Request) {
@@ -806,6 +824,7 @@ func (s *Server) handleMatrixFill(w http.ResponseWriter, r *http.Request) {
 // @Failure		401		{object}	errorResponse
 // @Failure		403		{object}	errorResponse
 // @Failure		404		{object}	errorResponse	"Unknown device"
+// @Failure		413		{object}	errorResponse	"Request body exceeds 1 MiB"
 // @Failure		502		{object}	errorResponse	"Matrix firmware error"
 // @Router		/api/v1/devices/{device}/matrix/pixel [post]
 func (s *Server) handleMatrixPixel(w http.ResponseWriter, r *http.Request) {
@@ -835,6 +854,7 @@ func (s *Server) handleMatrixPixel(w http.ResponseWriter, r *http.Request) {
 // @Failure		401		{object}	errorResponse
 // @Failure		403		{object}	errorResponse
 // @Failure		404		{object}	errorResponse	"Unknown device"
+// @Failure		413		{object}	errorResponse	"Request body exceeds 1 MiB"
 // @Failure		502		{object}	errorResponse	"Matrix firmware error"
 // @Router		/api/v1/devices/{device}/matrix/panel [post]
 func (s *Server) handleMatrixPanel(w http.ResponseWriter, r *http.Request) {
@@ -868,6 +888,7 @@ func (s *Server) handleMatrixPanel(w http.ResponseWriter, r *http.Request) {
 // @Failure		401		{object}	errorResponse
 // @Failure		403		{object}	errorResponse
 // @Failure		404		{object}	errorResponse	"Unknown device"
+// @Failure		413		{object}	errorResponse	"Request body exceeds 1 MiB"
 // @Failure		502		{object}	errorResponse	"Matrix firmware error"
 // @Router		/api/v1/devices/{device}/matrix/animation [post]
 func (s *Server) handleMatrixAnimation(w http.ResponseWriter, r *http.Request) {

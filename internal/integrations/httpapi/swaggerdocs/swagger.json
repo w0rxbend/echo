@@ -28,6 +28,21 @@
                 },
                 "type": "object"
             },
+            "animations.RestorePolicy": {
+                "enum": [
+                    "clear",
+                    "previous_frame",
+                    "background",
+                    "leave"
+                ],
+                "type": "string",
+                "x-enum-varnames": [
+                    "RestoreClear",
+                    "RestorePreviousFrame",
+                    "RestoreBackground",
+                    "RestoreLeave"
+                ]
+            },
             "events.Event": {
                 "properties": {
                     "actor": {
@@ -384,12 +399,14 @@
                         "type": "integer"
                     },
                     "items": {
-                        "items": {},
+                        "items": {
+                            "$ref": "#/components/schemas/matrix.QueueItemStatus"
+                        },
                         "type": "array",
                         "uniqueItems": false
                     },
                     "state": {
-                        "type": "string"
+                        "$ref": "#/components/schemas/matrix.State"
                     }
                 },
                 "type": "object"
@@ -423,6 +440,135 @@
                     }
                 },
                 "type": "object"
+            },
+            "matrix.ControlKind": {
+                "enum": [
+                    "clear",
+                    "brightness",
+                    "preset",
+                    "fill",
+                    "pixel",
+                    "panel",
+                    "upload_animation"
+                ],
+                "type": "string",
+                "x-enum-varnames": [
+                    "ControlClear",
+                    "ControlSetBrightness",
+                    "ControlSetPreset",
+                    "ControlFill",
+                    "ControlSetPixel",
+                    "ControlSetPanel",
+                    "ControlUploadAnimation"
+                ]
+            },
+            "matrix.QueueControlStatus": {
+                "properties": {
+                    "brightness": {
+                        "type": "integer"
+                    },
+                    "color": {
+                        "$ref": "#/components/schemas/matrix.RGB"
+                    },
+                    "created_at": {
+                        "type": "string"
+                    },
+                    "deadline": {
+                        "type": "string"
+                    },
+                    "effect_id": {
+                        "type": "integer"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "interval": {
+                        "type": "integer"
+                    },
+                    "kind": {
+                        "$ref": "#/components/schemas/matrix.ControlKind"
+                    },
+                    "priority": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "matrix.QueueItemKind": {
+                "enum": [
+                    "animation",
+                    "control"
+                ],
+                "type": "string",
+                "x-enum-varnames": [
+                    "QueueItemAnimation",
+                    "QueueItemControl"
+                ]
+            },
+            "matrix.QueueItemStatus": {
+                "properties": {
+                    "animation_id": {
+                        "type": "string"
+                    },
+                    "control": {
+                        "$ref": "#/components/schemas/matrix.QueueControlStatus"
+                    },
+                    "created_at": {
+                        "type": "string"
+                    },
+                    "deadline": {
+                        "type": "string"
+                    },
+                    "event_id": {
+                        "type": "string"
+                    },
+                    "id": {
+                        "type": "string"
+                    },
+                    "kind": {
+                        "$ref": "#/components/schemas/matrix.QueueItemKind"
+                    },
+                    "priority": {
+                        "type": "integer"
+                    },
+                    "restore_policy": {
+                        "$ref": "#/components/schemas/animations.RestorePolicy"
+                    }
+                },
+                "type": "object"
+            },
+            "matrix.RGB": {
+                "properties": {
+                    "b": {
+                        "type": "integer"
+                    },
+                    "g": {
+                        "type": "integer"
+                    },
+                    "r": {
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "matrix.State": {
+                "enum": [
+                    "disconnected",
+                    "connecting",
+                    "ready",
+                    "playing_transient",
+                    "restoring_background",
+                    "draining"
+                ],
+                "type": "string",
+                "x-enum-varnames": [
+                    "StateDisconnected",
+                    "StateConnecting",
+                    "StateReady",
+                    "StatePlayingTransient",
+                    "StateRestoringBackground",
+                    "StateDraining"
+                ]
             }
         },
         "securitySchemes": {
@@ -615,16 +761,9 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/httpapi.backgroundConfigRequest",
-                                        "summary": "body",
-                                        "description": "Background config"
-                                    }
-                                ]
+                                "$ref": "#/components/schemas/httpapi.backgroundConfigRequest",
+                                "summary": "body",
+                                "description": "Background config"
                             }
                         }
                     },
@@ -681,6 +820,16 @@
                             }
                         },
                         "description": "Unknown device"
+                    },
+                    "413": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Request body exceeds 1 MiB"
                     }
                 },
                 "security": [
@@ -712,16 +861,9 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/events.Event",
-                                        "summary": "body",
-                                        "description": "Event payload"
-                                    }
-                                ]
+                                "$ref": "#/components/schemas/events.Event",
+                                "summary": "body",
+                                "description": "Event payload"
                             }
                         }
                     },
@@ -759,6 +901,16 @@
                         },
                         "description": "Unknown device"
                     },
+                    "413": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Request body exceeds 1 MiB"
+                    },
                     "503": {
                         "content": {
                             "application/json": {
@@ -794,16 +946,9 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/httpapi.animationUploadRequest",
-                                        "summary": "body",
-                                        "description": "Palette and frames"
-                                    }
-                                ]
+                                "$ref": "#/components/schemas/httpapi.animationUploadRequest",
+                                "summary": "body",
+                                "description": "Palette and frames"
                             }
                         }
                     },
@@ -861,6 +1006,16 @@
                         },
                         "description": "Unknown device"
                     },
+                    "413": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Request body exceeds 1 MiB"
+                    },
                     "502": {
                         "content": {
                             "application/json": {
@@ -901,16 +1056,9 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/httpapi.brightnessRequest",
-                                        "summary": "body",
-                                        "description": "Brightness value"
-                                    }
-                                ]
+                                "$ref": "#/components/schemas/httpapi.brightnessRequest",
+                                "summary": "body",
+                                "description": "Brightness value"
                             }
                         }
                     },
@@ -967,6 +1115,16 @@
                             }
                         },
                         "description": "Unknown device"
+                    },
+                    "413": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Request body exceeds 1 MiB"
                     },
                     "502": {
                         "content": {
@@ -1104,16 +1262,9 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/httpapi.colorRequest",
-                                        "summary": "body",
-                                        "description": "RGB color"
-                                    }
-                                ]
+                                "$ref": "#/components/schemas/httpapi.colorRequest",
+                                "summary": "body",
+                                "description": "RGB color"
                             }
                         }
                     },
@@ -1171,6 +1322,16 @@
                         },
                         "description": "Unknown device"
                     },
+                    "413": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Request body exceeds 1 MiB"
+                    },
                     "502": {
                         "content": {
                             "application/json": {
@@ -1211,16 +1372,9 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/httpapi.panelRequest",
-                                        "summary": "body",
-                                        "description": "Panel visibility"
-                                    }
-                                ]
+                                "$ref": "#/components/schemas/httpapi.panelRequest",
+                                "summary": "body",
+                                "description": "Panel visibility"
                             }
                         }
                     },
@@ -1278,6 +1432,16 @@
                         },
                         "description": "Unknown device"
                     },
+                    "413": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Request body exceeds 1 MiB"
+                    },
                     "502": {
                         "content": {
                             "application/json": {
@@ -1318,16 +1482,9 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/httpapi.pixelRequest",
-                                        "summary": "body",
-                                        "description": "Pixel coordinate and colour"
-                                    }
-                                ]
+                                "$ref": "#/components/schemas/httpapi.pixelRequest",
+                                "summary": "body",
+                                "description": "Pixel coordinate and colour"
                             }
                         }
                     },
@@ -1385,6 +1542,16 @@
                         },
                         "description": "Unknown device"
                     },
+                    "413": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Request body exceeds 1 MiB"
+                    },
                     "502": {
                         "content": {
                             "application/json": {
@@ -1425,16 +1592,9 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/httpapi.presetRequest",
-                                        "summary": "body",
-                                        "description": "Preset parameters"
-                                    }
-                                ]
+                                "$ref": "#/components/schemas/httpapi.presetRequest",
+                                "summary": "body",
+                                "description": "Preset parameters"
                             }
                         }
                     },
@@ -1492,6 +1652,16 @@
                         },
                         "description": "Unknown device"
                     },
+                    "413": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Request body exceeds 1 MiB"
+                    },
                     "502": {
                         "content": {
                             "application/json": {
@@ -1532,16 +1702,9 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/httpapi.notifyRequest",
-                                        "summary": "body",
-                                        "description": "Notification"
-                                    }
-                                ]
+                                "$ref": "#/components/schemas/httpapi.notifyRequest",
+                                "summary": "body",
+                                "description": "Notification"
                             }
                         }
                     },
@@ -1579,6 +1742,16 @@
                         },
                         "description": "Unknown device"
                     },
+                    "413": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Request body exceeds 1 MiB"
+                    },
                     "503": {
                         "content": {
                             "application/json": {
@@ -1614,16 +1787,9 @@
                     "content": {
                         "application/json": {
                             "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/httpapi.playRequest",
-                                        "summary": "body",
-                                        "description": "Play request"
-                                    }
-                                ]
+                                "$ref": "#/components/schemas/httpapi.playRequest",
+                                "summary": "body",
+                                "description": "Play request"
                             }
                         }
                     },
@@ -1680,6 +1846,16 @@
                             }
                         },
                         "description": "Unknown device"
+                    },
+                    "413": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/httpapi.errorResponse"
+                                }
+                            }
+                        },
+                        "description": "Request body exceeds 1 MiB"
                     }
                 },
                 "security": [

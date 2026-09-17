@@ -236,13 +236,16 @@ type QueueItemStatus struct {
 	Control       *QueueControlStatus      `json:"control,omitempty"`
 }
 
+// QueueControlStatus mirrors a queued control for the /queue endpoint. The
+// swaggertype tag on Interval is for the OpenAPI generator only: it cannot see
+// into time.Duration, which marshals as integer nanoseconds.
 type QueueControlStatus struct {
 	ID         string        `json:"id,omitempty"`
 	Kind       ControlKind   `json:"kind"`
 	Priority   int           `json:"priority"`
 	Brightness byte          `json:"brightness,omitempty"`
 	EffectID   byte          `json:"effect_id,omitempty"`
-	Interval   time.Duration `json:"interval,omitempty"`
+	Interval   time.Duration `json:"interval,omitempty" swaggertype:"integer"`
 	Color      RGB           `json:"color,omitempty"`
 	CreatedAt  time.Time     `json:"created_at,omitempty"`
 	Deadline   time.Time     `json:"deadline,omitempty"`
@@ -279,7 +282,7 @@ type ControlRequest struct {
 	Priority   int              `json:"priority"`
 	Brightness byte             `json:"brightness,omitempty"`
 	EffectID   byte             `json:"effect_id,omitempty"`
-	Interval   time.Duration    `json:"interval,omitempty"`
+	Interval   time.Duration    `json:"interval,omitempty" swaggertype:"integer"`
 	Color      RGB              `json:"color,omitempty"`
 	X          byte             `json:"x,omitempty"`
 	Y          byte             `json:"y,omitempty"`
@@ -294,7 +297,7 @@ type ControlRequest struct {
 // a TCP round-trip per frame.
 type AnimationFrame struct {
 	Frame PackedFrame   `json:"-"`
-	Delay time.Duration `json:"delay"`
+	Delay time.Duration `json:"delay" swaggertype:"integer"`
 }
 
 type ControlItem struct {
@@ -303,7 +306,7 @@ type ControlItem struct {
 	Priority   int              `json:"priority"`
 	Brightness byte             `json:"brightness,omitempty"`
 	EffectID   byte             `json:"effect_id,omitempty"`
-	Interval   time.Duration    `json:"interval,omitempty"`
+	Interval   time.Duration    `json:"interval,omitempty" swaggertype:"integer"`
 	Color      RGB              `json:"color,omitempty"`
 	X          byte             `json:"x,omitempty"`
 	Y          byte             `json:"y,omitempty"`

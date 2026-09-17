@@ -43,13 +43,16 @@ jobs:
             exit 1
           fi
 
+      # The go:generate directive lives in internal/integrations/httpapi, not in
+      # cmd/matrix-proxy. Targeting cmd/ ran no directives at all, so the drift
+      # check below had nothing to compare and could never fail.
       - name: Regenerate Swagger spec
-        run: go generate ./cmd/matrix-proxy
+        run: go generate ./internal/integrations/httpapi
 
       - name: Check for spec drift
         run: |
           if ! git diff --exit-code internal/integrations/httpapi/swaggerdocs/; then
-            echo "Swagger spec is out of date — run 'go generate ./cmd/matrix-proxy' and commit"
+            echo "Swagger spec is out of date — run 'go generate ./internal/integrations/httpapi' and commit"
             exit 1
           fi
 
