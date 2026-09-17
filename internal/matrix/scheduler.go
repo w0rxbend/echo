@@ -125,9 +125,11 @@ type SchedulerOptions struct {
 	Packer        animations.LayoutPacker
 	QueueCapacity int
 	Background    BackgroundConfig
-	// InitialBrightness is applied to the panel once, as soon as the scheduler
-	// first reaches a ready matrix. nil leaves the panel's own brightness alone;
-	// 0 is a meaningful setting ("off"), so it cannot double as "unset".
+	// InitialBrightness is applied to the panel as soon as the scheduler first
+	// reaches a ready matrix, and re-applied after every verified reconnect,
+	// because a panel that rebooted comes back at its firmware default. nil
+	// leaves the panel's own brightness alone; 0 is a meaningful setting
+	// ("off"), so it cannot double as "unset".
 	InitialBrightness       *byte
 	ReconnectMinDelay       time.Duration
 	ReconnectMaxDelay       time.Duration
@@ -187,6 +189,7 @@ type Scheduler struct {
 	backgroundKind                  BackgroundKind
 	backgroundConvergenceState      BackgroundConvergenceState
 	desiredBackgroundDirty          bool
+	brightnessDirty                 bool
 	backgroundLastRestoreAttempt    time.Time
 	backgroundLastRestoreSuccess    time.Time
 	backgroundLastRestoreError      string
@@ -558,9 +561,31 @@ func (s *Scheduler) applyInitialBrightness(ctx context.Context) error {
 		return nil
 	}
 	brightness := *s.initialBrightness
-	return s.retryMatrix(ctx, func() error {
+	err := s.retryMatrix(ctx, func() error {
 		return s.client.SetBrightness(ctx, brightness)
 	})
+	if err == nil {
+		s.clearBrightnessDirty()
+	}
+	return err
+}
+
+// takeBrightnessDirty reports whether the panel needs the configured brightness
+// re-sent, clearing the flag as it does. A failed resend is not re-queued: the
+// flag is raised once per reconnect, so a panel that rejects the command costs
+// one attempt rather than spinning the scheduler loop.
+func (s *Scheduler) takeBrightnessDirty() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	dirty := s.brightnessDirty
+	s.brightnessDirty = false
+	return dirty
+}
+
+func (s *Scheduler) clearBrightnessDirty() {
+	s.mu.Lock()
+	s.brightnessDirty = false
+	s.mu.Unlock()
 }
 
 func (s *Scheduler) Run(ctx context.Context) error {
@@ -584,6 +609,12 @@ func (s *Scheduler) Run(ctx context.Context) error {
 
 	deferBackgroundRestore := false
 	for {
+		if s.takeBrightnessDirty() {
+			if err := s.applyInitialBrightness(ctx); err != nil && stoppedByContext(err) {
+				s.setState(StateDraining)
+				return nil
+			}
+		}
 		if deferBackgroundRestore {
 			deferBackgroundRestore = false
 		} else if s.shouldApplyDesiredBackground() && s.queue.len() == 0 {

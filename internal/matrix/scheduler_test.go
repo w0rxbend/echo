@@ -1753,6 +1753,34 @@ func TestSchedulerRestoresBackgroundAfterVerifiedReconnect(t *testing.T) {
 	}
 }
 
+func TestSchedulerReappliesBrightnessAfterVerifiedReconnect(t *testing.T) {
+	client := newFakeMatrixClient()
+	registry := animations.NewRegistry()
+	brightness := byte(42)
+
+	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{
+		InitialBrightness: &brightness,
+		HeartbeatInterval: 10 * time.Millisecond,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runScheduler(t, ctx, scheduler)
+
+	client.waitCommands(t, 1)
+	// A panel that dropped the link and came back is a panel that may have
+	// rebooted, which resets it to the firmware default brightness. Without a
+	// resend the display silently stays at that default until the service
+	// restarts.
+	client.failCommand("ping", net.ErrClosed)
+	waitClientAttempts(t, client, "ping", 3)
+	client.waitCommands(t, 2)
+	got := commandKinds(client.commands())
+	want := []string{"brightness", "brightness"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("commands = %v, want %v", got, want)
+	}
+}
+
 func TestSchedulerMarksBackgroundDirtyWhileReconnectPending(t *testing.T) {
 	client := newFakeMatrixClient()
 	registry := animations.NewRegistry()

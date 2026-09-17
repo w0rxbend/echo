@@ -349,6 +349,13 @@ func (s *Scheduler) markMatrixSuccess(state State) {
 			s.markDesiredBackgroundDirtyLocked(true)
 		}
 	}
+	// A panel that rebooted came back at its firmware default brightness, not the
+	// one the operator configured. The background has its own convergence, so
+	// without this the display silently drifts brighter or dimmer after every
+	// reconnect and stays that way until the service restarts.
+	if s.initialBrightness != nil && (!previousConnected || clientRecovered) {
+		s.brightnessDirty = true
+	}
 	s.reconnectAttempt = 0
 	s.lastSuccess = s.now().UTC()
 	if !previousConnected && attempt > 0 {
