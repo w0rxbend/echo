@@ -46,6 +46,28 @@ const (
 	BackgroundKindStaticColor    BackgroundKind = "static_color"
 )
 
+// backgroundKinds is every kind backgroundKindFor can return, excluding the
+// empty kind that means "no background configured".
+var backgroundKinds = []BackgroundKind{
+	BackgroundKindFirmwarePreset,
+	BackgroundKindRenderable,
+	BackgroundKindStaticColor,
+}
+
+// BackgroundKinds returns every kind a configured background can carry. It
+// exists so the projection into the public vocabulary can be checked for
+// exhaustiveness: animations.ProjectPublicKind is keyed by these strings but
+// lives in another package and cannot import this one, and every consumer of a
+// failed projection drops quietly -- /readyz blanks background.kind and the
+// background restore, dirty, converged, state and next-retry metrics stop being
+// emitted for the device entirely. A kind added here without a matching entry
+// in publicKindMap must fail a test rather than a dashboard.
+func BackgroundKinds() []BackgroundKind {
+	kinds := make([]BackgroundKind, len(backgroundKinds))
+	copy(kinds, backgroundKinds)
+	return kinds
+}
+
 type BackgroundConvergenceState string
 
 const (
