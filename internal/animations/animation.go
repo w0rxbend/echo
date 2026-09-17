@@ -44,6 +44,38 @@ const (
 	InterruptCritical       InterruptMode = "critical"
 )
 
+// validInterruptModes is the canonical set. Unlike an unrecognised restore
+// policy, which Scheduler.restore rejects loudly, an unrecognised interrupt mode
+// falls through applyInterruptMode's `mode != higher_priority && mode !=
+// critical` guard and silently behaves as InterruptNone -- so a rule that meant
+// to pre-empt whatever is playing quietly queues behind it instead. Every entry
+// point must reject it rather than rely on a downstream error.
+var validInterruptModes = map[InterruptMode]struct{}{
+	InterruptNone:           {},
+	InterruptHigherPriority: {},
+	InterruptCritical:       {},
+}
+
+// IsValidInterruptMode reports whether the mode is one the scheduler implements.
+// The empty mode is accepted: the scheduler treats it as InterruptNone.
+func IsValidInterruptMode(mode InterruptMode) bool {
+	if mode == "" {
+		return true
+	}
+	_, ok := validInterruptModes[mode]
+	return ok
+}
+
+// InterruptModeNames returns the accepted mode names in a stable order, for
+// error messages and help text.
+func InterruptModeNames() []string {
+	return []string{
+		string(InterruptNone),
+		string(InterruptHigherPriority),
+		string(InterruptCritical),
+	}
+}
+
 type RestorePolicy string
 
 const (

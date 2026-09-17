@@ -130,12 +130,6 @@ type queueResponse struct {
 	Items []matrix.QueueItemStatus `json:"items"`
 }
 
-var validInterruptModeSet = map[animations.InterruptMode]struct{}{
-	animations.InterruptNone:           {},
-	animations.InterruptHigherPriority: {},
-	animations.InterruptCritical:       {},
-}
-
 // ── Event endpoints ───────────────────────────────────────────────────────────
 
 // @Summary		Publish a generic event
@@ -505,8 +499,7 @@ func validRestorePolicy(policy animations.RestorePolicy) bool {
 }
 
 func validInterruptMode(mode animations.InterruptMode) bool {
-	_, ok := validInterruptModeSet[mode]
-	return ok
+	return animations.IsValidInterruptMode(mode)
 }
 
 func addAttr(attrs map[string]string, key, value string) {

@@ -141,6 +141,14 @@ func validateRule(rule Rule) error {
 		return fmt.Errorf("play.restore %q is not a valid restore policy; expected one of %s",
 			rule.Play.Restore, strings.Join(animations.RestorePolicyNames(), ", "))
 	}
+	// An unrecognised interrupt mode is worse than a loud failure: it slips past
+	// applyInterruptMode's guard and behaves as "none", so a rule written to
+	// pre-empt the current animation silently waits its turn instead. The HTTP
+	// boundary already rejects the same typo with a 400.
+	if !animations.IsValidInterruptMode(rule.Play.Interrupt) {
+		return fmt.Errorf("play.interrupt %q is not a valid interrupt mode; expected one of %s",
+			rule.Play.Interrupt, strings.Join(animations.InterruptModeNames(), ", "))
+	}
 	if !animations.IsValidLoopPolicy(rule.Play.Loop) {
 		return fmt.Errorf("play.loop %q is not a valid loop policy; expected one of %s",
 			rule.Play.Loop, strings.Join(animations.LoopPolicyNames(), ", "))

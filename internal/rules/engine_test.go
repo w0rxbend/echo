@@ -225,3 +225,44 @@ func TestLoadAcceptsEveryValidRestorePolicyAndTheEmptyDefault(t *testing.T) {
 		}
 	}
 }
+
+// TestLoadRejectsUnknownInterruptMode pins the quiet half of the validation gap.
+//
+// An unrecognised restore policy fails loudly once it reaches the scheduler, so
+// even without load-time validation an operator eventually learns about it. An
+// unrecognised interrupt mode does not: it falls through applyInterruptMode's
+// `mode != higher_priority && mode != critical` guard and behaves exactly like
+// "none", so a rule written to pre-empt whatever is playing silently queues
+// behind it. The same typo sent to /events is rejected with a 400.
+func TestLoadRejectsUnknownInterruptMode(t *testing.T) {
+	_, err := Load([]byte(`
+rules:
+  - id: typo_interrupt
+    when:
+      source: http
+      type: notify
+    play:
+      animation: notification
+      interrupt: higher-priority
+`))
+	if err == nil {
+		t.Fatal("Load() error = nil; an unknown interrupt mode must be rejected at load, not silently demoted to none")
+	}
+	for _, want := range []string{"higher-priority", "interrupt mode", "higher_priority"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("Load() error = %v, want containing %q so the operator can see the fix", err, want)
+		}
+	}
+}
+
+func TestLoadAcceptsEveryValidInterruptModeAndTheEmptyDefault(t *testing.T) {
+	for _, mode := range append(animations.InterruptModeNames(), "") {
+		body := "\nrules:\n  - id: r\n    when:\n      source: http\n      type: notify\n    play:\n      animation: notification\n"
+		if mode != "" {
+			body += "      interrupt: " + mode + "\n"
+		}
+		if _, err := Load([]byte(body)); err != nil {
+			t.Fatalf("Load() with interrupt=%q error = %v, want nil", mode, err)
+		}
+	}
+}
