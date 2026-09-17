@@ -16,23 +16,24 @@ type Registry struct {
 	EventPublishBackpressureTimeout prometheus.Counter
 
 	// Per-device metrics all carry a "device" label.
-	PlayItemsTotal                 *prometheus.CounterVec
-	PlayQueueDepth                 *prometheus.GaugeVec
-	MatrixCommandsTotal            *prometheus.CounterVec
-	MatrixCommandDuration          *prometheus.HistogramVec
-	MatrixReconnectsTotal          *prometheus.CounterVec
-	MatrixReconnectDelay           *prometheus.HistogramVec
-	MatrixReconnectRecoveriesTotal *prometheus.CounterVec
-	MatrixReconnectFailuresTotal   *prometheus.CounterVec
-	MatrixProbeFailuresTotal       *prometheus.CounterVec
-	BackgroundRestoreAttemptsTotal *prometheus.CounterVec
-	BackgroundRestoreFailuresTotal *prometheus.CounterVec
-	BackgroundDirty                *prometheus.GaugeVec
-	BackgroundConverged            *prometheus.GaugeVec
-	BackgroundNextRetrySeconds     *prometheus.GaugeVec
-	BackgroundState                *prometheus.GaugeVec
-	MatrixConnected                *prometheus.GaugeVec
-	AnimationRenderDuration        *prometheus.HistogramVec
+	PlayItemsTotal                  *prometheus.CounterVec
+	PlayQueueDepth                  *prometheus.GaugeVec
+	MatrixCommandsTotal             *prometheus.CounterVec
+	MatrixCommandDuration           *prometheus.HistogramVec
+	MatrixReconnectsTotal           *prometheus.CounterVec
+	MatrixReconnectDelay            *prometheus.HistogramVec
+	MatrixReconnectRecoveriesTotal  *prometheus.CounterVec
+	MatrixReconnectFailuresTotal    *prometheus.CounterVec
+	MatrixProbeFailuresTotal        *prometheus.CounterVec
+	BackgroundRestoreAttemptsTotal  *prometheus.CounterVec
+	BackgroundRestoreFailuresTotal  *prometheus.CounterVec
+	BackgroundRestoreSuccessesTotal *prometheus.CounterVec
+	BackgroundDirty                 *prometheus.GaugeVec
+	BackgroundConverged             *prometheus.GaugeVec
+	BackgroundNextRetrySeconds      *prometheus.GaugeVec
+	BackgroundState                 *prometheus.GaugeVec
+	MatrixConnected                 *prometheus.GaugeVec
+	AnimationRenderDuration         *prometheus.HistogramVec
 
 	// CounterFuncs registered per-device at wire-up time.
 }
@@ -112,6 +113,10 @@ func New() (*Registry, error) {
 		Name: "matrix_proxy_background_restore_failures_total",
 		Help: "Total scheduler-owned desired-background restore failures by device, bounded background kind, and error class.",
 	}, []string{"device", "kind", "error_class"})
+	r.BackgroundRestoreSuccessesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "matrix_proxy_background_restore_successes_total",
+		Help: "Total scheduler-owned desired-background restores that converged, by device, bounded background kind, and whether the restore recovered from earlier failures.",
+	}, []string{"device", "kind", "outcome"})
 	r.BackgroundDirty = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "matrix_proxy_background_dirty",
 		Help: "Whether the configured background is currently dirty by device and bounded background kind: 1 dirty, 0 clean.",
@@ -156,6 +161,7 @@ func New() (*Registry, error) {
 		r.MatrixProbeFailuresTotal,
 		r.BackgroundRestoreAttemptsTotal,
 		r.BackgroundRestoreFailuresTotal,
+		r.BackgroundRestoreSuccessesTotal,
 		r.BackgroundDirty,
 		r.BackgroundConverged,
 		r.BackgroundNextRetrySeconds,

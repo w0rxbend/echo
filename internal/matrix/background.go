@@ -108,7 +108,7 @@ func (s *Scheduler) applyDesiredBackground(ctx context.Context, force bool) erro
 		err = s.restoreRenderableBackground(ctx)
 	}
 	if err == nil {
-		s.markDesiredBackgroundClean()
+		s.markBackgroundRestoreConverged()
 	} else {
 		s.markBackgroundRestoreFailure(ctx, err)
 	}
@@ -344,11 +344,31 @@ func (s *Scheduler) backgroundDirtyStateLocked(now time.Time) BackgroundConverge
 	}, now).State
 }
 
-func (s *Scheduler) markDesiredBackgroundClean() {
+// markBackgroundRestoreConverged is the terminal success signal for one restore
+// attempt, the counterpart to markBackgroundRestoreFailure. Every
+// applyDesiredBackground pass reports an attempt, so reporting convergence here
+// too keeps attempts, failures and successes reconcilable instead of leaving
+// success to be inferred by subtraction. FailureCount carries the failures this
+// restore endured before it succeeded, which is what separates a recovery from
+// an ordinary first-try apply. Convergence recorded anywhere else -- disabling
+// the background, or a spec that lands it directly -- is not a restore attempt
+// and stays silent.
+func (s *Scheduler) markBackgroundRestoreConverged() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	// Read the retry state before clearing it: markDesiredBackgroundConvergedLocked
+	// resets the counter this event is meant to report.
+	failureCount := s.backgroundRetryFailureCount
 	s.markDesiredBackgroundConvergedLocked()
 	s.backgroundLastRestoreSuccess = s.now().UTC()
+	event := BackgroundRestoreEvent{
+		AnimationID:  s.background.AnimationID,
+		Kind:         s.backgroundKind,
+		State:        s.backgroundConvergenceState,
+		ErrorKind:    ErrorKindNone,
+		FailureCount: failureCount,
+	}
+	s.mu.Unlock()
+	s.reportBackgroundRestore(event)
 }
 
 func (s *Scheduler) markDesiredBackgroundConverged() {

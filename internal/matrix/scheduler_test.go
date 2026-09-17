@@ -222,7 +222,7 @@ func TestSchedulerPreviousFrameRestoreConvergesToFirmwarePresetBackgroundWithout
 			!health.BackgroundDirty &&
 			health.BackgroundConverged
 	})
-	backgrounds.waitCount(t, 1)
+	backgrounds.waitStateCount(t, BackgroundConvergenceAttempting, 1)
 	if err := scheduler.EnqueueRequest(ctx, animations.AnimationRequest{
 		ID:            "notify",
 		AnimationID:   "notify",
@@ -243,8 +243,11 @@ func TestSchedulerPreviousFrameRestoreConvergesToFirmwarePresetBackgroundWithout
 		countCommandKinds(got, "frame:31") != 1 {
 		t.Fatalf("commands = %v, want startup preset, notify frames, and previous-frame preset restore only", got)
 	}
-	if got := backgrounds.count(); got != 1 {
+	if got := backgrounds.countState(BackgroundConvergenceAttempting); got != 1 {
 		t.Fatalf("background restore attempts = %d, want only startup restore; previous-frame exact preset restore must suppress idle duplicate", got)
+	}
+	if got := backgrounds.countState(BackgroundConvergenceConverged); got != 1 {
+		t.Fatalf("background restore convergences = %d, want one per attempt", got)
 	}
 	if got := scheduler.QueueLen(); got != 0 {
 		t.Fatalf("queue length = %d, want 0; background convergence must stay out of ordinary queue", got)
@@ -284,7 +287,7 @@ func TestSchedulerPreviousFrameRestoreConvergesToRenderableBackgroundWithoutIdle
 			!health.BackgroundDirty &&
 			health.BackgroundConverged
 	})
-	backgrounds.waitCount(t, 1)
+	backgrounds.waitStateCount(t, BackgroundConvergenceAttempting, 1)
 	initialState := scheduler.snapshotDisplayState()
 	if initialState.Kind != displayStateFrame || initialState.BackgroundID != "background" {
 		t.Fatalf("initial display state = %+v, want scheduler-owned renderable background identity", initialState)
@@ -311,8 +314,11 @@ func TestSchedulerPreviousFrameRestoreConvergesToRenderableBackgroundWithoutIdle
 		countCommandKinds(got, "frame:81") != 1 {
 		t.Fatalf("commands = %v, want startup background, notify frames, and previous-frame background restore only", got)
 	}
-	if got := backgrounds.count(); got != 1 {
+	if got := backgrounds.countState(BackgroundConvergenceAttempting); got != 1 {
 		t.Fatalf("background restore attempts = %d, want only startup restore; previous-frame exact background identity must suppress idle duplicate", got)
+	}
+	if got := backgrounds.countState(BackgroundConvergenceConverged); got != 1 {
+		t.Fatalf("background restore convergences = %d, want one per attempt", got)
 	}
 	if got := scheduler.QueueLen(); got != 0 {
 		t.Fatalf("queue length = %d, want 0; background convergence must stay out of ordinary queue", got)
@@ -355,7 +361,7 @@ func TestSchedulerPreviousFrameRestoreDoesNotConvergeRenderableBackgroundFromVis
 			!health.BackgroundDirty &&
 			health.BackgroundConverged
 	})
-	backgrounds.waitCount(t, 1)
+	backgrounds.waitStateCount(t, BackgroundConvergenceAttempting, 1)
 	if state := scheduler.snapshotDisplayState(); state.Kind != displayStateFrame || state.BackgroundID != "background" {
 		t.Fatalf("initial display state = %+v, want scheduler-owned renderable background identity", state)
 	}
@@ -374,7 +380,7 @@ func TestSchedulerPreviousFrameRestoreDoesNotConvergeRenderableBackgroundFromVis
 		t.Fatal(err)
 	}
 
-	backgrounds.waitCount(t, 2)
+	backgrounds.waitStateCount(t, BackgroundConvergenceAttempting, 2)
 	commands := idle.wait(t, scheduler, client, 5, func(health Health, state displayState) bool {
 		return health.BackgroundConvergenceState == BackgroundConvergenceConverged &&
 			!health.BackgroundDirty &&
@@ -388,8 +394,11 @@ func TestSchedulerPreviousFrameRestoreDoesNotConvergeRenderableBackgroundFromVis
 		countCommandKinds(got, "frame:80") != 1 {
 		t.Fatalf("commands = %v, want startup background, lookalike, notify, previous-frame restore, and idle background restore", got)
 	}
-	if got := backgrounds.count(); got != 2 {
+	if got := backgrounds.countState(BackgroundConvergenceAttempting); got != 2 {
 		t.Fatalf("background restore attempts = %d, want startup plus idle restore after visually identical non-background previous frame", got)
+	}
+	if got := backgrounds.countState(BackgroundConvergenceConverged); got != 2 {
+		t.Fatalf("background restore convergences = %d, want one per attempt", got)
 	}
 	if got := scheduler.QueueLen(); got != 0 {
 		t.Fatalf("queue length = %d, want 0; background convergence must stay out of ordinary queue", got)
@@ -6296,15 +6305,19 @@ func (r *backgroundRestoreRecorder) record(event BackgroundRestoreEvent) {
 	r.cond.Broadcast()
 }
 
-func (r *backgroundRestoreRecorder) waitCount(t *testing.T, want int) {
+// waitStateCount blocks until the recorder has seen want events in the given
+// state. The stream carries an attempt, then either a failure or a convergence,
+// for every restore, so these assertions name the state they mean rather than
+// counting the whole stream and silently changing meaning when a state is added.
+func (r *backgroundRestoreRecorder) waitStateCount(t *testing.T, state BackgroundConvergenceState, want int) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for len(r.events) < want {
+	for r.countStateLocked(state) < want {
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
-			t.Fatalf("background restore attempts = %d, want at least %d", len(r.events), want)
+			t.Fatalf("background restore %s events = %d, want at least %d", state, r.countStateLocked(state), want)
 		}
 		timer := time.AfterFunc(remaining, func() {
 			r.mu.Lock()
@@ -6316,10 +6329,28 @@ func (r *backgroundRestoreRecorder) waitCount(t *testing.T, want int) {
 	}
 }
 
-func (r *backgroundRestoreRecorder) count() int {
+// snapshot copies the whole stream so assertions can inspect a single event's
+// payload without holding the recorder's lock while the scheduler still writes.
+func (r *backgroundRestoreRecorder) snapshot() []BackgroundRestoreEvent {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return len(r.events)
+	return append([]BackgroundRestoreEvent(nil), r.events...)
+}
+
+func (r *backgroundRestoreRecorder) countState(state BackgroundConvergenceState) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.countStateLocked(state)
+}
+
+func (r *backgroundRestoreRecorder) countStateLocked(state BackgroundConvergenceState) int {
+	total := 0
+	for _, event := range r.events {
+		if event.State == state {
+			total++
+		}
+	}
+	return total
 }
 
 func waitOutcomeDispatcherStopped(t *testing.T, scheduler *Scheduler) {

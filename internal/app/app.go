@@ -792,6 +792,26 @@ var backgroundRestoreMetricHandlers = map[matrix.BackgroundConvergenceState]func
 	matrix.BackgroundConvergenceRetrying: func(registry *metrics.Registry, deviceID string, kind string, event matrix.BackgroundRestoreEvent) {
 		registry.BackgroundRestoreFailuresTotal.WithLabelValues(deviceID, kind, string(event.ErrorKind)).Inc()
 	},
+	matrix.BackgroundConvergenceConverged: func(registry *metrics.Registry, deviceID string, kind string, event matrix.BackgroundRestoreEvent) {
+		registry.BackgroundRestoreSuccessesTotal.WithLabelValues(deviceID, kind, backgroundRestoreOutcome(event)).Inc()
+	},
+}
+
+// Restore outcomes are derived from the event's own failure count rather than
+// projected from a matrix vocabulary, so the label stays bounded to these two
+// values and cannot drift as the scheduler gains states.
+const (
+	backgroundRestoreOutcomeConverged = "converged"
+	backgroundRestoreOutcomeRecovered = "recovered"
+)
+
+// backgroundRestoreOutcome separates a restore that succeeded first try from one
+// that climbed out of a retry loop -- the transition worth alerting on.
+func backgroundRestoreOutcome(event matrix.BackgroundRestoreEvent) string {
+	if event.FailureCount > 0 {
+		return backgroundRestoreOutcomeRecovered
+	}
+	return backgroundRestoreOutcomeConverged
 }
 
 func (a *App) refreshBackgroundStateMetrics() {
@@ -1007,6 +1027,18 @@ func logBackgroundRestore(logger *slog.Logger, deviceID string, event matrix.Bac
 	}
 	if event.State == matrix.BackgroundConvergenceAttempting {
 		logger.Info("matrix background restore attempt", attrs...)
+		return
+	}
+	// Convergence is the only non-attempt state that is not a failure; without
+	// this branch a successful restore would be logged as one. Failure count and
+	// outcome ride along here alone so the attempt and failure log shapes are
+	// left as they were.
+	if event.State == matrix.BackgroundConvergenceConverged {
+		logger.Info("matrix background restore converged",
+			append(attrs,
+				"failure_count", event.FailureCount,
+				"outcome", backgroundRestoreOutcome(event),
+			)...)
 		return
 	}
 	logger.Warn("matrix background restore failure", attrs...)
