@@ -204,6 +204,9 @@ func validateAnimationFrames(frames []AnimationFrame) error {
 		if _, err := durationMilliseconds(frame.Delay, fmt.Sprintf("animation frame %d delay", index)); err != nil {
 			return err
 		}
+		if frame.Delay < MinAnimationFrameDelay {
+			return fmt.Errorf("%w: animation frame %d delay must be at least %s for a device-resident animation: got %s", ErrInvalidControl, index, MinAnimationFrameDelay, frame.Delay)
+		}
 	}
 	return nil
 }

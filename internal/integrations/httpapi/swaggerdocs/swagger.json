@@ -930,7 +930,7 @@
         },
         "/api/v1/devices/{device}/matrix/animation": {
             "post": {
-                "description": "Stores up to 8 frames in the firmware's animation slot and lets the device loop them locally, with no network round-trip per frame. Frames use the same palette-and-rows form as config-authored animations: each row is 8 characters and every character must appear in the palette.",
+                "description": "Stores up to 8 frames in the firmware's animation slot and lets the device loop them locally, with no network round-trip per frame. Frames use the same palette-and-rows form as config-authored animations: each row is 8 characters and every character must appear in the palette. Each delay must be at least 20ms: the firmware's effect engine silently raises anything faster to that floor, so a shorter delay is rejected here rather than acknowledged and then played slow.",
                 "parameters": [
                     {
                         "description": "Device ID",
@@ -974,7 +974,7 @@
                                 }
                             }
                         },
-                        "description": "Invalid palette, rows, delay, or more than 8 frames"
+                        "description": "Invalid palette or rows, frame delay below 20ms, or more than 8 frames"
                     },
                     "401": {
                         "content": {

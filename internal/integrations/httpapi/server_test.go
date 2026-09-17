@@ -3852,6 +3852,20 @@ func TestMatrixAnimationRejectsTooManyFrames(t *testing.T) {
 	}
 }
 
+// A device-resident animation is looped by the firmware, which raises anything
+// faster than 20ms to that floor and still acknowledges the upload. Answering
+// 200 would promise a speed the panel never plays, so the request is refused.
+func TestMatrixAnimationRejectsDelayBelowFirmwareFloor(t *testing.T) {
+	httpServer, matrixServer := startMatrixTestApp(t)
+
+	body := `{"palette":{".":"#000000"},"frames":[{"delay":"10ms","rows":["........","........","........","........","........","........","........","........"]}]}`
+	postMatrix(t, httpServer, "/matrix/animation", body, http.StatusBadRequest)
+
+	if got := matrixServer.CommandCount(testCommandUploadFrame); got != 0 {
+		t.Fatalf("upload command count = %d, want 0; the firmware floor is %s", got, matrix.MinAnimationFrameDelay)
+	}
+}
+
 func TestMatrixAnimationRejectsUnknownPaletteSymbol(t *testing.T) {
 	httpServer, matrixServer := startMatrixTestApp(t)
 

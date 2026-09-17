@@ -2368,6 +2368,42 @@ func TestSchedulerResolveControlRejectsMissingAndUnsupportedKinds(t *testing.T) 
 	}
 }
 
+// The firmware's EffectEngine::clampDelayMs silently raises any custom-frame
+// delay below AppConfig::kMinEffectFrameDelayMs to that floor and still answers
+// Status::kOk, so a faster upload would be acknowledged and then looped slower
+// than asked. Reject it at the boundary instead of reporting a speed the panel
+// will not run. Config-authored animations are unaffected: playFrames drives
+// those from the host and never reaches the firmware's clamp.
+func TestSchedulerUploadAnimationRejectsDelayBelowFirmwareFloor(t *testing.T) {
+	client := newFakeMatrixClient()
+	registry := animations.NewRegistry()
+	scheduler := newTestScheduler(t, client, registry, SchedulerOptions{})
+
+	// Bounded so a regression that lets the upload through fails on the wrong
+	// error instead of blocking on the queue until the package timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	err := scheduler.UploadAnimation(ctx, []Frame{{Delay: MinAnimationFrameDelay - time.Millisecond}})
+	if !errors.Is(err, ErrInvalidControl) {
+		t.Fatalf("UploadAnimation() error = %v, want %v", err, ErrInvalidControl)
+	}
+	if !strings.Contains(err.Error(), MinAnimationFrameDelay.String()) {
+		t.Fatalf("UploadAnimation() error = %q, want the %s floor named", err, MinAnimationFrameDelay)
+	}
+	if got := scheduler.QueueLen(); got != 0 {
+		t.Fatalf("queue length = %d, want the rejected upload not enqueued", got)
+	}
+	if got := len(client.commands()); got != 0 {
+		t.Fatalf("commands = %d, want 0; nothing may reach the device", got)
+	}
+
+	// Exactly the floor is a delay the device honours verbatim, so it must pass.
+	if err := validateAnimationFrames([]AnimationFrame{{Delay: MinAnimationFrameDelay}}); err != nil {
+		t.Fatalf("validateAnimationFrames() error = %v, want nil at exactly the floor", err)
+	}
+}
+
 func TestSchedulerControlsDoNotRunMatrixCommandsConcurrently(t *testing.T) {
 	client := newFakeMatrixClient()
 	client.commandDelay = 10 * time.Millisecond

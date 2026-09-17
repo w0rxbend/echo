@@ -15,6 +15,19 @@ const (
 	// The device holds this many frames in its custom-animation slot; uploading
 	// more would be rejected with Status::kInvalidLength.
 	MaxAnimationFrames = 8
+
+	// MinAnimationFrameDelay mirrors AppConfig::kMinEffectFrameDelayMs in the
+	// firmware. EffectEngine::clampDelayMs silently raises any shorter delay to
+	// this floor (and rewrites a zero delay to kDefaultPresetIntervalMs), so the
+	// device answers Status::kOk and then plays the animation slower than asked.
+	// Reject it here instead of reporting success for a speed the panel will not
+	// actually run.
+	//
+	// The floor belongs to the firmware-resident custom-animation slot only.
+	// Scheduler.playFrames drives frames from the host and sleeps for exactly the
+	// delay each frame declares, so config-authored animations are not clamped and
+	// keep their existing timings.
+	MinAnimationFrameDelay = 20 * time.Millisecond
 )
 
 func (c *TCPClient) Ping(ctx context.Context) error {

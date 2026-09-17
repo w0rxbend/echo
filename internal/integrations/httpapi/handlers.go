@@ -871,7 +871,7 @@ func (s *Server) handleMatrixPanel(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary		Upload an animation to the device
-// @Description	Stores up to 8 frames in the firmware's animation slot and lets the device loop them locally, with no network round-trip per frame. Frames use the same palette-and-rows form as config-authored animations: each row is 8 characters and every character must appear in the palette.
+// @Description	Stores up to 8 frames in the firmware's animation slot and lets the device loop them locally, with no network round-trip per frame. Frames use the same palette-and-rows form as config-authored animations: each row is 8 characters and every character must appear in the palette. Each delay must be at least 20ms: the firmware's effect engine silently raises anything faster to that floor, so a shorter delay is rejected here rather than acknowledged and then played slow.
 // @Tags		device
 // @Accept		json
 // @Produce		json
@@ -879,7 +879,7 @@ func (s *Server) handleMatrixPanel(w http.ResponseWriter, r *http.Request) {
 // @Param		device	path	string					true	"Device ID"
 // @Param		body	body	animationUploadRequest	true	"Palette and frames"
 // @Success		200		{object}	statusOK
-// @Failure		400		{object}	errorResponse	"Invalid palette, rows, delay, or more than 8 frames"
+// @Failure		400		{object}	errorResponse	"Invalid palette or rows, frame delay below 20ms, or more than 8 frames"
 // @Failure		401		{object}	errorResponse
 // @Failure		403		{object}	errorResponse
 // @Failure		404		{object}	errorResponse	"Unknown device"
