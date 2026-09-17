@@ -120,7 +120,7 @@ func (s *Scheduler) EnqueueControl(ctx context.Context, request ControlRequest) 
 		return dropErr
 	}
 	item.QueueDepthAtAdmission = queueDepth
-	s.reportQueueDepth(queueDepth)
+	s.reportQueueDepth()
 
 	stopContext := context.AfterFunc(ctx, func() {
 		s.completePendingControl(handle, ctx.Err())
@@ -245,7 +245,7 @@ func (s *Scheduler) completePendingControl(handle queueHandle, err error) {
 		return
 	}
 	if queueDepthAtRemoval > 0 {
-		s.reportQueueDepth(queueDepthAtRemoval - 1)
+		s.reportQueueDepth()
 	}
 	s.completeControlWithOutcome(removed, err, queueDepthAtRemoval)
 }

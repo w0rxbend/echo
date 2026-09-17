@@ -150,6 +150,7 @@ type Scheduler struct {
 	registry                          AnimationRegistry
 	packer                            animations.LayoutPacker
 	queue                             *playQueue
+	queueDepthMu                      sync.Mutex
 	background                        BackgroundConfig
 	reconnectMinDelay                 time.Duration
 	reconnectMaxDelay                 time.Duration
@@ -321,7 +322,7 @@ func (s *Scheduler) ClearQueue() int {
 	items := s.queue.clear()
 	queueDepthBeforeClear := len(items)
 	if queueDepthBeforeClear > 0 {
-		s.reportQueueDepth(0)
+		s.reportQueueDepth()
 	}
 	for _, item := range items {
 		s.completeQueueClearedItemWithOutcome(item, queueDepthBeforeClear)
@@ -406,7 +407,7 @@ func (s *Scheduler) EnqueueRequest(ctx context.Context, request animations.Anima
 		return err
 	}
 	item.QueueDepthAtAdmission = queueDepth
-	s.reportQueueDepth(queueDepth)
+	s.reportQueueDepth()
 	s.applyInterruptMode(item)
 	return nil
 }
@@ -420,7 +421,7 @@ func (s *Scheduler) applyInterruptMode(item ScheduledItem) {
 	}
 	evicted, newDepth := s.queue.evictLowerPriority(item.Priority)
 	if len(evicted) > 0 {
-		s.reportQueueDepth(newDepth)
+		s.reportQueueDepth()
 		for _, evictedItem := range evicted {
 			s.completeAnimationWithOutcome(evictedItem, ErrItemInterrupted, newDepth)
 		}
@@ -751,7 +752,7 @@ func (s *Scheduler) nextItemOrHeartbeat(ctx context.Context) (ScheduledItem, boo
 	if s.heartbeatInterval <= 0 {
 		item, err := s.queue.next(ctx)
 		if err == nil {
-			s.reportQueueDepth(s.queue.len())
+			s.reportQueueDepth()
 		}
 		return item, true, err
 	}
@@ -761,7 +762,7 @@ func (s *Scheduler) nextItemOrHeartbeat(ctx context.Context) (ScheduledItem, boo
 
 	item, err := s.queue.next(waitCtx)
 	if err == nil {
-		s.reportQueueDepth(s.queue.len())
+		s.reportQueueDepth()
 		return item, true, nil
 	}
 	if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {

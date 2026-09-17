@@ -118,15 +118,34 @@ func (s *Scheduler) ObservabilityCallbackPanicCounts() map[string]uint64 {
 	return s.callbackPanics.Counts()
 }
 
-func (s *Scheduler) reportQueueDepth(depth int) {
+// reportQueueDepth publishes the queue's current depth to the observer.
+//
+// It reads the depth itself rather than accepting one from the caller, and
+// that is the whole point. Every caller observes a depth under the queue's own
+// lock and reports it only after releasing that lock, so the goroutine
+// admitting an item and the goroutine popping it can reach the observer in
+// either order. When the enqueuer's Set(1) lands after the dequeuer's Set(0),
+// the gauge keeps a depth the queue no longer has -- and nothing ever corrects
+// it, because a gauge is only written when the depth changes. That is how CI
+// caught matrix_proxy_play_queue_depth reporting 1 for an empty queue whose
+// only item had already run to completion.
+//
+// Reading here makes each publication carry the depth as of its own turn, so
+// the last one to run reports the most recent state rather than the oldest
+// reading. The observer runs with queueDepthMu held, which is what keeps a
+// slow observer from being overtaken by a later, faster one; it is a metrics
+// write that never re-enters the queue.
+func (s *Scheduler) reportQueueDepth() {
 	observer := s.onQueueDepthChange
 	if observer == nil {
 		return
 	}
+	s.queueDepthMu.Lock()
+	defer s.queueDepthMu.Unlock()
 	defer func() {
 		_ = recover()
 	}()
-	observer(depth)
+	observer(s.queue.len())
 }
 
 func (s *Scheduler) reportAnimationRendered(animationID string, duration time.Duration) {
@@ -255,7 +274,7 @@ func queueClearedOutcomeReport(item ScheduledItem, queueDepthBeforeClear int, ti
 func (s *Scheduler) completeQueuedControls(err error) {
 	items := s.queue.clear()
 	if len(items) > 0 {
-		s.reportQueueDepth(0)
+		s.reportQueueDepth()
 	}
 	for _, item := range items {
 		if item.Control != nil {
