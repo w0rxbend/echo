@@ -63,6 +63,92 @@ queue:
 	}
 }
 
+func TestLoadRejectsUnknownConfigFields(t *testing.T) {
+	// Every schema field is a pointer whose nil-ness means "use the default", so
+	// a silently dropped key is indistinguishable from an omitted one. layout is
+	// the case that bites hardest: a mistyped width leaves a 64-wide panel
+	// rendering at the 8-wide default, which looks like a firmware bug.
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "top level",
+			body: "bogus_top_level: 1\n",
+			want: "field bogus_top_level not found",
+		},
+		{
+			name: "server",
+			body: "server:\n  admin_tokn_env: TOKEN\n",
+			want: "field admin_tokn_env not found",
+		},
+		{
+			name: "device",
+			body: "devices:\n  panel:\n    host: 10.0.0.5\n    probe_timout: 7s\n",
+			want: "field probe_timout not found",
+		},
+		{
+			name: "device layout",
+			body: "devices:\n  panel:\n    host: 10.0.0.5\n    layout:\n      widht: 64\n",
+			want: "field widht not found",
+		},
+		{
+			name: "device background",
+			body: "devices:\n  panel:\n    host: 10.0.0.5\n    background:\n      restore_on_idel: true\n",
+			want: "field restore_on_idel not found",
+		},
+		{
+			name: "queue",
+			body: "queue:\n  events_bufer: 999\n",
+			want: "field events_bufer not found",
+		},
+		{
+			name: "legacy matrix block",
+			body: "matrix:\n  heartbeat_intervall: 5s\n",
+			want: "field heartbeat_intervall not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, tt.body))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Load() error = %v, want %s", err, tt.want)
+			}
+		})
+	}
+}
+
+// Strict decoding must not turn "nothing configured" into an error: an empty
+// file is how the repo documents "run on the defaults".
+func TestLoadAcceptsEmptyConfigFile(t *testing.T) {
+	cfg, err := Load(writeConfig(t, ""))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Queue.EventsBuffer != Default().Queue.EventsBuffer {
+		t.Fatalf("queue.events_buffer = %d, want the default %d", cfg.Queue.EventsBuffer, Default().Queue.EventsBuffer)
+	}
+}
+
+// The example is what an operator copies, and nothing else parses it. Its
+// referenced animations and rules files are relative to the repo root, so this
+// reads it from there.
+func TestLoadParsesShippedExampleConfig(t *testing.T) {
+	t.Chdir("../..")
+
+	cfg, err := Load("configs/config.example.yaml")
+	if err != nil {
+		t.Fatalf("Load(configs/config.example.yaml) error = %v", err)
+	}
+
+	if _, ok := cfg.Devices["living-room"]; !ok {
+		t.Fatalf("example config devices = %v, want a living-room device", cfg.Devices)
+	}
+}
+
 func TestValidateRejectsInvalidHeartbeatAndProbeDurations(t *testing.T) {
 	tests := []struct {
 		name    string

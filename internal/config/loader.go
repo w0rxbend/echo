@@ -1,8 +1,10 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -29,8 +31,17 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("read config: %w", err)
 	}
 
+	// Every schema field is a pointer whose nil-ness means "use the default", so
+	// without KnownFields a misspelled key is indistinguishable from an omitted
+	// one: the default silently applies and nothing reports it. That is quiet for
+	// a timeout and ruinous for layout.widht, which leaves a 64-wide panel
+	// rendering at the 8-wide default. Decode rather than Unmarshal because only
+	// the decoder exposes the option; an empty file still means "all defaults",
+	// which Decode reports as io.EOF.
 	var schema schemaConfig
-	if err := yaml.Unmarshal(data, &schema); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&schema); err != nil && !errors.Is(err, io.EOF) {
 		return Config{}, fmt.Errorf("parse config: %w", err)
 	}
 
