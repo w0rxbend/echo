@@ -55,16 +55,18 @@ lifecycle observations, and synchronous depth-callback behavior.
 
 ## Generic Event Ingestion
 
-`POST /api/v1/events` accepts schema-agnostic normalized events and publishes
-valid events to the asynchronous event path. The endpoint validates only known
-playback override attributes before publish:
+`POST /api/v1/devices/{device}/events` accepts schema-agnostic normalized events
+and publishes valid events to the asynchronous event path. The endpoint validates
+only known playback override attributes before publish:
 
 - `attributes.animation` must name a known generated/playable animation, using
-  the same playable animation contract as `POST /api/v1/play` and
-  `POST /api/v1/notify`.
+  the same playable animation contract as `POST /api/v1/devices/{device}/play`
+  and `POST /api/v1/devices/{device}/notify`.
 - `attributes.restore` must use the same restore vocabulary accepted by
-  `POST /api/v1/play` and `POST /api/v1/notify`, such as `leave`,
-  `previous_frame`, `background`, `clear`, or `blank`.
+  `POST /api/v1/devices/{device}/play` and `POST /api/v1/devices/{device}/notify`.
+  That vocabulary is closed: `clear`, `previous_frame`, `background`, `leave`, or
+  empty, which the scheduler reads as `leave`. Anything else is rejected at the
+  boundary.
 - `attributes.duration` must be a well-formed, non-negative duration.
 
 Invalid known overrides are rejected synchronously and are not published.

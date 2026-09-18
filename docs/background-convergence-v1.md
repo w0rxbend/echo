@@ -146,8 +146,9 @@ structured RGB object.
 
 Firmware preset entries are metadata-only and background-safe. They are exposed
 in the catalog with `kind: "firmware_preset"` and `playable: false`, but must
-not be submitted to `POST /api/v1/play`, `POST /api/v1/notify`, or generic
-`POST /api/v1/events` as `attributes.animation`.
+not be submitted to `POST /api/v1/devices/{device}/play`,
+`POST /api/v1/devices/{device}/notify`, or generic
+`POST /api/v1/devices/{device}/events` as `attributes.animation`.
 
 ## Animation config schema
 
@@ -220,16 +221,19 @@ even when those fields are present with empty values.
 
 ## Generic event override validation
 
-`POST /api/v1/events` keeps the event payload schema-agnostic except for known
+`POST /api/v1/devices/{device}/events` keeps the event payload schema-agnostic
+except for known
 playback override attributes. Before publishing an event to the asynchronous
 event path, the endpoint validates these known override keys:
 
 - `attributes.animation` must name a known generated/playable animation, using
-  the same playable animation contract as `POST /api/v1/play` and
-  `POST /api/v1/notify`.
+  the same playable animation contract as `POST /api/v1/devices/{device}/play`
+  and `POST /api/v1/devices/{device}/notify`.
 - `attributes.restore` must use the same restore vocabulary accepted by
-  `POST /api/v1/play` and `POST /api/v1/notify`, such as `leave`,
-  `previous_frame`, `background`, `clear`, or `blank`.
+  `POST /api/v1/devices/{device}/play` and
+  `POST /api/v1/devices/{device}/notify`. That vocabulary is closed: `clear`,
+  `previous_frame`, `background`, `leave`, or empty, which the scheduler reads as
+  `leave`. Anything else is rejected at the boundary.
 - `attributes.duration` must be a well-formed, non-negative duration.
 
 Invalid known overrides return a client error synchronously and are not
