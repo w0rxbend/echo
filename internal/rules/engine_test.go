@@ -266,3 +266,61 @@ func TestLoadAcceptsEveryValidInterruptModeAndTheEmptyDefault(t *testing.T) {
 		}
 	}
 }
+
+// A dropped key in a rule file does not fail closed. Matches skips every empty
+// condition field, so a mistyped `contains` widens the rule to every event of
+// that source and type rather than narrowing it, and a mistyped top-level key
+// leaves the list empty, which New reads as "no rules configured" and answers
+// with DefaultRules -- the operator's whole file replaced by the built-in rule,
+// silently.
+func TestLoadRejectsUnknownRuleFields(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "top level",
+			body: "rulez:\n  - id: mine\n    when:\n      source: http\n    play:\n      animation: notification\n",
+			want: "field rulez not found",
+		},
+		{
+			name: "rule",
+			body: "rules:\n  - id: r\n    wen:\n      source: http\n    play:\n      animation: notification\n",
+			want: "field wen not found",
+		},
+		{
+			name: "condition",
+			body: "rules:\n  - id: r\n    when:\n      source: http\n      contans: deploy\n    play:\n      animation: notification\n",
+			want: "field contans not found",
+		},
+		{
+			name: "play",
+			body: "rules:\n  - id: r\n    when:\n      source: http\n    play:\n      animation: notification\n      priorty: 90\n",
+			want: "field priorty not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Load([]byte(tt.body))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Load() error = %v, want %s", err, tt.want)
+			}
+		})
+	}
+}
+
+// Strict decoding must not turn "nothing configured" into an error: an empty
+// rules file is how an operator asks for the built-in defaults.
+func TestLoadAcceptsEmptyRulesFile(t *testing.T) {
+	engine, err := Load(nil)
+	if err != nil {
+		t.Fatalf("Load(nil) error = %v", err)
+	}
+
+	got := engine.Rules()
+	if len(got) != len(DefaultRules()) || got[0].ID != DefaultRules()[0].ID {
+		t.Fatalf("Load(nil) rules = %v, want the defaults %v", got, DefaultRules())
+	}
+}

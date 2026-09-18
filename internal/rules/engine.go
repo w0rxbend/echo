@@ -1,7 +1,10 @@
 package rules
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -71,8 +74,18 @@ func LoadFile(path string) (*Engine, error) {
 }
 
 func Load(data []byte) (*Engine, error) {
+	// Matches treats every empty condition field as "do not constrain on this",
+	// so a dropped key here fails open: a rule written to fire only on messages
+	// containing "deploy" fires on all of them instead. A typo in the top-level
+	// rules key is worse still -- the list decodes empty and New substitutes
+	// DefaultRules, so the operator's whole file is discarded in favour of the
+	// built-in rule with nothing reported. Decode rather than Unmarshal because
+	// only the decoder exposes KnownFields; an empty file still means "use the
+	// defaults", which Decode reports as io.EOF.
 	var file File
-	if err := yaml.Unmarshal(data, &file); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&file); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("parse rules file: %w", err)
 	}
 
