@@ -88,6 +88,23 @@ func TestEventBusObservabilityCallbackPanicsAreScraped(t *testing.T) {
 	}
 }
 
+// The Prometheus series are registered by iterating this helper, so if it ever
+// stops tracking the bus's own list a name can be recorded, counted in
+// readiness, and have no series to graph or alert on. The bus package guards
+// its list against its Run/RecoverFrom sites; this guards the hand-off.
+func TestBusObservabilityCallbackNamesMatchEvents(t *testing.T) {
+	got := busObservabilityCallbackNames()
+	want := events.ObservabilityCallbackNames()
+	if len(got) != len(want) {
+		t.Fatalf("busObservabilityCallbackNames() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("busObservabilityCallbackNames()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 // Registering the same global counter twice must fail rather than silently
 // shadow the first: that is what would happen if this ever moved into the
 // per-device build path.

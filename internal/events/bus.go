@@ -41,6 +41,20 @@ const (
 	ObservabilityCallbackPublishBackpressureTimeout = "publish_backpressure_timeout"
 )
 
+// ObservabilityCallbackNames lists every name the bus can record a recovered
+// callback panic under. It lives beside the constants, rather than in the
+// caller that registers the per-name Prometheus series, so that adding a name
+// and forgetting to enumerate it is a local mistake: an unenumerated name is
+// still counted by ObservabilityCallbackPanicCounts, whose map is unbounded,
+// but has no series to graph or alert on.
+func ObservabilityCallbackNames() []string {
+	return []string{
+		ObservabilityCallbackDepthChange,
+		ObservabilityCallbackPublishBackpressureWait,
+		ObservabilityCallbackPublishBackpressureTimeout,
+	}
+}
+
 type Bus struct {
 	capacity int
 

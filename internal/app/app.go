@@ -1049,11 +1049,7 @@ func schedulerObservabilityCallbackNames() []string {
 }
 
 func busObservabilityCallbackNames() []string {
-	return []string{
-		events.ObservabilityCallbackDepthChange,
-		events.ObservabilityCallbackPublishBackpressureWait,
-		events.ObservabilityCallbackPublishBackpressureTimeout,
-	}
+	return events.ObservabilityCallbackNames()
 }
 
 func tcpObservabilityCallbackNames() []string {
