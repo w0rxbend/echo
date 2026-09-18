@@ -87,6 +87,16 @@ func ResolveAdminAuth(serverAddr, tokenEnv string) (AdminAuth, error) {
 	return AdminAuth{Token: token, Required: true}, nil
 }
 
+// AdminAuthRequired reports whether the admin routes demand a bearer token,
+// which ResolveAdminAuth decides solely from the bind address. It is true
+// exactly when the server is reachable from somewhere other than loopback --
+// that is, when this process is sitting on a network it has been told not to
+// trust. Callers outside the /api/v1 tree use it to decide how much internal
+// detail an unauthenticated response may carry.
+func (s *Server) AdminAuthRequired() bool {
+	return s.requireAuth
+}
+
 // Router builds the /api/v1 sub-router mounted by the App.
 func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()

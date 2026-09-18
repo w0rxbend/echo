@@ -576,10 +576,67 @@ type backgroundReady struct {
 	LastErrorClass matrix.ErrorKind                  `json:"last_error_class,omitempty"`
 }
 
+// deviceReadinessEntry projects one device's health into its /readyz entry.
+//
+// redactErrorDetail drops background.last_error, the only free-form string in
+// the payload; see opsPlaneIsUntrusted for why. last_error_class is kept either
+// way, so a caller can still tell a retryable failure from a permanent one.
+func deviceReadinessEntry(health matrix.Health, background matrix.BackgroundConvergenceProjection, backgroundKind animations.PublicKind, redactErrorDetail bool) deviceReadyEntry {
+	lastRestoreError := health.BackgroundLastRestoreError
+	if redactErrorDetail {
+		lastRestoreError = ""
+	}
+
+	return deviceReadyEntry{
+		SchedulerState:  health.State,
+		MatrixConnected: health.MatrixConnected,
+		PanelEnabled:    health.PanelEnabled,
+		Brightness:      health.Brightness,
+		Background: backgroundReady{
+			ConfiguredID:   health.BackgroundID,
+			Kind:           backgroundKind,
+			State:          background.State,
+			Dirty:          background.Dirty,
+			Converged:      background.Converged,
+			LastAttempt:    health.BackgroundLastRestoreAttempt,
+			LastSuccess:    health.BackgroundLastRestoreSuccess,
+			NextRetry:      health.BackgroundNextRetry,
+			FailureCount:   health.BackgroundRetryFailureCount,
+			LastError:      lastRestoreError,
+			LastErrorClass: health.BackgroundLastRestoreErrorClass,
+		},
+		LastSuccess: health.LastSuccess,
+		LastFailure: health.LastFailure,
+	}
+}
+
+// opsPlaneIsUntrusted reports whether /readyz is reachable from a network this
+// process has been told not to trust.
+//
+// /healthz, /readyz and /metrics are mounted outside the admin gate on purpose:
+// a liveness probe and a Prometheus scrape cannot carry a bearer token, and
+// gating them would break both. Device IDs and per-device state are on that
+// plane by the same decision -- every matrix_proxy_* series is labelled with
+// the device ID, so /metrics publishes the inventory whatever /readyz does.
+//
+// background.last_error is the one field that does not follow: it is a raw
+// err.Error() from the restore path, so a dial failure renders as
+// "dial tcp 10.0.3.44:4210: connect: connection refused" and puts a panel's LAN
+// address on an unauthenticated endpoint. /metrics carries only the error
+// class, and so does /readyz once this returns true -- last_error_class still
+// distinguishes retryable from permanent, which is what a probe or an alert
+// reads. The full string stays available on a loopback bind, which is how the
+// README drives it, and in the logs either way.
+func (a *App) opsPlaneIsUntrusted() bool {
+	return a.httpAPI != nil && a.httpAPI.AdminAuthRequired()
+}
+
 func (a *App) readiness() (readyResponse, bool) {
 	lifecycle := a.lifecycle.snapshot()
 	workersRunning := lifecycle.workersRunning
 	draining := lifecycle.draining
+
+	redactErrorDetail := a.opsPlaneIsUntrusted()
 
 	now := time.Now()
 	deviceEntries := make(map[string]deviceReadyEntry, len(a.devices))
@@ -600,28 +657,7 @@ func (a *App) readiness() (readyResponse, bool) {
 			allConnected = false
 		}
 
-		entry := deviceReadyEntry{
-			SchedulerState:  health.State,
-			MatrixConnected: health.MatrixConnected,
-			PanelEnabled:    health.PanelEnabled,
-			Brightness:      health.Brightness,
-			Background: backgroundReady{
-				ConfiguredID:   health.BackgroundID,
-				Kind:           backgroundKind,
-				State:          background.State,
-				Dirty:          background.Dirty,
-				Converged:      background.Converged,
-				LastAttempt:    health.BackgroundLastRestoreAttempt,
-				LastSuccess:    health.BackgroundLastRestoreSuccess,
-				NextRetry:      health.BackgroundNextRetry,
-				FailureCount:   health.BackgroundRetryFailureCount,
-				LastError:      health.BackgroundLastRestoreError,
-				LastErrorClass: health.BackgroundLastRestoreErrorClass,
-			},
-			LastSuccess: health.LastSuccess,
-			LastFailure: health.LastFailure,
-		}
-		deviceEntries[d.id] = entry
+		deviceEntries[d.id] = deviceReadinessEntry(health, background, backgroundKind, redactErrorDetail)
 
 		totalOutcomesDropped += health.OutcomeReportsDropped
 		totalOutcomeRecordingPanics += health.OutcomeRecordingPanics
