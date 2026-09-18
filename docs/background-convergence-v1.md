@@ -88,6 +88,12 @@ commands only.
   - `configured_id`, `kind`, `state`, `dirty`, `converged`, `last_attempt`,
     `last_success`, `last_error`, `last_error_class`, `next_retry`,
     `failure_count`
+- `last_error` is omitted when the server is bound to anything other than
+  loopback. It is a raw error string from the restore path, so it can name a
+  panel's LAN address and port, and `/readyz` is served outside the admin gate
+  so that probes and scrapes can reach it without a token. `last_error_class`
+  is always present: it is the field a probe or an alert reads, and it carries
+  no host detail. The full string is in the logs either way.
 - `matrix_proxy_background_state{kind,state}` exposes the one-hot projected state.
 
 Top-level `/readyz` still returns HTTP 200 when workers are running and matrix is connected,
