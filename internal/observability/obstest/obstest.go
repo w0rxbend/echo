@@ -15,7 +15,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -95,12 +96,31 @@ func AssertNamesAreDistinct(t testing.TB, listName string, names []string) {
 func ParseCallbackSites(t testing.TB, dir string) (map[string]string, []CallbackSite) {
 	t.Helper()
 
-	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, dir, func(fi fs.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_test.go")
-	}, 0)
+	// Each file is parsed individually rather than through parser.ParseDir,
+	// which is deprecated: it ignores build tags when grouping files into
+	// packages. Grouping is not wanted here anyway -- every non-test .go file in
+	// the directory is a site that can record a name, whatever package clause or
+	// build tag it carries.
+	entries, err := os.ReadDir(dir)
 	if err != nil {
-		t.Fatalf("parse package source in %s: %v", dir, err)
+		t.Fatalf("read package source in %s: %v", dir, err)
+	}
+
+	fset := token.NewFileSet()
+	var files []*ast.File
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, filepath.Join(dir, name), nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", filepath.Join(dir, name), err)
+		}
+		files = append(files, file)
+	}
+	if len(files) == 0 {
+		t.Fatalf("found no non-test Go files in %s; this guard is no longer guarding anything", dir)
 	}
 
 	isCallbackConst := func(name string) bool {
@@ -111,48 +131,46 @@ func ParseCallbackSites(t testing.TB, dir string) (map[string]string, []Callback
 	aliases := make(map[string]string)
 	var sites []CallbackSite
 
-	for _, pkg := range pkgs {
-		for _, file := range pkg.Files {
-			ast.Inspect(file, func(n ast.Node) bool {
-				switch node := n.(type) {
-				case *ast.ValueSpec:
-					for i, ident := range node.Names {
-						if !isCallbackConst(ident.Name) || i >= len(node.Values) {
-							continue
-						}
-						switch value := node.Values[i].(type) {
-						case *ast.BasicLit:
-							if value.Kind == token.STRING {
-								unquoted, err := strconv.Unquote(value.Value)
-								if err != nil {
-									t.Fatalf("%s: unquote %s: %v", fset.Position(value.Pos()), ident.Name, err)
-								}
-								values[ident.Name] = unquoted
+	for _, file := range files {
+		ast.Inspect(file, func(n ast.Node) bool {
+			switch node := n.(type) {
+			case *ast.ValueSpec:
+				for i, ident := range node.Names {
+					if !isCallbackConst(ident.Name) || i >= len(node.Values) {
+						continue
+					}
+					switch value := node.Values[i].(type) {
+					case *ast.BasicLit:
+						if value.Kind == token.STRING {
+							unquoted, err := strconv.Unquote(value.Value)
+							if err != nil {
+								t.Fatalf("%s: unquote %s: %v", fset.Position(value.Pos()), ident.Name, err)
 							}
-						case *ast.Ident:
-							aliases[ident.Name] = value.Name
+							values[ident.Name] = unquoted
 						}
+					case *ast.Ident:
+						aliases[ident.Name] = value.Name
 					}
-				case *ast.CallExpr:
-					sel, ok := node.Fun.(*ast.SelectorExpr)
-					if !ok || len(node.Args) == 0 {
-						return true
-					}
-					if sel.Sel.Name != "Run" && sel.Sel.Name != "RecoverFrom" {
-						return true
-					}
-					arg, ok := node.Args[0].(*ast.Ident)
-					if !ok || !isCallbackConst(arg.Name) {
-						return true
-					}
-					sites = append(sites, CallbackSite{
-						ConstName: arg.Name,
-						Pos:       fset.Position(node.Pos()).String(),
-					})
 				}
-				return true
-			})
-		}
+			case *ast.CallExpr:
+				sel, ok := node.Fun.(*ast.SelectorExpr)
+				if !ok || len(node.Args) == 0 {
+					return true
+				}
+				if sel.Sel.Name != "Run" && sel.Sel.Name != "RecoverFrom" {
+					return true
+				}
+				arg, ok := node.Args[0].(*ast.Ident)
+				if !ok || !isCallbackConst(arg.Name) {
+					return true
+				}
+				sites = append(sites, CallbackSite{
+					ConstName: arg.Name,
+					Pos:       fset.Position(node.Pos()).String(),
+				})
+			}
+			return true
+		})
 	}
 
 	for alias, target := range aliases {
